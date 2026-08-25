@@ -1,0 +1,36 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    name: PHP ${{ matrix.php-version }} Syntax & Unit Tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['8.0', '8.1', '8.2', '8.3']
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          extensions: dom, mbstring, json, curl
+          coverage: none
+
+      - name: Check PHP Syntax (lint)
+        run: |
+          find . -name "*.php" ! -path "./vendor/*" -print0 | xargs -0 -n 1 -P 4 php -l
+
+      - name: Run Test Suite
+        run: |
+          php tests/test_hwsync_pipeline.php

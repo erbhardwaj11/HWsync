@@ -1,0 +1,87 @@
+name: Release Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version tag (e.g. v0.0.0.1)'
+        required: true
+        default: 'v0.0.0.1'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Publish Release Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Determine Version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "TAG=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            echo "VERSION=${TAG_NAME#v}" >> $GITHUB_OUTPUT
+            echo "TAG=${TAG_NAME}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: dom, mbstring, json, curl
+
+      - name: Run Test Suite
+        run: |
+          php tests/test_hwsync_pipeline.php
+
+      - name: Package WordPress Plugin
+        run: |
+          TAG="${{ steps.get_version.outputs.TAG }}"
+          PKG_NAME="hwsync-${TAG}.zip"
+          
+          # Create staging folder for clean WordPress plugin packaging
+          mkdir -p build/hwsync
+          
+          # Copy production files
+          cp -r admin includes public templates languages hwsync.php README.md build/hwsync/ 2>/dev/null || cp -r admin includes public templates hwsync.php README.md build/hwsync/
+          
+          cd build
+          zip -r "../${PKG_NAME}" hwsync/
+          cd ..
+          
+          echo "PACKAGE_PATH=${PKG_NAME}" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_version.outputs.TAG }}
+          name: Release ${{ steps.get_version.outputs.TAG }}
+          body: |
+            ## HWsync Release ${{ steps.get_version.outputs.TAG }}
+            
+            ### Features & Capabilities:
+            - **Multi-Vendor Retailer Scrapers**: Real-time integration with MDComputers, Vedant Computers, PrimeABGB, EliteHubs, and PCStudio.
+            - **Intelligent Component Matching Engine**: Normalization, MPN detection, socket/spec extraction, and fuzzy similarity matching.
+            - **Normalized Database Schema**: High-performance tables for canonical components, vendor pricing, and price history.
+            - **Post-Sync WordPress Post Generator**: Automatic generation of `hwsync_component` custom posts with interactive multi-vendor comparison tables.
+            - **WP-CLI & Cron Scheduler**: Background synchronization jobs and CLI management tooling.
+            
+            ### Installation:
+            1. Download the `hwsync-${{ steps.get_version.outputs.TAG }}.zip` archive below.
+            2. In WordPress Admin, navigate to **Plugins > Add New > Upload Plugin**.
+            3. Upload the zip file, activate it, and trigger the sync under **HWsync > Dashboard**.
+          files: |
+            ${{ env.PACKAGE_PATH }}
+          draft: false
+          prerelease: false
