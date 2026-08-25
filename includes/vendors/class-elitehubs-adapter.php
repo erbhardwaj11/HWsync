@@ -13,77 +13,139 @@ class EliteHubs_Adapter extends Abstract_Vendor_Adapter {
 
 	public function get_category_endpoints() {
 		return array(
-			'cpu'         => '/processors',
-			'gpu'         => '/graphics-card',
-			'motherboard' => '/motherboard',
-			'ram'         => '/desktop-ram',
-			'storage'     => '/solid-state-drive',
-			'psu'         => '/power-supply-unit',
-			'cooler'      => '/cpu-cooler',
-			'cabinet'     => '/cabinet',
+			'cpu'         => array( '/processors', '/processor' ),
+			'gpu'         => array( '/graphics-card', '/graphics-cards' ),
+			'motherboard' => array( '/motherboard', '/motherboards' ),
+			'ram'         => array( '/desktop-ram', '/ram' ),
+			'storage'     => array( '/solid-state-drive', '/ssd', '/storage' ),
+			'psu'         => array( '/power-supply-unit', '/power-supply' ),
+			'cooler'      => array( '/cpu-cooler', '/liquid-cooler' ),
+			'cabinet'     => array( '/cabinet', '/pc-cabinet' ),
 		);
 	}
 
 	public function fetch_products( $category = '', $page = 1 ) {
 		$endpoints = $this->get_category_endpoints();
-		$path = isset( $endpoints[ $category ] ) ? $endpoints[ $category ] : '/processors';
-		$url = $this->base_url . $path . ( $page > 1 ? '/page/' . intval( $page ) . '/' : '' );
+		$paths = isset( $endpoints[ $category ] ) ? (array) $endpoints[ $category ] : array( '/processors' );
 
-		$res = $this->make_request( $url );
-		if ( ! $res['success'] ) {
-			return array();
+		foreach ( $paths as $path ) {
+			$url = $this->base_url . $path . ( $page > 1 ? '/page/' . intval( $page ) . '/' : '' );
+			$res = $this->make_request( $url );
+
+			if ( $res['success'] && ! empty( $res['body'] ) ) {
+				$items = $this->parse_html( $res['body'], $category );
+				if ( ! empty( $items ) ) {
+					return $items;
+				}
+			}
 		}
 
-		return $this->parse_html( $res['body'], $category );
+		return array();
 	}
 
-	protected function parse_html( $html, $category ) {
+	public function parse_html( $html, $category ) {
 		$items = array();
 		if ( empty( $html ) ) {
 			return $items;
 		}
 
-		$dom = new \DOMDocument();
-		@$dom->loadHTML( mb_convert_encoding( $html, 'HTML-ENTITIES', 'UTF-8' ) );
-		$xpath = new \DOMXPath( $dom );
-
-		$nodes = $xpath->query( "//div[contains(@class, 'product-grid-item')] | //li[contains(@class, 'product')]" );
-
-		foreach ( $nodes as $node ) {
-			$title_node = $xpath->query( ".//h3[contains(@class, 'wd-entities-title')]/a | .//h2[contains(@class, 'woocommerce-loop-product__title')]/a | .//a[contains(@class, 'product-title')]", $node )->item( 0 );
-			if ( ! $title_node ) {
-				continue;
+		// Woodmart / WooCommerce product grid item extraction
+		if ( preg_match_all( '/<div[^>]*class="[^"]*(?:product-grid-item|product-item|wd-product)[^"]*"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/i', $html, $cards ) ) {
+			foreach ( $cards[0] as $card_html ) {
+				$item = $this->extract_card( $card_html, $category );
+				if ( $item ) {
+					$items[] = $item;
+				}
 			}
+		}
 
-			$title = trim( $title_node->textContent );
-			$url = $title_node->getAttribute( 'href' );
+		if ( empty( $items ) ) {
+			if ( preg_match_all( '/<h[234][^>]*class="[^"]*(?:wd-entities-title|product-title|woocommerce-loop-product__title)[^"]*"[^>]*>\s*<a\s+href="([^"]+)"[^>]*>([^<]+)<\/a>/i', $html, $matches, PREG_SET_ORDER ) ) {
+				foreach ( $matches as $m ) {
+					$prod_url = $m[1];
+					$title    = html_entity_decode( trim( $m[2] ) );
 
-			$price_node = $xpath->query( ".//span[contains(@class, 'price')]//ins//bdi | .//span[contains(@class, 'price')]//bdi | .//span[contains(@class, 'amount')]", $node )->item( 0 );
-			$price_str = $price_node ? $price_node->textContent : '0';
-			$price = self::clean_price( $price_str );
+					$pos = strpos( $html, $prod_url );
+					$price = 0.0;
+					$reg_price = null;
+					$in_stock = true;
 
-			$old_price_node = $xpath->query( ".//span[contains(@class, 'price')]//del//bdi", $node )->item( 0 );
-			$old_price = $old_price_node ? self::clean_price( $old_price_node->textContent ) : null;
+					if ( $pos !== false ) {
+						$snippet = substr( $html, max( 0, $pos - 200 ), 1600 );
+						if ( preg_match( '/<ins[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $snippet, $pm ) ) {
+							$price = self::clean_price( $pm[1] );
+						} elseif ( preg_match( '/(?:price|amount)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $snippet, $pm2 ) ) {
+							$price = self::clean_price( $pm2[1] );
+						}
+						if ( preg_match( '/<del[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $snippet, $rpm ) ) {
+							$reg_price = self::clean_price( $rpm[1] );
+						}
+						if ( stripos( $snippet, 'out-of-stock' ) !== false || stripos( $snippet, 'sold out' ) !== false ) {
+							$in_stock = false;
+						}
+					}
 
-			$oos_node = $xpath->query( ".//span[contains(@class, 'out-of-stock')] | .//span[contains(@class, 'badge-out-of-stock')]", $node )->item( 0 );
-			$in_stock = $oos_node ? false : true;
-			$stock_status = $in_stock ? 'in_stock' : 'out_of_stock';
-
-			if ( $price > 0 && ! empty( $title ) ) {
-				$items[] = array(
-					'title'          => $title,
-					'url'            => $url,
-					'price'          => $price,
-					'original_price' => $old_price,
-					'in_stock'       => $in_stock,
-					'stock_status'   => $stock_status,
-					'category'       => $category,
-					'vendor_slug'    => $this->vendor_slug,
-					'raw_data'       => array( 'raw_title' => $title, 'raw_price' => $price_str ),
-				);
+					if ( $price > 0 && ! empty( $title ) ) {
+						$items[] = array(
+							'title'          => $title,
+							'url'            => $prod_url,
+							'price'          => $price,
+							'original_price' => $reg_price,
+							'in_stock'       => $in_stock,
+							'stock_status'   => $in_stock ? 'in_stock' : 'out_of_stock',
+							'category'       => $category,
+							'vendor_slug'    => $this->vendor_slug,
+							'raw_data'       => array( 'raw_title' => $title, 'price' => $price ),
+						);
+					}
+				}
 			}
 		}
 
 		return $items;
+	}
+
+	private function extract_card( $card_html, $category ) {
+		$title = '';
+		$url   = '';
+
+		if ( preg_match( '/<h[234][^>]*>\s*<a\s+href="([^"]+)"[^>]*>([^<]+)<\/a>/i', $card_html, $tm ) ) {
+			$url   = $tm[1];
+			$title = html_entity_decode( trim( $tm[2] ) );
+		}
+
+		if ( empty( $title ) || empty( $url ) ) {
+			return null;
+		}
+
+		$price = 0.0;
+		$orig_price = null;
+		if ( preg_match( '/<ins[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $card_html, $pm ) ) {
+			$price = self::clean_price( $pm[1] );
+		} elseif ( preg_match( '/(?:price|amount)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $card_html, $pm2 ) ) {
+			$price = self::clean_price( $pm2[1] );
+		}
+
+		if ( preg_match( '/<del[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $card_html, $rpm ) ) {
+			$orig_price = self::clean_price( $rpm[1] );
+		}
+
+		$in_stock = ( stripos( $card_html, 'out-of-stock' ) === false && stripos( $card_html, 'sold out' ) === false );
+
+		if ( $price > 0 ) {
+			return array(
+				'title'          => $title,
+				'url'            => $url,
+				'price'          => $price,
+				'original_price' => $orig_price,
+				'in_stock'       => $in_stock,
+				'stock_status'   => $in_stock ? 'in_stock' : 'out_of_stock',
+				'category'       => $category,
+				'vendor_slug'    => $this->vendor_slug,
+				'raw_data'       => array( 'raw_title' => $title, 'price' => $price ),
+			);
+		}
+
+		return null;
 	}
 }

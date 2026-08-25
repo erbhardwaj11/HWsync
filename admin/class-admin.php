@@ -15,6 +15,7 @@ class Admin {
 		add_action( 'admin_post_hwsync_manual_sync', array( __CLASS__, 'handle_manual_sync' ) );
 		add_action( 'admin_post_hwsync_toggle_vendor', array( __CLASS__, 'handle_toggle_vendor' ) );
 		add_action( 'wp_ajax_hwsync_stream_sync', array( __CLASS__, 'handle_stream_sync' ) );
+		add_action( 'wp_ajax_hwsync_process_browser_batch', array( __CLASS__, 'handle_browser_batch' ) );
 	}
 
 	public static function register_admin_menu() {
@@ -547,5 +548,51 @@ class Admin {
 		update_option( 'hwsync_last_sync_report', $report );
 
 		exit;
+	}
+
+	public static function handle_browser_batch() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$vendor_slug = isset( $_POST['vendor_slug'] ) ? sanitize_text_field( $_POST['vendor_slug'] ) : 'mdcomputers';
+		$vendor      = Vendor::find_by_slug( $vendor_slug );
+		if ( ! $vendor ) {
+			wp_send_json_error( array( 'message' => __( 'Vendor not found', 'hwsync' ) ) );
+		}
+
+		$items_raw = isset( $_POST['items'] ) ? json_decode( wp_unslash( $_POST['items'] ), true ) : array();
+		if ( empty( $items_raw ) || ! is_array( $items_raw ) ) {
+			wp_send_json_error( array( 'message' => __( 'No items provided in batch', 'hwsync' ) ) );
+		}
+
+		$manager = new Sync_Manager();
+		$processed = 0;
+		$prices_saved = 0;
+		$touched_ids = array();
+
+		foreach ( $items_raw as $item ) {
+			$res = $manager->sync_single_item( $item, $vendor );
+			if ( $res && ! empty( $res['component_id'] ) ) {
+				$touched_ids[ $res['component_id'] ] = true;
+				$prices_saved++;
+			}
+			$processed++;
+		}
+
+		$vendor->update_last_sync();
+
+		$post_stats = array( 'created' => 0, 'updated' => 0 );
+		if ( ! empty( $touched_ids ) ) {
+			$post_stats = Post_Sync_Processor::process_all( array_keys( $touched_ids ) );
+		}
+
+		wp_send_json_success( array(
+			'processed'    => $processed,
+			'prices_saved' => $prices_saved,
+			'components'   => count( $touched_ids ),
+			'posts_synced' => ( $post_stats['created'] + $post_stats['updated'] ),
+		) );
 	}
 }

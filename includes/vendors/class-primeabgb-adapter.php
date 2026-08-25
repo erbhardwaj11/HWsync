@@ -30,67 +30,123 @@ class PrimeABGB_Adapter extends Abstract_Vendor_Adapter {
 		$url = $this->base_url . $path . ( $page > 1 ? 'page/' . intval( $page ) . '/' : '' );
 
 		$res = $this->make_request( $url );
-		if ( ! $res['success'] ) {
+		if ( ! $res['success'] || empty( $res['body'] ) ) {
 			return array();
 		}
 
 		return $this->parse_html( $res['body'], $category );
 	}
 
-	protected function parse_html( $html, $category ) {
+	public function parse_html( $html, $category ) {
 		$items = array();
 		if ( empty( $html ) ) {
 			return $items;
 		}
 
-		$dom = new \DOMDocument();
-		@$dom->loadHTML( mb_convert_encoding( $html, 'HTML-ENTITIES', 'UTF-8' ) );
-		$xpath = new \DOMXPath( $dom );
-
-		$nodes = $xpath->query( "//li[contains(@class, 'product')] | //div[contains(@class, 'product-small')]" );
-
-		foreach ( $nodes as $node ) {
-			$title_node = $xpath->query( ".//h2[contains(@class, 'woocommerce-loop-product__title')] | .//p[contains(@class, 'name')]/a | .//h3/a", $node )->item( 0 );
-			if ( ! $title_node ) {
-				continue;
-			}
-
-			$title = trim( $title_node->textContent );
-			$url = $title_node->hasAttribute( 'href' ) ? $title_node->getAttribute( 'href' ) : '';
-			if ( empty( $url ) ) {
-				$parent_link = $xpath->query( ".//a[contains(@class, 'woocommerce-LoopProduct-link')]", $node )->item( 0 );
-				if ( $parent_link ) {
-					$url = $parent_link->getAttribute( 'href' );
+		// WooCommerce card parsing
+		if ( preg_match_all( '/<li[^>]*class="[^"]*product[^"]*"[\s\S]*?<\/li>/i', $html, $cards ) ) {
+			foreach ( $cards[0] as $card_html ) {
+				$item = $this->extract_card( $card_html, $category );
+				if ( $item ) {
+					$items[] = $item;
 				}
 			}
+		}
 
-			$ins_node = $xpath->query( ".//span[contains(@class, 'price')]//ins//bdi | .//span[contains(@class, 'price')]//bdi | .//span[contains(@class, 'amount')]", $node )->item( 0 );
-			$price_str = $ins_node ? $ins_node->textContent : '0';
-			$price = self::clean_price( $price_str );
+		// Global WooCommerce title & link fallback
+		if ( empty( $items ) ) {
+			if ( preg_match_all( '/<h2[^>]*class="[^"]*woocommerce-loop-product__title[^"]*"[^>]*>([^<]+)<\/h2>/i', $html, $matches, PREG_SET_ORDER ) ) {
+				foreach ( $matches as $m ) {
+					$title = html_entity_decode( trim( $m[1] ) );
+					$pos = strpos( $html, $m[0] );
+					$snippet = ( $pos !== false ) ? substr( $html, max( 0, $pos - 300 ), 1500 ) : '';
 
-			$del_node = $xpath->query( ".//span[contains(@class, 'price')]//del//bdi", $node )->item( 0 );
-			$old_price = $del_node ? self::clean_price( $del_node->textContent ) : null;
+					$prod_url = '';
+					if ( preg_match( '/<a[^>]*href="([^"]+)"[^>]*class="[^"]*woocommerce-LoopProduct-link/i', $snippet, $um ) ||
+					     preg_match( '/<a[^>]*href="([^"]+)"/i', $snippet, $um ) ) {
+						$prod_url = $um[1];
+					}
 
-			// Out of stock
-			$oos_node = $xpath->query( ".//span[contains(@class, 'out-of-stock')] | .//span[contains(@class, 'badge-out-of-stock')]", $node )->item( 0 );
-			$in_stock = $oos_node ? false : true;
-			$stock_status = $in_stock ? 'in_stock' : 'out_of_stock';
+					$price = 0.0;
+					$reg_price = null;
+					if ( preg_match( '/<ins[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $snippet, $pm ) ) {
+						$price = self::clean_price( $pm[1] );
+					} elseif ( preg_match( '/(?:price|amount)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $snippet, $pm2 ) ) {
+						$price = self::clean_price( $pm2[1] );
+					}
 
-			if ( $price > 0 && ! empty( $title ) ) {
-				$items[] = array(
-					'title'          => $title,
-					'url'            => $url,
-					'price'          => $price,
-					'original_price' => $old_price,
-					'in_stock'       => $in_stock,
-					'stock_status'   => $stock_status,
-					'category'       => $category,
-					'vendor_slug'    => $this->vendor_slug,
-					'raw_data'       => array( 'raw_title' => $title, 'raw_price' => $price_str ),
-				);
+					if ( preg_match( '/<del[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $snippet, $rpm ) ) {
+						$reg_price = self::clean_price( $rpm[1] );
+					}
+
+					$in_stock = ( stripos( $snippet, 'out-of-stock' ) === false );
+
+					if ( $price > 0 && ! empty( $title ) && ! empty( $prod_url ) ) {
+						$items[] = array(
+							'title'          => $title,
+							'url'            => $prod_url,
+							'price'          => $price,
+							'original_price' => $reg_price,
+							'in_stock'       => $in_stock,
+							'stock_status'   => $in_stock ? 'in_stock' : 'out_of_stock',
+							'category'       => $category,
+							'vendor_slug'    => $this->vendor_slug,
+							'raw_data'       => array( 'raw_title' => $title, 'price' => $price ),
+						);
+					}
+				}
 			}
 		}
 
 		return $items;
+	}
+
+	private function extract_card( $card_html, $category ) {
+		$title = '';
+		$url   = '';
+
+		if ( preg_match( '/<h2[^>]*class="[^"]*woocommerce-loop-product__title[^"]*"[^>]*>([^<]+)<\/h2>/i', $card_html, $tm ) ||
+		     preg_match( '/<h[234][^>]*>\s*<a\s+href="([^"]+)"[^>]*>([^<]+)<\/a>/i', $card_html, $tm2 ) ) {
+			$title = isset( $tm[1] ) ? html_entity_decode( trim( $tm[1] ) ) : html_entity_decode( trim( $tm2[2] ) );
+		}
+
+		if ( preg_match( '/<a[^>]*class="[^"]*woocommerce-LoopProduct-link[^"]*"[^>]*href="([^"]+)"/i', $card_html, $um ) ||
+		     preg_match( '/<a[^>]*href="([^"]+)"/i', $card_html, $um2 ) ) {
+			$url = isset( $um[1] ) ? $um[1] : $um2[1];
+		}
+
+		if ( empty( $title ) || empty( $url ) ) {
+			return null;
+		}
+
+		$price = 0.0;
+		$orig_price = null;
+		if ( preg_match( '/<ins[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $card_html, $pm ) ) {
+			$price = self::clean_price( $pm[1] );
+		} elseif ( preg_match( '/(?:price|amount)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $card_html, $pm2 ) ) {
+			$price = self::clean_price( $pm2[1] );
+		}
+
+		if ( preg_match( '/<del[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $card_html, $rpm ) ) {
+			$orig_price = self::clean_price( $rpm[1] );
+		}
+
+		$in_stock = ( stripos( $card_html, 'out-of-stock' ) === false && stripos( $card_html, 'out of stock' ) === false );
+
+		if ( $price > 0 ) {
+			return array(
+				'title'          => $title,
+				'url'            => $url,
+				'price'          => $price,
+				'original_price' => $orig_price,
+				'in_stock'       => $in_stock,
+				'stock_status'   => $in_stock ? 'in_stock' : 'out_of_stock',
+				'category'       => $category,
+				'vendor_slug'    => $this->vendor_slug,
+				'raw_data'       => array( 'raw_title' => $title, 'price' => $price ),
+			);
+		}
+
+		return null;
 	}
 }

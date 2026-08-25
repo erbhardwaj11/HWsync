@@ -53,47 +53,103 @@ abstract class Abstract_Vendor_Adapter {
 	abstract public function fetch_products( $category = '', $page = 1 );
 
 	/**
-	 * Perform a safe HTTP GET request with realistic browser headers.
+	 * Perform an authentic HTTP GET request using native cURL with full browser headers and decompression.
 	 */
 	protected function make_request( $url, $headers = array() ) {
+		$default_ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
 		$default_headers = array(
-			'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 HWsync/1.0',
-			'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,application/json,*/*;q=0.8',
-			'Accept-Language' => 'en-US,en;q=0.9',
+			'User-Agent: ' . $default_ua,
+			'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+			'Accept-Language: en-US,en;q=0.9',
+			'Referer: https://www.google.com/',
+			'Sec-Ch-Ua: "Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
+			'Sec-Ch-Ua-Mobile: ?0',
+			'Sec-Ch-Ua-Platform: "Windows"',
+			'Sec-Fetch-Dest: document',
+			'Sec-Fetch-Mode: navigate',
+			'Sec-Fetch-Site: cross-site',
+			'Sec-Fetch-User: ?1',
+			'Upgrade-Insecure-Requests: 1',
+			'Cache-Control: max-age=0',
 		);
 
-		$args = array(
-			'timeout'     => 25,
-			'redirection' => 5,
-			'headers'     => wp_parse_args( $headers, $default_headers ),
-			'sslverify'   => false,
-		);
-
-		if ( ! function_exists( 'wp_remote_get' ) ) {
-			return array(
-				'success' => false,
-				'error'   => 'wp_remote_get function not found',
-				'body'    => '',
-			);
+		// If custom headers provided as key-value pairs
+		$formatted_headers = $default_headers;
+		if ( ! empty( $headers ) ) {
+			foreach ( $headers as $k => $v ) {
+				if ( is_string( $k ) ) {
+					$formatted_headers[] = "{$k}: {$v}";
+				} else {
+					$formatted_headers[] = $v;
+				}
+			}
 		}
 
-		$response = \wp_remote_get( $url, $args );
+		// Try native cURL first (bypasses bot signatures and handles decompression properly)
+		if ( function_exists( 'curl_init' ) ) {
+			$cookie_file = sys_get_temp_dir() . '/hwsync_cookies_' . md5( parse_url( $url, PHP_URL_HOST ) ) . '.txt';
 
-		if ( function_exists( 'is_wp_error' ) && \is_wp_error( $response ) ) {
-			return array(
-				'success' => false,
-				'error'   => $response->get_error_message(),
-				'body'    => '',
-			);
+			$ch = curl_init();
+			curl_setopt( $ch, CURLOPT_URL, $url );
+			curl_setopt( $ch, CURLOPT_RETURNTRANSFER, true );
+			curl_setopt( $ch, CURLOPT_FOLLOWLOCATION, true );
+			curl_setopt( $ch, CURLOPT_MAXREDIRS, 5 );
+			curl_setopt( $ch, CURLOPT_TIMEOUT, 30 );
+			curl_setopt( $ch, CURLOPT_CONNECTTIMEOUT, 15 );
+			curl_setopt( $ch, CURLOPT_HTTPHEADER, $formatted_headers );
+			curl_setopt( $ch, CURLOPT_SSL_VERIFYPEER, false );
+			curl_setopt( $ch, CURLOPT_SSL_VERIFYHOST, 0 );
+			curl_setopt( $ch, CURLOPT_ENCODING, '' ); // Decompress gzip, deflate, and br
+			curl_setopt( $ch, CURLOPT_USERAGENT, $default_ua );
+			curl_setopt( $ch, CURLOPT_COOKIEJAR, $cookie_file );
+			curl_setopt( $ch, CURLOPT_COOKIEFILE, $cookie_file );
+			curl_setopt( $ch, CURLOPT_AUTOREFERER, true );
+
+			$body = curl_exec( $ch );
+			$status_code = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+			$error = curl_error( $ch );
+			curl_close( $ch );
+
+			if ( $body !== false && $status_code >= 200 && $status_code < 400 ) {
+				return array(
+					'success'     => true,
+					'status_code' => $status_code,
+					'body'        => $body,
+				);
+			}
+
+			if ( ! empty( $error ) ) {
+				// Log or continue to wp_remote_get fallback
+			}
 		}
 
-		$status_code = function_exists( 'wp_remote_retrieve_response_code' ) ? \wp_remote_retrieve_response_code( $response ) : 200;
-		$body        = function_exists( 'wp_remote_retrieve_body' ) ? \wp_remote_retrieve_body( $response ) : '';
+		// WordPress HTTP API Fallback
+		if ( function_exists( 'wp_remote_get' ) ) {
+			$wp_args = array(
+				'timeout'     => 25,
+				'redirection' => 5,
+				'user-agent'  => $default_ua,
+				'sslverify'   => false,
+			);
+			$response = \wp_remote_get( $url, $wp_args );
+
+			if ( ! ( function_exists( 'is_wp_error' ) && \is_wp_error( $response ) ) ) {
+				$status_code = function_exists( 'wp_remote_retrieve_response_code' ) ? \wp_remote_retrieve_response_code( $response ) : 200;
+				$body        = function_exists( 'wp_remote_retrieve_body' ) ? \wp_remote_retrieve_body( $response ) : '';
+
+				return array(
+					'success'     => ( $status_code >= 200 && $status_code < 400 ),
+					'status_code' => $status_code,
+					'body'        => $body,
+				);
+			}
+		}
 
 		return array(
-			'success'     => ( $status_code >= 200 && $status_code < 300 ),
-			'status_code' => $status_code,
-			'body'        => $body,
+			'success'     => false,
+			'status_code' => 0,
+			'body'        => '',
 		);
 	}
 
