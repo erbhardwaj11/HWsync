@@ -173,7 +173,7 @@ class Post_Sync_Processor {
 			$action = 'created';
 		}
 
-		if ( $post_id && ! is_wp_error( $post_id ) ) {
+		if ( $post_id && ! ( function_exists( 'is_wp_error' ) && \is_wp_error( $post_id ) ) ) {
 			// Update Post Meta
 			update_post_meta( $post_id, '_hwsync_component_id', $component->id );
 			update_post_meta( $post_id, '_hwsync_lowest_price', $lowest_price );

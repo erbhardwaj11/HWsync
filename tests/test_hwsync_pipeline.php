@@ -22,6 +22,16 @@ if ( ! defined( 'OBJECT' ) ) {
 	define( 'OBJECT', 'OBJECT' );
 }
 
+function is_wp_error( $thing ) {
+	return ( $thing instanceof WP_Error );
+}
+
+class WP_Error {
+	public function get_error_message() {
+		return 'An error occurred';
+	}
+}
+
 function untrailingslashit( $val ) {
 	return rtrim( $val, '/\\' );
 }
