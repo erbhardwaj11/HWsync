@@ -22,66 +22,96 @@ if ( ! defined( 'OBJECT' ) ) {
 	define( 'OBJECT', 'OBJECT' );
 }
 
-function trailingslashit( $string ) {
-	return rtrim( $string, '/\\' ) . '/';
-}
-
-function untrailingslashit( $string ) {
-	return rtrim( $string, '/\\' );
-}
-
-function wp_remote_get( $url, $args = array() ) {
-	return array(
-		'response' => array( 'code' => 200 ),
-		'body'     => '<div class="product-item-container"><h4 class="title"><a href="https://mdcomputers.in/amd-ryzen-7-7800x3d.html">AMD Ryzen 7 7800X3D Desktop Processor (100-100000910WOF)</a></h4><span class="price-new">₹ 36,499.00</span><button class="cart">Add to Cart</button></div>',
-	);
-}
-
-function wp_remote_retrieve_response_code( $response ) {
-	return ( is_array( $response ) && isset( $response['response']['code'] ) ) ? intval( $response['response']['code'] ) : 200;
-}
-
-function wp_remote_retrieve_body( $response ) {
-	return ( is_array( $response ) && isset( $response['body'] ) ) ? (string) $response['body'] : '';
-}
-
-function is_wp_error( $thing ) {
-	return ( $thing instanceof WP_Error );
-}
-
-class WP_Error {
-	public function get_error_message() {
-		return 'An error occurred';
+if ( ! function_exists( 'trailingslashit' ) ) {
+	function trailingslashit( $string ) {
+		return rtrim( $string, '/\\' ) . '/';
 	}
 }
 
-function untrailingslashit( $val ) {
-	return rtrim( $val, '/\\' );
-}
-function wp_parse_args( $args, $defaults = array() ) {
-	return array_merge( $defaults, (array) $args );
-}
-function current_time( $type ) {
-	return date( 'Y-m-d H:i:s' );
-}
-function wp_json_encode( $data ) {
-	return json_encode( $data );
-}
-function esc_html( $text ) {
-	return htmlspecialchars( (string)$text, ENT_QUOTES, 'UTF-8' );
-}
-function esc_attr( $text ) {
-	return htmlspecialchars( (string)$text, ENT_QUOTES, 'UTF-8' );
-}
-function esc_url( $url ) {
-	return filter_var( $url, FILTER_SANITIZE_URL );
-}
-function wp_trim_words( $text, $num_words = 55, $more = null ) {
-	$words = explode( ' ', $text );
-	if ( count( $words ) > $num_words ) {
-		return implode( ' ', array_slice( $words, 0, $num_words ) ) . ( $more ?: '...' );
+if ( ! function_exists( 'untrailingslashit' ) ) {
+	function untrailingslashit( $string ) {
+		return rtrim( $string, '/\\' );
 	}
-	return $text;
+}
+
+if ( ! function_exists( 'wp_remote_get' ) ) {
+	function wp_remote_get( $url, $args = array() ) {
+		return array(
+			'response' => array( 'code' => 200 ),
+			'body'     => '<div class="product-item-container"><h4 class="title"><a href="https://mdcomputers.in/amd-ryzen-7-7800x3d.html">AMD Ryzen 7 7800X3D Desktop Processor (100-100000910WOF)</a></h4><span class="price-new">₹ 36,499.00</span><button class="cart">Add to Cart</button></div>',
+		);
+	}
+}
+
+if ( ! function_exists( 'wp_remote_retrieve_response_code' ) ) {
+	function wp_remote_retrieve_response_code( $response ) {
+		return ( is_array( $response ) && isset( $response['response']['code'] ) ) ? intval( $response['response']['code'] ) : 200;
+	}
+}
+
+if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
+	function wp_remote_retrieve_body( $response ) {
+		return ( is_array( $response ) && isset( $response['body'] ) ) ? (string) $response['body'] : '';
+	}
+}
+
+if ( ! function_exists( 'is_wp_error' ) ) {
+	function is_wp_error( $thing ) {
+		return ( $thing instanceof WP_Error );
+	}
+}
+
+if ( ! class_exists( 'WP_Error' ) ) {
+	class WP_Error {
+		public function get_error_message() {
+			return 'An error occurred';
+		}
+	}
+}
+
+if ( ! function_exists( 'wp_parse_args' ) ) {
+	function wp_parse_args( $args, $defaults = array() ) {
+		return array_merge( $defaults, (array) $args );
+	}
+}
+
+if ( ! function_exists( 'current_time' ) ) {
+	function current_time( $type ) {
+		return date( 'Y-m-d H:i:s' );
+	}
+}
+
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	function wp_json_encode( $data ) {
+		return json_encode( $data );
+	}
+}
+
+if ( ! function_exists( 'esc_html' ) ) {
+	function esc_html( $text ) {
+		return htmlspecialchars( (string)$text, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
+if ( ! function_exists( 'esc_attr' ) ) {
+	function esc_attr( $text ) {
+		return htmlspecialchars( (string)$text, ENT_QUOTES, 'UTF-8' );
+	}
+}
+if ( ! function_exists( 'esc_url' ) ) {
+	function esc_url( $url ) {
+		return filter_var( $url, FILTER_SANITIZE_URL );
+	}
+}
+
+if ( ! function_exists( 'wp_trim_words' ) ) {
+	function wp_trim_words( $text, $num_words = 55, $more = null ) {
+		$words = explode( ' ', $text );
+		if ( count( $words ) > $num_words ) {
+			return implode( ' ', array_slice( $words, 0, $num_words ) ) . ( $more ?: '...' );
+		}
+		return $text;
+	}
 }
 
 // In-memory Mock WPDB
