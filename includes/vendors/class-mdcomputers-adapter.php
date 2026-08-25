@@ -29,14 +29,19 @@ class MDComputers_Adapter extends Abstract_Vendor_Adapter {
 	 */
 	protected function get_cookie_file() {
 		$upload_dir = function_exists( 'wp_upload_dir' ) ? \wp_upload_dir() : array( 'basedir' => sys_get_temp_dir() );
-		$dir = trailingslashit( $upload_dir['basedir'] ) . 'hwsync-sessions';
+		$base_dir = isset( $upload_dir['basedir'] ) ? $upload_dir['basedir'] : sys_get_temp_dir();
+		$dir = rtrim( $base_dir, '/\\' ) . DIRECTORY_SEPARATOR . 'hwsync-sessions';
+		
 		if ( ! file_exists( $dir ) && function_exists( 'wp_mkdir_p' ) ) {
 			\wp_mkdir_p( $dir );
+		} elseif ( ! file_exists( $dir ) ) {
+			@mkdir( $dir, 0755, true );
 		}
+
 		if ( is_dir( $dir ) && is_writable( $dir ) ) {
-			return trailingslashit( $dir ) . 'mdcomputers_cookies.txt';
+			return $dir . DIRECTORY_SEPARATOR . 'mdcomputers_cookies.txt';
 		}
-		return sys_get_temp_dir() . '/hwsync_mdcomputers_cookies.txt';
+		return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hwsync_mdcomputers_cookies.txt';
 	}
 
 	/**

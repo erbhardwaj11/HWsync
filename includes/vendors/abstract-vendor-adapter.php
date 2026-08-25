@@ -13,7 +13,7 @@ abstract class Abstract_Vendor_Adapter {
 	public function __construct( $vendor_slug, $vendor_name, $base_url ) {
 		$this->vendor_slug = $vendor_slug;
 		$this->vendor_name = $vendor_name;
-		$this->base_url    = untrailingslashit( $base_url );
+		$this->base_url    = rtrim( (string) $base_url, '/\\' );
 	}
 
 	public function get_slug() {

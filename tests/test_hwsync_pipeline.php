@@ -22,6 +22,14 @@ if ( ! defined( 'OBJECT' ) ) {
 	define( 'OBJECT', 'OBJECT' );
 }
 
+function trailingslashit( $string ) {
+	return rtrim( $string, '/\\' ) . '/';
+}
+
+function untrailingslashit( $string ) {
+	return rtrim( $string, '/\\' );
+}
+
 function wp_remote_get( $url, $args = array() ) {
 	return array(
 		'response' => array( 'code' => 200 ),
