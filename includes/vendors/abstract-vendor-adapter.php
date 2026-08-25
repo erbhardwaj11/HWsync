@@ -94,11 +94,13 @@ abstract class Abstract_Vendor_Adapter {
 	 */
 	public static function clean_price( $price_str ) {
 		if ( is_numeric( $price_str ) ) {
-			return floatval( $price_str );
+			return (float) $price_str;
 		}
 
-		// Remove currency symbols, commas, non-numeric except dot
-		$cleaned = preg_replace( '/[^\d.]/', '', str_replace( ',', '', $price_str ) );
-		return floatval( $cleaned );
+		$str = html_entity_decode( (string) $price_str, ENT_QUOTES, 'UTF-8' );
+		// Strip commas and any characters other than digits and decimal point
+		$cleaned = preg_replace( '/[^\d.]+/u', '', str_replace( ',', '', $str ) );
+
+		return (float) $cleaned;
 	}
 }

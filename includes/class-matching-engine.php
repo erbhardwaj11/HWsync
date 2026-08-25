@@ -195,8 +195,8 @@ class Matching_Engine {
 			$specs['speed'] = $m[1] . 'MHz';
 		}
 
-		// DDR generation
-		if ( preg_match( '/\b(DDR[45])\b/i', $title, $m ) ) {
+		// DDR / GDDR generation
+		if ( preg_match( '/\b(GDDR[56]X?|DDR[45])\b/i', $title, $m ) ) {
 			$specs['memory_type'] = strtoupper( $m[1] );
 		}
 

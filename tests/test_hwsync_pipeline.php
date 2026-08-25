@@ -5,12 +5,21 @@
  * and Database/Post Sync Logic.
  */
 
-// Define mock WP functions and environment for test runner
+// Define mock WP functions and constants for test runner
 if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', __DIR__ . '/../' );
 }
 if ( ! defined( 'HWSYNC_PLUGIN_DIR' ) ) {
 	define( 'HWSYNC_PLUGIN_DIR', __DIR__ . '/../' );
+}
+if ( ! defined( 'ARRAY_A' ) ) {
+	define( 'ARRAY_A', 'ARRAY_A' );
+}
+if ( ! defined( 'ARRAY_N' ) ) {
+	define( 'ARRAY_N', 'ARRAY_N' );
+}
+if ( ! defined( 'OBJECT' ) ) {
+	define( 'OBJECT', 'OBJECT' );
 }
 
 function untrailingslashit( $val ) {
@@ -89,7 +98,12 @@ class MockWPDB {
 				}
 				if ( preg_match( '/WHERE\s+mpn\s*=\s*\'([^\']+)\'/i', $query, $qm ) ) {
 					foreach ( $this->tables[ $tbl ] as $r ) {
-						if ( isset( $r['mpn'] ) && $r['mpn'] === $qm[1] ) return $r;
+						if ( isset( $r['mpn'] ) && strcasecmp( $r['mpn'], $qm[1] ) === 0 ) return $r;
+					}
+				}
+				if ( preg_match( '/WHERE\s+LOWER\(brand\)\s*=\s*LOWER\(\'([^\']+)\'\)\s+AND\s+LOWER\(model_name\)\s*=\s*LOWER\(\'([^\']+)\'\)/i', $query, $qm ) ) {
+					foreach ( $this->tables[ $tbl ] as $r ) {
+						if ( isset( $r['brand'], $r['model_name'] ) && strcasecmp( $r['brand'], $qm[1] ) === 0 && strcasecmp( $r['model_name'], $qm[2] ) === 0 ) return $r;
 					}
 				}
 				if ( preg_match( '/component_id\s*=\s*(\d+)\s+AND\s+vendor_id\s*=\s*(\d+)/i', $query, $qm ) ) {
@@ -186,7 +200,7 @@ function assert_test( $name, $condition ) {
 $p1 = \HWsync\Vendors\Abstract_Vendor_Adapter::clean_price( '₹ 34,999.00' );
 $p2 = \HWsync\Vendors\Abstract_Vendor_Adapter::clean_price( 'Rs. 1,450' );
 $p3 = \HWsync\Vendors\Abstract_Vendor_Adapter::clean_price( '₹89,900' );
-assert_test( 'Clean Indian Currency Strings', $p1 === 34999.00 && $p2 === 1450.00 && $p3 === 89900.00 );
+assert_test( 'Clean Indian Currency Strings', abs( $p1 - 34999.0 ) < 0.01 && abs( $p2 - 1450.0 ) < 0.01 && abs( $p3 - 89900.0 ) < 0.01 );
 
 // Test 2: Category & Brand Detection
 $cat1 = \HWsync\Matching_Engine::detect_category( 'AMD Ryzen 7 7800X3D Desktop Processor' );
@@ -206,7 +220,7 @@ $specs = \HWsync\Matching_Engine::extract_specs( 'AMD Ryzen 7 7800X3D AM5 Proces
 assert_test( 'CPU Socket Spec Extraction', isset( $specs['socket'] ) && $specs['socket'] === 'AM5' );
 
 $gpu_specs = \HWsync\Matching_Engine::extract_specs( 'Gigabyte RTX 4070 Super Eagle OC 12GB GDDR6X', 'gpu' );
-assert_test( 'GPU VRAM & Memory Type Extraction', isset( $gpu_specs['capacity_or_vram'] ) && $gpu_specs['capacity_or_vram'] === '12GB' && isset( $gpu_specs['memory_type'] ) && $gpu_specs['memory_type'] === 'DDR6' );
+assert_test( 'GPU VRAM & Memory Type Extraction', isset( $gpu_specs['capacity_or_vram'] ) && $gpu_specs['capacity_or_vram'] === '12GB' && isset( $gpu_specs['memory_type'] ) && $gpu_specs['memory_type'] === 'GDDR6X' );
 
 // Test 5: Component Creation & Multi-Vendor Price Linking
 $v1 = new \HWsync\Models\Vendor( array( 'id' => 1, 'vendor_slug' => 'mdcomputers', 'vendor_name' => 'MDComputers' ) );

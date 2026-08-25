@@ -7,6 +7,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! defined( 'ARRAY_A' ) ) {
+	define( 'ARRAY_A', 'ARRAY_A' );
+}
+
 class Vendor {
 	public $id;
 	public $vendor_slug;
@@ -28,14 +32,14 @@ class Vendor {
 	public static function find_by_id( $id ) {
 		global $wpdb;
 		$table = Database::get_table_name( 'vendors' );
-		$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", $id ), ARRAY_A );
+		$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", $id ), \ARRAY_A );
 		return $row ? new self( $row ) : null;
 	}
 
 	public static function find_by_slug( $slug ) {
 		global $wpdb;
 		$table = Database::get_table_name( 'vendors' );
-		$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE vendor_slug = %s", $slug ), ARRAY_A );
+		$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE vendor_slug = %s", $slug ), \ARRAY_A );
 		return $row ? new self( $row ) : null;
 	}
 
@@ -48,7 +52,7 @@ class Vendor {
 		}
 		$sql .= " ORDER BY vendor_name ASC";
 
-		$results = $wpdb->get_results( $sql, ARRAY_A );
+		$results = $wpdb->get_results( $sql, \ARRAY_A );
 		$vendors = array();
 		if ( $results ) {
 			foreach ( $results as $row ) {

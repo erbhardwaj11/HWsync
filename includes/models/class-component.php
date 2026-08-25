@@ -7,6 +7,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! defined( 'ARRAY_A' ) ) {
+	define( 'ARRAY_A', 'ARRAY_A' );
+}
+
 class Component {
 	public $id;
 	public $category;
@@ -32,7 +36,7 @@ class Component {
 	public static function find_by_id( $id ) {
 		global $wpdb;
 		$table = Database::get_table_name( 'components' );
-		$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", $id ), ARRAY_A );
+		$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", $id ), \ARRAY_A );
 		return $row ? new self( $row ) : null;
 	}
 
@@ -42,7 +46,7 @@ class Component {
 		}
 		global $wpdb;
 		$table = Database::get_table_name( 'components' );
-		$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE mpn = %s", $mpn ), ARRAY_A );
+		$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE mpn = %s", $mpn ), \ARRAY_A );
 		return $row ? new self( $row ) : null;
 	}
 
@@ -55,7 +59,7 @@ class Component {
 				$brand,
 				$model_name
 			),
-			ARRAY_A
+			\ARRAY_A
 		);
 		return $row ? new self( $row ) : null;
 	}
@@ -79,7 +83,7 @@ class Component {
 		$params[] = $limit;
 		$params[] = $offset;
 
-		$results = $wpdb->get_results( $wpdb->prepare( $sql, ...$params ), ARRAY_A );
+		$results = $wpdb->get_results( $wpdb->prepare( $sql, ...$params ), \ARRAY_A );
 		$components = array();
 		if ( $results ) {
 			foreach ( $results as $row ) {

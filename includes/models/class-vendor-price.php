@@ -7,6 +7,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! defined( 'ARRAY_A' ) ) {
+	define( 'ARRAY_A', 'ARRAY_A' );
+}
+
 class Vendor_Price {
 	public $id;
 	public $component_id;
@@ -35,7 +39,7 @@ class Vendor_Price {
 	public static function find_by_id( $id ) {
 		global $wpdb;
 		$table = Database::get_table_name( 'vendor_prices' );
-		$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", $id ), ARRAY_A );
+		$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", $id ), \ARRAY_A );
 		return $row ? new self( $row ) : null;
 	}
 
@@ -48,7 +52,7 @@ class Vendor_Price {
 				$component_id,
 				$vendor_id
 			),
-			ARRAY_A
+			\ARRAY_A
 		);
 		return $row ? new self( $row ) : null;
 	}
@@ -64,7 +68,7 @@ class Vendor_Price {
 				WHERE vp.component_id = %d
 				ORDER BY vp.is_in_stock DESC, vp.price ASC";
 
-		$results = $wpdb->get_results( $wpdb->prepare( $sql, $component_id ), ARRAY_A );
+		$results = $wpdb->get_results( $wpdb->prepare( $sql, $component_id ), \ARRAY_A );
 		$prices = array();
 		if ( $results ) {
 			foreach ( $results as $row ) {
