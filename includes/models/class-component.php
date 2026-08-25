@@ -30,6 +30,12 @@ class Component {
 			foreach ( $data as $key => $value ) {
 				$this->$key = $value;
 			}
+			if ( ! empty( $this->specs_json ) && is_string( $this->specs_json ) ) {
+				$decoded = json_decode( $this->specs_json, true );
+				if ( is_array( $decoded ) ) {
+					$this->specs_json = $decoded;
+				}
+			}
 		}
 	}
 

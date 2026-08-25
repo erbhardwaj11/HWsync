@@ -33,6 +33,12 @@ class Vendor_Price {
 			foreach ( $data as $key => $value ) {
 				$this->$key = $value;
 			}
+			if ( ! empty( $this->raw_data_json ) && is_string( $this->raw_data_json ) ) {
+				$decoded = json_decode( $this->raw_data_json, true );
+				if ( is_array( $decoded ) ) {
+					$this->raw_data_json = $decoded;
+				}
+			}
 		}
 	}
 
