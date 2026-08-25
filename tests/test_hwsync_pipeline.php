@@ -308,6 +308,14 @@ $meta_lowest = get_post_meta( $post_id, '_hwsync_lowest_price' );
 $meta_vendor_count = get_post_meta( $post_id, '_hwsync_vendor_count' );
 assert_test( 'WordPress Post Meta Contains Lowest Price (35899.00)', floatval( $meta_lowest ) === 35899.00 && intval( $meta_vendor_count ) === 2 );
 
+// Test 8: Realtime Sync Logger Callback
+$emitted_events = array();
+$dummy_logger = function( $level, $message, $stats ) use ( &$emitted_events ) {
+	$emitted_events[] = array( 'level' => $level, 'message' => $message );
+};
+$sync_manager->run_sync( array( 'vendor' => 'mdcomputers', 'category' => 'cpu' ), $dummy_logger );
+assert_test( 'Sync Manager Emits Realtime Progress Events', count( $emitted_events ) >= 2 );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";
