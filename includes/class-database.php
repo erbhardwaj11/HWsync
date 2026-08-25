@@ -17,7 +17,13 @@ class Database {
 		global $wpdb;
 		$charset_collate = $wpdb->get_charset_collate();
 
-		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+		if ( ! function_exists( 'dbDelta' ) ) {
+			if ( defined( 'ABSPATH' ) && file_exists( ABSPATH . 'wp-admin/includes/upgrade.php' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+			} elseif ( defined( 'ABSPATH' ) && file_exists( rtrim( ABSPATH, '/\\' ) . '/wp-admin/includes/upgrade.php' ) ) {
+				require_once rtrim( ABSPATH, '/\\' ) . '/wp-admin/includes/upgrade.php';
+			}
+		}
 
 		$vendors_table = self::get_table_name( 'vendors' );
 		$components_table = self::get_table_name( 'components' );

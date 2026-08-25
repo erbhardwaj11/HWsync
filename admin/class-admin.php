@@ -249,4 +249,22 @@ class Admin {
 		wp_safe_redirect( admin_url( 'admin.php?page=hwsync-dashboard&sync_status=success' ) );
 		exit;
 	}
+
+	public static function handle_toggle_vendor() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( __( 'Unauthorized request', 'hwsync' ) );
+		}
+
+		$vendor_id = isset( $_GET['vendor_id'] ) ? intval( $_GET['vendor_id'] ) : 0;
+		if ( $vendor_id ) {
+			$vendor = Vendor::find_by_id( $vendor_id );
+			if ( $vendor ) {
+				$vendor->is_active = $vendor->is_active ? 0 : 1;
+				$vendor->save();
+			}
+		}
+
+		wp_safe_redirect( admin_url( 'admin.php?page=hwsync-vendors' ) );
+		exit;
+	}
 }

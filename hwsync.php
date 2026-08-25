@@ -87,13 +87,14 @@ class HWsync_Plugin {
 		register_activation_hook( HWSYNC_PLUGIN_FILE, array( $this, 'activate' ) );
 		register_deactivation_hook( HWSYNC_PLUGIN_FILE, array( $this, 'deactivate' ) );
 
-		add_action( 'plugins_loaded', array( $this, 'init' ) );
+		add_action( 'init', array( $this, 'init' ) );
 	}
 
 	public function activate() {
 		\HWsync\Database::create_tables();
 		\HWsync\Database::seed_default_vendors();
 		\HWsync\Cron::schedule_events();
+		\HWsync\Post_Sync_Processor::register_post_type();
 		flush_rewrite_rules();
 	}
 
@@ -105,7 +106,7 @@ class HWsync_Plugin {
 	public function init() {
 		load_plugin_textdomain( 'hwsync', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
 
-		// Register custom post type / taxonomy if configured
+		// Register custom post type & taxonomies on init
 		\HWsync\Post_Sync_Processor::register_post_type();
 
 		// Init public shortcodes & styles
