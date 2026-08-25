@@ -76,7 +76,7 @@ class Sync_Manager {
 						}
 
 						$report['total_items_fetched'] += count( $raw_items );
-						$this->emit( $logger, 'info', "Fetched " . count( $raw_items ) . " products from {$vendor->vendor_name} [{$cat}]", $report );
+						$this->emit( $logger, 'info', "Fetched " . count( $raw_items ) . " product listings from {$vendor->vendor_name} [{$cat}]. Processing matches & prices...", $report );
 
 						foreach ( $raw_items as $item ) {
 							$sync_res = $this->sync_single_item( $item, $vendor );
@@ -86,7 +86,10 @@ class Sync_Manager {
 								$report['components_processed'] = count( $report['touched_component_ids'] );
 
 								$stock_label = ! empty( $item['in_stock'] ) ? 'In Stock' : 'Out of Stock';
-								$this->emit( $logger, 'match', "Matched: \"{$item['title']}\" -> ₹" . number_format( $item['price'], 2 ) . " ({$stock_label})", $report );
+								$price_display = '₹' . number_format( (float)$item['price'], 2 );
+								$sku_display = ! empty( $item['sku'] ) ? " [SKU: {$item['sku']}]" : '';
+								
+								$this->emit( $logger, 'match', "[{$vendor->vendor_name}] Matched & Saved: \"{$item['title']}\"{$sku_display} @ {$price_display} ({$stock_label})", $report );
 							}
 						}
 
@@ -100,7 +103,7 @@ class Sync_Manager {
 			}
 
 			$vendor->update_last_sync();
-			$this->emit( $logger, 'success', "Completed scrape for {$vendor->vendor_name}.", $report );
+			$this->emit( $logger, 'success', "Completed scrape cycle for {$vendor->vendor_name}.", $report );
 		}
 
 		$touched_ids = array_keys( $report['touched_component_ids'] );
@@ -112,7 +115,7 @@ class Sync_Manager {
 			$post_stats = Post_Sync_Processor::process_all( $touched_ids );
 			$report['posts_synced'] = $post_stats['created'] + $post_stats['updated'];
 			$report['post_stats']   = $post_stats;
-			$this->emit( $logger, 'success', "Post sync complete! Created: {$post_stats['created']}, Updated: {$post_stats['updated']}, Skipped: {$post_stats['skipped']}", $report );
+			$this->emit( $logger, 'success', "WordPress Catalog Updated! Posts Created: {$post_stats['created']}, Updated: {$post_stats['updated']}, Unchanged: {$post_stats['skipped']}", $report );
 		} else {
 			$this->emit( $logger, 'info', "No new components to sync to WordPress posts.", $report );
 		}

@@ -37,56 +37,65 @@ class PrimeABGB_Adapter extends Abstract_Vendor_Adapter {
 		return $this->parse_html( $res['body'], $category );
 	}
 
-	public function parse_html( $html, $category ) {
+	public function parse_html( $html_content, $category ) {
 		$items = array();
-		if ( empty( $html ) ) {
+		if ( empty( $html_content ) ) {
 			return $items;
 		}
 
-		// WooCommerce card parsing
-		if ( preg_match_all( '/<li[^>]*class="[^"]*product[^"]*"[\s\S]*?<\/li>/i', $html, $cards ) ) {
-			foreach ( $cards[0] as $card_html ) {
-				$item = $this->extract_card( $card_html, $category );
-				if ( $item ) {
-					$items[] = $item;
-				}
-			}
-		}
+		// Strategy 1: GTM Tag Data Extraction (Highest fidelity)
+		if ( preg_match_all( '/data-gtm4wp_product_data="([^"]+)"/', $html_content, $gtm_matches ) ) {
+			foreach ( $gtm_matches[1] as $gtm_raw ) {
+				$decoded = html_entity_decode( $gtm_raw, ENT_QUOTES, 'UTF-8' );
+				$data = json_decode( $decoded, true );
+				if ( is_array( $data ) ) {
+					$title = isset( $data['item_name'] ) ? trim( $data['item_name'] ) : '';
+					$prod_url = isset( $data['productlink'] ) ? trim( $data['productlink'] ) : '';
+					$price = isset( $data['price'] ) ? floatval( $data['price'] ) : 0.0;
+					$sku = isset( $data['sku'] ) ? trim( $data['sku'] ) : '';
+					$in_stock = ( ! isset( $data['stockstatus'] ) || $data['stockstatus'] === 'instock' );
 
-		// Global WooCommerce title & link fallback
-		if ( empty( $items ) ) {
-			if ( preg_match_all( '/<h2[^>]*class="[^"]*woocommerce-loop-product__title[^"]*"[^>]*>([^<]+)<\/h2>/i', $html, $matches, PREG_SET_ORDER ) ) {
-				foreach ( $matches as $m ) {
-					$title = html_entity_decode( trim( $m[1] ) );
-					$pos = strpos( $html, $m[0] );
-					$snippet = ( $pos !== false ) ? substr( $html, max( 0, $pos - 300 ), 1500 ) : '';
-
-					$prod_url = '';
-					if ( preg_match( '/<a[^>]*href="([^"]+)"[^>]*class="[^"]*woocommerce-LoopProduct-link/i', $snippet, $um ) ||
-					     preg_match( '/<a[^>]*href="([^"]+)"/i', $snippet, $um ) ) {
-						$prod_url = $um[1];
-					}
-
-					$price = 0.0;
-					$reg_price = null;
-					if ( preg_match( '/<ins[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $snippet, $pm ) ) {
-						$price = self::clean_price( $pm[1] );
-					} elseif ( preg_match( '/(?:price|amount)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $snippet, $pm2 ) ) {
-						$price = self::clean_price( $pm2[1] );
-					}
-
-					if ( preg_match( '/<del[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $snippet, $rpm ) ) {
-						$reg_price = self::clean_price( $rpm[1] );
-					}
-
-					$in_stock = ( stripos( $snippet, 'out-of-stock' ) === false );
-
-					if ( $price > 0 && ! empty( $title ) && ! empty( $prod_url ) ) {
+					if ( $price > 0 && ! empty( $title ) ) {
 						$items[] = array(
 							'title'          => $title,
 							'url'            => $prod_url,
 							'price'          => $price,
-							'original_price' => $reg_price,
+							'original_price' => null,
+							'sku'            => $sku,
+							'in_stock'       => $in_stock,
+							'stock_status'   => $in_stock ? 'in_stock' : 'out_of_stock',
+							'category'       => $category,
+							'vendor_slug'    => $this->vendor_slug,
+							'raw_data'       => array( 'raw_title' => $title, 'price' => $price, 'sku' => $sku ),
+						);
+					}
+				}
+			}
+			if ( ! empty( $items ) ) {
+				return $items;
+			}
+		}
+
+		// Strategy 2: HTML Card parsing
+		if ( preg_match_all( '/<div[^>]*class="[^"]*product-item[^"]*"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/i', $html_content, $cards ) ) {
+			foreach ( $cards[0] as $card_html ) {
+				$title_m = preg_match( '/<h3[^>]*class="product-title"[^>]*>\s*<a\s+href="([^"]+)"[^>]*>([^<]+)<\/a>/i', $card_html, $tm );
+				$price_m = preg_match( '/<ins[^>]*>[\s\S]*?<bdi>[\s\S]*?([\d,]+(?:\.\d+)?)<\/bdi>/i', $card_html, $pm ) ||
+				           preg_match( '/<bdi>[\s\S]*?([\d,]+(?:\.\d+)?)<\/bdi>/i', $card_html, $pm );
+
+				if ( $title_m && $price_m ) {
+					$title = html_entity_decode( trim( $tm[2] ) );
+					$url = $tm[1];
+					$price = self::clean_price( $pm[1] );
+					$in_stock = ( stripos( $card_html, 'out-of-stock' ) === false );
+
+					if ( $price > 0 && ! empty( $title ) ) {
+						$items[] = array(
+							'title'          => $title,
+							'url'            => $url,
+							'price'          => $price,
+							'original_price' => null,
+							'sku'            => '',
 							'in_stock'       => $in_stock,
 							'stock_status'   => $in_stock ? 'in_stock' : 'out_of_stock',
 							'category'       => $category,
@@ -99,54 +108,5 @@ class PrimeABGB_Adapter extends Abstract_Vendor_Adapter {
 		}
 
 		return $items;
-	}
-
-	private function extract_card( $card_html, $category ) {
-		$title = '';
-		$url   = '';
-
-		if ( preg_match( '/<h2[^>]*class="[^"]*woocommerce-loop-product__title[^"]*"[^>]*>([^<]+)<\/h2>/i', $card_html, $tm ) ||
-		     preg_match( '/<h[234][^>]*>\s*<a\s+href="([^"]+)"[^>]*>([^<]+)<\/a>/i', $card_html, $tm2 ) ) {
-			$title = isset( $tm[1] ) ? html_entity_decode( trim( $tm[1] ) ) : html_entity_decode( trim( $tm2[2] ) );
-		}
-
-		if ( preg_match( '/<a[^>]*class="[^"]*woocommerce-LoopProduct-link[^"]*"[^>]*href="([^"]+)"/i', $card_html, $um ) ||
-		     preg_match( '/<a[^>]*href="([^"]+)"/i', $card_html, $um2 ) ) {
-			$url = isset( $um[1] ) ? $um[1] : $um2[1];
-		}
-
-		if ( empty( $title ) || empty( $url ) ) {
-			return null;
-		}
-
-		$price = 0.0;
-		$orig_price = null;
-		if ( preg_match( '/<ins[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $card_html, $pm ) ) {
-			$price = self::clean_price( $pm[1] );
-		} elseif ( preg_match( '/(?:price|amount)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $card_html, $pm2 ) ) {
-			$price = self::clean_price( $pm2[1] );
-		}
-
-		if ( preg_match( '/<del[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $card_html, $rpm ) ) {
-			$orig_price = self::clean_price( $rpm[1] );
-		}
-
-		$in_stock = ( stripos( $card_html, 'out-of-stock' ) === false && stripos( $card_html, 'out of stock' ) === false );
-
-		if ( $price > 0 ) {
-			return array(
-				'title'          => $title,
-				'url'            => $url,
-				'price'          => $price,
-				'original_price' => $orig_price,
-				'in_stock'       => $in_stock,
-				'stock_status'   => $in_stock ? 'in_stock' : 'out_of_stock',
-				'category'       => $category,
-				'vendor_slug'    => $this->vendor_slug,
-				'raw_data'       => array( 'raw_title' => $title, 'price' => $price ),
-			);
-		}
-
-		return null;
 	}
 }
