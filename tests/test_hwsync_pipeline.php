@@ -22,6 +22,21 @@ if ( ! defined( 'OBJECT' ) ) {
 	define( 'OBJECT', 'OBJECT' );
 }
 
+function wp_remote_get( $url, $args = array() ) {
+	return array(
+		'response' => array( 'code' => 200 ),
+		'body'     => '<div class="product-item-container"><h4 class="title"><a href="https://mdcomputers.in/amd-ryzen-7-7800x3d.html">AMD Ryzen 7 7800X3D Desktop Processor (100-100000910WOF)</a></h4><span class="price-new">₹ 36,499.00</span><button class="cart">Add to Cart</button></div>',
+	);
+}
+
+function wp_remote_retrieve_response_code( $response ) {
+	return ( is_array( $response ) && isset( $response['response']['code'] ) ) ? intval( $response['response']['code'] ) : 200;
+}
+
+function wp_remote_retrieve_body( $response ) {
+	return ( is_array( $response ) && isset( $response['body'] ) ) ? (string) $response['body'] : '';
+}
+
 function is_wp_error( $thing ) {
 	return ( $thing instanceof WP_Error );
 }

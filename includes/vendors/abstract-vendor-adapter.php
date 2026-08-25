@@ -69,9 +69,17 @@ abstract class Abstract_Vendor_Adapter {
 			'sslverify'   => false,
 		);
 
-		$response = wp_remote_get( $url, $args );
+		if ( ! function_exists( 'wp_remote_get' ) ) {
+			return array(
+				'success' => false,
+				'error'   => 'wp_remote_get function not found',
+				'body'    => '',
+			);
+		}
 
-		if ( is_wp_error( $response ) ) {
+		$response = \wp_remote_get( $url, $args );
+
+		if ( function_exists( 'is_wp_error' ) && \is_wp_error( $response ) ) {
 			return array(
 				'success' => false,
 				'error'   => $response->get_error_message(),
@@ -79,8 +87,8 @@ abstract class Abstract_Vendor_Adapter {
 			);
 		}
 
-		$status_code = wp_remote_retrieve_response_code( $response );
-		$body = wp_remote_retrieve_body( $response );
+		$status_code = function_exists( 'wp_remote_retrieve_response_code' ) ? \wp_remote_retrieve_response_code( $response ) : 200;
+		$body        = function_exists( 'wp_remote_retrieve_body' ) ? \wp_remote_retrieve_body( $response ) : '';
 
 		return array(
 			'success'     => ( $status_code >= 200 && $status_code < 300 ),
