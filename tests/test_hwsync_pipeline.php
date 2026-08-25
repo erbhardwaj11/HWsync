@@ -301,11 +301,12 @@ assert_test( 'Vendor Prices Linked Count = 2', count( $prices ) === 2 );
 $stats = \HWsync\Post_Sync_Processor::process_all( array( $comp->id ) );
 assert_test( 'Post Sync Processor Created Post Record', $stats['created'] === 1 );
 
-// Verify Post Meta
+// Re-fetch component from DB to get updated wp_post_id
+$comp = \HWsync\Models\Component::find_by_id( $res1['component_id'] );
 $post_id = $comp->wp_post_id;
 $meta_lowest = get_post_meta( $post_id, '_hwsync_lowest_price' );
 $meta_vendor_count = get_post_meta( $post_id, '_hwsync_vendor_count' );
-assert_test( 'WordPress Post Meta Contains Lowest Price (35899.00)', $meta_lowest == 35899.00 && $meta_vendor_count == 2 );
+assert_test( 'WordPress Post Meta Contains Lowest Price (35899.00)', floatval( $meta_lowest ) === 35899.00 && intval( $meta_vendor_count ) === 2 );
 
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
