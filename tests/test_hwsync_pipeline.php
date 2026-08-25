@@ -369,6 +369,31 @@ $dummy_logger = function( $level, $message, $stats ) use ( &$emitted_events ) {
 $sync_manager->run_sync( array( 'vendor' => 'mdcomputers', 'category' => 'cpu' ), $dummy_logger );
 assert_test( 'Sync Manager Emits Realtime Progress Events', count( $emitted_events ) >= 2 );
 
+// Test 9: Skip Out of Stock items
+$item_oos = array(
+	'title'        => 'Intel Core i9-14900KS Special Edition Processor',
+	'url'          => 'https://example.com/i9-14900ks',
+	'price'        => 65000.00,
+	'in_stock'     => false,
+	'stock_status' => 'out_of_stock',
+	'category'     => 'cpu',
+);
+$res_oos = $sync_manager->sync_single_item( $item_oos, $v1 );
+assert_test( 'Out of Stock Component is Skipped (returns null)', $res_oos === null );
+
+// Test 10: In-Stock item with no price is marked NA
+$item_na = array(
+	'title'        => 'Noctua NH-D15 G2 Special Edition Cooler',
+	'url'          => 'https://example.com/noctua-nh-d15-g2',
+	'price'        => 0.0,
+	'in_stock'     => true,
+	'stock_status' => 'in_stock',
+	'category'     => 'cooler',
+);
+$res_na = $sync_manager->sync_single_item( $item_na, $v1 );
+$vp_na = \HWsync\Models\Vendor_Price::find_by_id( $res_na['vendor_price_id'] );
+assert_test( 'In-Stock item with zero price saved with display_price NA', ( ! empty( $res_na['component_id'] ) && isset( $vp_na->raw_data_json['display_price'] ) && $vp_na->raw_data_json['display_price'] === 'NA' ) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

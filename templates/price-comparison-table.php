@@ -61,12 +61,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 								<?php endif; ?>
 							</td>
 							<td class="hwsync-col-price">
-								<span class="hwsync-price-value">₹<?php echo esc_html( number_format( $p->price, 2 ) ); ?></span>
-								<?php if ( ! empty( $p->original_price ) && $p->original_price > $p->price ) : ?>
-									<del class="hwsync-original-price">₹<?php echo esc_html( number_format( $p->original_price, 2 ) ); ?></del>
-								<?php endif; ?>
-								<?php if ( $is_lowest && $in_stock ) : ?>
-									<span class="hwsync-best-tag"><?php esc_html_e( 'Best Price', 'hwsync' ); ?></span>
+								<?php if ( $p->price > 0 ) : ?>
+									<span class="hwsync-price-value">₹<?php echo esc_html( number_format( $p->price, 2 ) ); ?></span>
+									<?php if ( ! empty( $p->original_price ) && $p->original_price > $p->price ) : ?>
+										<del class="hwsync-original-price">₹<?php echo esc_html( number_format( $p->original_price, 2 ) ); ?></del>
+									<?php endif; ?>
+									<?php if ( $is_lowest && $in_stock ) : ?>
+										<span class="hwsync-best-tag"><?php esc_html_e( 'Best Price', 'hwsync' ); ?></span>
+									<?php endif; ?>
+								<?php else : ?>
+									<span class="hwsync-price-value hwsync-price-na" style="color: #64748b; font-weight: bold;"><?php esc_html_e( 'NA', 'hwsync' ); ?></span>
 								<?php endif; ?>
 							</td>
 							<td class="hwsync-col-action">

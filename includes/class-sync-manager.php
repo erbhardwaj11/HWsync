@@ -79,15 +79,22 @@ class Sync_Manager {
 						$this->emit( $logger, 'info', "Fetched " . count( $raw_items ) . " product listings from {$vendor->vendor_name} [{$cat}]. Processing matches & prices...", $report );
 
 						foreach ( $raw_items as $item ) {
+							// Skip Out of Stock items
+							if ( empty( $item['in_stock'] ) || ( isset( $item['stock_status'] ) && $item['stock_status'] === 'out_of_stock' ) ) {
+								$this->emit( $logger, 'debug', "[{$vendor->vendor_name}] Skipped Out-of-Stock: \"{$item['title']}\"", $report );
+								continue;
+							}
+
 							$sync_res = $this->sync_single_item( $item, $vendor );
 							if ( $sync_res && ! empty( $sync_res['component_id'] ) ) {
 								$report['touched_component_ids'][ $sync_res['component_id'] ] = true;
 								$report['prices_updated']++;
 								$report['components_processed'] = count( $report['touched_component_ids'] );
 
-								$stock_label = ! empty( $item['in_stock'] ) ? 'In Stock' : 'Out of Stock';
-								$price_display = '₹' . number_format( (float)$item['price'], 2 );
-								$sku_display = ! empty( $item['sku'] ) ? " [SKU: {$item['sku']}]" : '';
+								$stock_label   = 'In Stock';
+								$price_val     = isset( $item['price'] ) ? floatval( $item['price'] ) : 0.0;
+								$price_display = ( $price_val > 0 ) ? '₹' . number_format( $price_val, 2 ) : 'NA';
+								$sku_display   = ! empty( $item['sku'] ) ? " [SKU: {$item['sku']}]" : '';
 								
 								$this->emit( $logger, 'match', "[{$vendor->vendor_name}] Matched & Saved: \"{$item['title']}\"{$sku_display} @ {$price_display} ({$stock_label})", $report );
 							}
@@ -146,6 +153,11 @@ class Sync_Manager {
 	 * @return array
 	 */
 	public function sync_single_item( $item, Vendor $vendor ) {
+		// Skip Out of Stock items
+		if ( empty( $item['in_stock'] ) || ( isset( $item['stock_status'] ) && $item['stock_status'] === 'out_of_stock' ) ) {
+			return null;
+		}
+
 		// 1. Match or Create Canonical Component
 		$component = Matching_Engine::match_or_create_component( $item );
 		if ( ! $component || empty( $component->id ) ) {
@@ -161,14 +173,24 @@ class Sync_Manager {
 			) );
 		}
 
+		$price_val = isset( $item['price'] ) && is_numeric( $item['price'] ) ? floatval( $item['price'] ) : 0.0;
+
 		$vendor_price->vendor_product_title = isset( $item['title'] ) ? $item['title'] : '';
 		$vendor_price->product_url          = isset( $item['url'] ) ? $item['url'] : '';
-		$vendor_price->price                = isset( $item['price'] ) ? floatval( $item['price'] ) : 0.0;
-		$vendor_price->original_price       = isset( $item['original_price'] ) ? floatval( $item['original_price'] ) : null;
-		$vendor_price->is_in_stock          = ! empty( $item['in_stock'] ) ? 1 : 0;
-		$vendor_price->stock_status         = isset( $item['stock_status'] ) ? $item['stock_status'] : 'in_stock';
+		$vendor_price->price                = $price_val;
+		$vendor_price->original_price       = isset( $item['original_price'] ) && is_numeric( $item['original_price'] ) ? floatval( $item['original_price'] ) : null;
+		$vendor_price->is_in_stock          = 1;
+		$vendor_price->stock_status         = 'in_stock';
 		$vendor_price->vendor_sku           = isset( $item['sku'] ) ? $item['sku'] : null;
-		$vendor_price->raw_data_json        = isset( $item['raw_data'] ) ? $item['raw_data'] : null;
+		
+		// If price is missing/zero for an in-stock component, mark formatted price as 'NA'
+		if ( $price_val <= 0 ) {
+			$raw_data = isset( $item['raw_data'] ) && is_array( $item['raw_data'] ) ? $item['raw_data'] : array();
+			$raw_data['display_price'] = 'NA';
+			$vendor_price->raw_data_json = $raw_data;
+		} else {
+			$vendor_price->raw_data_json = isset( $item['raw_data'] ) ? $item['raw_data'] : null;
+		}
 
 		$vendor_price->save();
 

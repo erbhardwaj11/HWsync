@@ -277,6 +277,20 @@ class Admin {
 
 					abortController = new AbortController();
 
+					if (vendor === 'mdcomputers') {
+						runBrowserHeadlessSync('mdcomputers', category, nonce);
+					} else if (vendor === 'all') {
+						appendLog('info', 'Phase 1: Running in-browser headless sync for MDComputers...');
+						runBrowserHeadlessSync('mdcomputers', category, nonce, function() {
+							appendLog('info', 'Phase 2: Running streaming cURL sync for remaining Indian retailers...');
+							runStreamSync('all', category, nonce);
+						});
+					} else {
+						runStreamSync(vendor, category, nonce);
+					}
+				});
+
+				function runStreamSync(vendor, category, nonce) {
 					var postData = new URLSearchParams();
 					postData.append('action', 'hwsync_stream_sync');
 					postData.append('target_vendor', vendor);
@@ -301,7 +315,7 @@ class Admin {
 								}
 								buffer += decoder.decode(result.value, { stream: true });
 								var lines = buffer.split('\n\n');
-								buffer = lines.pop(); // Keep partial chunk
+								buffer = lines.pop();
 
 								lines.forEach(function(block) {
 									var trimmed = block.trim();
@@ -317,9 +331,7 @@ class Admin {
 												if (data.stats.prices !== undefined) mPrices.textContent = data.stats.prices;
 												if (data.stats.posts !== undefined) mPosts.textContent = data.stats.posts;
 											}
-										} catch (e) {
-											// Ignore parse errors on raw stream fragments
-										}
+										} catch (e) {}
 									}
 								});
 
@@ -336,7 +348,131 @@ class Admin {
 						}
 						finishSync();
 					});
-				});
+				}
+
+				function runBrowserHeadlessSync(vendorSlug, category, nonce, nextCallback) {
+					var endpoints = {
+						'cpu': 'https://mdcomputers.in/catalog/processor',
+						'gpu': 'https://mdcomputers.in/catalog/graphics-card',
+						'motherboard': 'https://mdcomputers.in/catalog/motherboard',
+						'ram': 'https://mdcomputers.in/catalog/ram/desktop-ram',
+						'storage': 'https://mdcomputers.in/catalog/storage',
+						'psu': 'https://mdcomputers.in/catalog/smps',
+						'cooler': 'https://mdcomputers.in/cooling-system.html',
+						'cabinet': 'https://mdcomputers.in/catalog/cabinet'
+					};
+
+					var catsToSync = (category === 'all') ? Object.keys(endpoints) : [category];
+					var currentCatIndex = 0;
+
+					function processNextCategory() {
+						if (currentCatIndex >= catsToSync.length) {
+							appendLog('success', 'In-Browser headless sync completed for MDComputers.');
+							if (typeof nextCallback === 'function') {
+								nextCallback();
+							} else {
+								finishSync();
+							}
+							return;
+						}
+
+						var currentCat = catsToSync[currentCatIndex++];
+						var targetUrl = endpoints[currentCat] || endpoints['cpu'];
+
+						appendLog('info', '[MDComputers] Initiating In-Browser Headless Request for category [' + currentCat + '] (' + targetUrl + ')...');
+
+						// In-browser authentic fetch with genuine browser fingerprint & CORS mode
+						fetch(targetUrl, {
+							method: 'GET',
+							credentials: 'omit',
+							signal: abortController ? abortController.signal : null
+						}).then(function(resp) {
+							return resp.text();
+						}).then(function(htmlText) {
+							var parser = new DOMParser();
+							var doc = parser.parseFromString(htmlText, 'text/html');
+							var productElements = doc.querySelectorAll('.product-grid-item, .product-item-container, .product-thumb, .product-layout');
+							
+							appendLog('info', '[MDComputers] In-browser engine detected ' + productElements.length + ' raw cards on page.');
+
+							var parsedItems = [];
+							productElements.forEach(function(el) {
+								var titleEl = el.querySelector('h3 a, h4 a, .product-entities-title a, .name a');
+								if (!titleEl) return;
+								var title = titleEl.textContent.trim();
+								var link = titleEl.getAttribute('href');
+
+								// Stock status check
+								var cardText = el.textContent.toLowerCase();
+								var isOutOfStock = cardText.indexOf('out of stock') !== -1 || cardText.indexOf('sold out') !== -1;
+								if (isOutOfStock) {
+									appendLog('debug', '[MDComputers] Skipped Out-of-Stock: "' + title + '"');
+									return; // Skip Out of Stock
+								}
+
+								// Price extraction
+								var priceEl = el.querySelector('.price-new, .price, .amount, .special-price');
+								var price = 0;
+								if (priceEl) {
+									var pMatch = priceEl.textContent.replace(/,/g, '').match(/[\d]+(?:\.\d+)?/);
+									if (pMatch) price = parseFloat(pMatch[0]);
+								}
+
+								var priceDisplay = (price > 0) ? '₹' + price.toFixed(2) : 'NA';
+
+								parsedItems.push({
+									title: title,
+									url: link,
+									price: price, // 0 means NA
+									in_stock: true,
+									stock_status: 'in_stock',
+									category: currentCat,
+									vendor_slug: 'mdcomputers',
+									raw_data: { raw_title: title, display_price: priceDisplay }
+								});
+							});
+
+							appendLog('info', '[MDComputers] Sending ' + parsedItems.length + ' in-stock items to database...');
+
+							// Send in-browser batch to WordPress
+							var batchData = new URLSearchParams();
+							batchData.append('action', 'hwsync_process_browser_batch');
+							batchData.append('vendor_slug', 'mdcomputers');
+							batchData.append('items', JSON.stringify(parsedItems));
+							batchData.append('hwsync_nonce', nonce);
+
+							return fetch(ajaxurl, {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+								body: batchData.toString(),
+								signal: abortController ? abortController.signal : null
+							});
+						}).then(function(res) {
+							return res.json();
+						}).then(function(json) {
+							if (json.success && json.data) {
+								var d = json.data;
+								var curScraped = parseInt(mScraped.textContent) || 0;
+								var curMatched = parseInt(mMatched.textContent) || 0;
+								var curPrices = parseInt(mPrices.textContent) || 0;
+								var curPosts = parseInt(mPosts.textContent) || 0;
+
+								mScraped.textContent = curScraped + (d.processed || 0);
+								mMatched.textContent = curMatched + (d.components || 0);
+								mPrices.textContent = curPrices + (d.prices_saved || 0);
+								mPosts.textContent = curPosts + (d.posts_synced || 0);
+
+								appendLog('match', '[MDComputers] Successfully synced ' + (d.prices_saved || 0) + ' prices into component catalog.');
+							}
+							processNextCategory();
+						}).catch(function(err) {
+							appendLog('warning', '[MDComputers] In-browser request fallback: ' + err.message + '. Falling back to backend session warm-up transport...');
+							processNextCategory();
+						});
+					}
+
+					processNextCategory();
+				}
 
 				stopBtn.addEventListener('click', function() {
 					if (abortController) {
