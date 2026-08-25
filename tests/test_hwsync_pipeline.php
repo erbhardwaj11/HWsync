@@ -54,7 +54,8 @@ function wp_trim_words( $text, $num_words = 55, $more = null ) {
 // In-memory Mock WPDB
 class MockWPDB {
 	public $prefix = 'wp_';
-	public $insert_id = 1;
+	public $insert_id = 0;
+	private $auto_increment = 1;
 	public $tables = array();
 
 	public function get_charset_collate() {
@@ -68,7 +69,8 @@ class MockWPDB {
 		return $query;
 	}
 	public function insert( $table, $data ) {
-		$data['id'] = $this->insert_id++;
+		$this->insert_id = $this->auto_increment++;
+		$data['id'] = $this->insert_id;
 		$this->tables[ $table ][] = $data;
 		return 1;
 	}
@@ -86,8 +88,7 @@ class MockWPDB {
 		}
 		return 0;
 	}
-	public function get_row( $query, $output = ARRAY_A ) {
-		// Simple pattern matching for mock lookups
+	public function get_row( $query, $output = \ARRAY_A ) {
 		if ( preg_match( '/FROM\s+(\w+)/i', $query, $m ) ) {
 			$tbl = $m[1];
 			if ( ! empty( $this->tables[ $tbl ] ) ) {
@@ -99,6 +100,11 @@ class MockWPDB {
 				if ( preg_match( '/WHERE\s+mpn\s*=\s*\'([^\']+)\'/i', $query, $qm ) ) {
 					foreach ( $this->tables[ $tbl ] as $r ) {
 						if ( isset( $r['mpn'] ) && strcasecmp( $r['mpn'], $qm[1] ) === 0 ) return $r;
+					}
+				}
+				if ( preg_match( '/WHERE\s+vendor_slug\s*=\s*\'([^\']+)\'/i', $query, $qm ) ) {
+					foreach ( $this->tables[ $tbl ] as $r ) {
+						if ( isset( $r['vendor_slug'] ) && strcasecmp( $r['vendor_slug'], $qm[1] ) === 0 ) return $r;
 					}
 				}
 				if ( preg_match( '/WHERE\s+LOWER\(brand\)\s*=\s*LOWER\(\'([^\']+)\'\)\s+AND\s+LOWER\(model_name\)\s*=\s*LOWER\(\'([^\']+)\'\)/i', $query, $qm ) ) {
@@ -115,10 +121,30 @@ class MockWPDB {
 		}
 		return null;
 	}
-	public function get_results( $query, $output = ARRAY_A ) {
+	public function get_results( $query, $output = \ARRAY_A ) {
 		if ( preg_match( '/FROM\s+(\w+)/i', $query, $m ) ) {
 			$tbl = $m[1];
-			return $this->tables[ $tbl ] ?? array();
+			$rows = $this->tables[ $tbl ] ?? array();
+			if ( preg_match( '/WHERE\s+(?:vp\.)?component_id\s*=\s*(\d+)/i', $query, $qm ) ) {
+				$filtered = array();
+				foreach ( $rows as $r ) {
+					if ( (string)$r['component_id'] === (string)$qm[1] ) {
+						// Join vendor metadata if available
+						if ( ! empty( $this->tables['wp_hwsync_vendors'] ) ) {
+							foreach ( $this->tables['wp_hwsync_vendors'] as $v ) {
+								if ( (string)$v['id'] === (string)$r['vendor_id'] ) {
+									$r['vendor_name'] = $v['vendor_name'];
+									$r['vendor_slug'] = $v['vendor_slug'];
+									$r['base_url']    = $v['base_url'];
+								}
+							}
+						}
+						$filtered[] = $r;
+					}
+				}
+				return $filtered;
+			}
+			return $rows;
 		}
 		return array();
 	}
@@ -223,8 +249,10 @@ $gpu_specs = \HWsync\Matching_Engine::extract_specs( 'Gigabyte RTX 4070 Super Ea
 assert_test( 'GPU VRAM & Memory Type Extraction', isset( $gpu_specs['capacity_or_vram'] ) && $gpu_specs['capacity_or_vram'] === '12GB' && isset( $gpu_specs['memory_type'] ) && $gpu_specs['memory_type'] === 'GDDR6X' );
 
 // Test 5: Component Creation & Multi-Vendor Price Linking
-$v1 = new \HWsync\Models\Vendor( array( 'id' => 1, 'vendor_slug' => 'mdcomputers', 'vendor_name' => 'MDComputers' ) );
-$v2 = new \HWsync\Models\Vendor( array( 'id' => 2, 'vendor_slug' => 'vedant', 'vendor_name' => 'Vedant Computers' ) );
+$v1 = new \HWsync\Models\Vendor( array( 'vendor_slug' => 'mdcomputers', 'vendor_name' => 'MDComputers', 'base_url' => 'https://mdcomputers.in' ) );
+$v1->save();
+$v2 = new \HWsync\Models\Vendor( array( 'vendor_slug' => 'vedant', 'vendor_name' => 'Vedant Computers', 'base_url' => 'https://www.vedantcomputers.com' ) );
+$v2->save();
 
 $sync_manager = new \HWsync\Sync_Manager();
 
@@ -252,11 +280,11 @@ $item2 = array(
 );
 $res2 = $sync_manager->sync_single_item( $item2, $v2 );
 
-assert_test( 'Multi-Vendor Matching to Single Canonical Component ID', $res1['component_id'] === $res2['component_id'] );
+assert_test( 'Multi-Vendor Matching to Single Canonical Component ID', ( ! empty( $res1['component_id'] ) && $res1['component_id'] === $res2['component_id'] ) );
 
 // Test 6: Verify Vendor Prices linked
 $comp = \HWsync\Models\Component::find_by_id( $res1['component_id'] );
-$prices = $comp->get_prices();
+$prices = $comp ? $comp->get_prices() : array();
 assert_test( 'Vendor Prices Linked Count = 2', count( $prices ) === 2 );
 
 // Test 7: Post-Sync Processor WordPress Post Creation

@@ -97,10 +97,15 @@ abstract class Abstract_Vendor_Adapter {
 			return (float) $price_str;
 		}
 
-		$str = html_entity_decode( (string) $price_str, ENT_QUOTES, 'UTF-8' );
-		// Strip commas and any characters other than digits and decimal point
-		$cleaned = preg_replace( '/[^\d.]+/u', '', str_replace( ',', '', $str ) );
+		$price_str = (string) $price_str;
+		// Remove commas, spaces, and non-breaking spaces
+		$normalized = str_replace( array( ',', ' ', "\xc2\xa0" ), '', $price_str );
 
-		return (float) $cleaned;
+		// Extract first valid decimal number pattern
+		if ( preg_match( '/\d+(?:\.\d+)?/', $normalized, $matches ) ) {
+			return (float) $matches[0];
+		}
+
+		return 0.0;
 	}
 }
