@@ -211,6 +211,23 @@ class MockWPDB {
 		}
 		return array();
 	}
+	public function query( $sql ) {
+		if ( preg_match( '/TRUNCATE\s+TABLE\s+(\w+)/i', $sql, $m ) ) {
+			$this->tables[ $m[1] ] = array();
+			return true;
+		}
+		if ( preg_match( '/ALTER\s+TABLE\s+(\w+)\s+AUTO_INCREMENT\s*=\s*(\d+)/i', $sql, $m ) ) {
+			$this->auto_increment = intval( $m[2] );
+			return true;
+		}
+		return true;
+	}
+	public function get_col( $query ) {
+		if ( stripos( $query, 'post_type' ) !== false ) {
+			return array_keys( $GLOBALS['mock_posts'] ?? array() );
+		}
+		return array();
+	}
 	public function get_var( $query ) {
 		if ( preg_match( '/COUNT\(\*\)\s+FROM\s+(\w+)/i', $query, $m ) ) {
 			$tbl = $m[1];
@@ -226,6 +243,19 @@ $wpdb = new MockWPDB();
 // Mock WordPress Post functions
 $GLOBALS['mock_posts'] = array();
 $GLOBALS['mock_postmeta'] = array();
+
+function wp_delete_post( $post_id, $force = true ) {
+	if ( isset( $GLOBALS['mock_posts'][ $post_id ] ) ) {
+		unset( $GLOBALS['mock_posts'][ $post_id ] );
+		return true;
+	}
+	return false;
+}
+
+function delete_option( $option ) {
+	unset( $GLOBALS['mock_options'][ $option ] );
+	return true;
+}
 
 function wp_insert_post( $post_arr ) {
 	static $p_id = 100;
@@ -393,6 +423,12 @@ $item_na = array(
 $res_na = $sync_manager->sync_single_item( $item_na, $v1 );
 $vp_na = \HWsync\Models\Vendor_Price::find_by_id( $res_na['vendor_price_id'] );
 assert_test( 'In-Stock item with zero price saved with display_price NA', ( ! empty( $res_na['component_id'] ) && isset( $vp_na->raw_data_json['display_price'] ) && $vp_na->raw_data_json['display_price'] === 'NA' ) );
+
+// Test 11: Wipe Hardware, Reset Posts & Table IDs to 1
+$wipe_res = \HWsync\Backup_Manager::wipe_and_reset_all_data();
+$comp_count_after = $wpdb->get_var( "SELECT COUNT(*) FROM wp_hwsync_components" );
+$price_count_after = $wpdb->get_var( "SELECT COUNT(*) FROM wp_hwsync_vendor_prices" );
+assert_test( 'Wipe & Clean Reset Clears All Tables, Posts, and Resets AUTO_INCREMENT to 1', ( $wipe_res['success'] && $comp_count_after === 0 && $price_count_after === 0 && count( $GLOBALS['mock_posts'] ) === 0 ) );
 
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";

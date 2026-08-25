@@ -14,6 +14,9 @@ class Admin {
 		add_action( 'admin_menu', array( __CLASS__, 'register_admin_menu' ) );
 		add_action( 'admin_post_hwsync_manual_sync', array( __CLASS__, 'handle_manual_sync' ) );
 		add_action( 'admin_post_hwsync_toggle_vendor', array( __CLASS__, 'handle_toggle_vendor' ) );
+		add_action( 'admin_post_hwsync_export_csv', array( __CLASS__, 'handle_export_csv' ) );
+		add_action( 'admin_post_hwsync_restore_csv', array( __CLASS__, 'handle_restore_csv' ) );
+		add_action( 'admin_post_hwsync_wipe_reset', array( __CLASS__, 'handle_wipe_reset' ) );
 		add_action( 'wp_ajax_hwsync_stream_sync', array( __CLASS__, 'handle_stream_sync' ) );
 		add_action( 'wp_ajax_hwsync_process_browser_batch', array( __CLASS__, 'handle_browser_batch' ) );
 	}
@@ -54,6 +57,15 @@ class Admin {
 			'manage_options',
 			'hwsync-components',
 			array( __CLASS__, 'render_components_page' )
+		);
+
+		add_submenu_page(
+			'hwsync-dashboard',
+			__( 'Backup & Maintenance', 'hwsync' ),
+			__( 'Maintenance & Reset', 'hwsync' ),
+			'manage_options',
+			'hwsync-maintenance',
+			array( __CLASS__, 'render_maintenance_page' )
 		);
 	}
 
@@ -730,5 +742,130 @@ class Admin {
 			'components'   => count( $touched_ids ),
 			'posts_synced' => ( $post_stats['created'] + $post_stats['updated'] ),
 		) );
+	}
+
+	public static function render_maintenance_page() {
+		$status = isset( $_GET['status'] ) ? sanitize_text_field( $_GET['status'] ) : '';
+		$count  = isset( $_GET['count'] ) ? intval( $_GET['count'] ) : 0;
+		$deleted= isset( $_GET['deleted'] ) ? intval( $_GET['deleted'] ) : 0;
+		?>
+		<div class="wrap">
+			<h1><span class="dashicons dashicons-admin-tools" style="font-size: 30px; width: 30px; height: 30px;"></span> <?php esc_html_e( 'HWsync - Backup, Restore & Maintenance', 'hwsync' ); ?></h1>
+			<hr/>
+
+			<?php if ( $status === 'restore_success' ) : ?>
+				<div class="notice notice-success is-dismissible"><p><?php echo sprintf( esc_html__( 'CSV Restore Completed Successfully! Processed %d components and updated posts.', 'hwsync' ), $count ); ?></p></div>
+			<?php elseif ( $status === 'wipe_success' ) : ?>
+				<div class="notice notice-success is-dismissible"><p><?php echo sprintf( esc_html__( 'Database Clean Wipe Completed: Deleted %d component posts, truncated all tables, and reset AUTO_INCREMENT to 1.', 'hwsync' ), $deleted ); ?></p></div>
+			<?php elseif ( $status === 'err_nofile' ) : ?>
+				<div class="notice notice-error is-dismissible"><p><?php esc_html_e( 'Please select a valid CSV file to restore.', 'hwsync' ); ?></p></div>
+			<?php elseif ( $status === 'err_restore' ) : ?>
+				<div class="notice notice-error is-dismissible"><p><?php esc_html_e( 'An error occurred during CSV restore.', 'hwsync' ); ?></p></div>
+			<?php endif; ?>
+
+			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px; margin-top: 20px;">
+				
+				<!-- Card 1: Export CSV -->
+				<div style="background: #fff; padding: 22px; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
+					<div>
+						<h2 style="margin-top: 0; font-size: 18px; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+							<span class="dashicons dashicons-download" style="color: #2563eb;"></span>
+							<?php esc_html_e( 'Export Hardware Database (CSV)', 'hwsync' ); ?>
+						</h2>
+						<p style="color: #64748b; font-size: 13px; line-height: 1.6;">
+							<?php esc_html_e( 'Export all canonical components, technical specifications, and multi-vendor pricing matrices into a clean CSV spreadsheet with UTF-8 Excel compatibility.', 'hwsync' ); ?>
+						</p>
+					</div>
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top: 20px;">
+						<?php wp_nonce_field( 'hwsync_export_csv_action', 'hwsync_nonce' ); ?>
+						<input type="hidden" name="action" value="hwsync_export_csv" />
+						<button type="submit" class="button button-primary" style="background: #2563eb; border-color: #1d4ed8; height: 38px; padding: 0 20px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
+							<span class="dashicons dashicons-media-spreadsheet"></span>
+							<span><?php esc_html_e( 'Export & Download CSV', 'hwsync' ); ?></span>
+						</button>
+					</form>
+				</div>
+
+				<!-- Card 2: Restore CSV -->
+				<div style="background: #fff; padding: 22px; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
+					<div>
+						<h2 style="margin-top: 0; font-size: 18px; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+							<span class="dashicons dashicons-upload" style="color: #16a34a;"></span>
+							<?php esc_html_e( 'Restore / Import from CSV', 'hwsync' ); ?>
+						</h2>
+						<p style="color: #64748b; font-size: 13px; line-height: 1.6;">
+							<?php esc_html_e( 'Upload a previously exported HWsync CSV file to restore components, vendor pricing, and synchronize WordPress post catalog.', 'hwsync' ); ?>
+						</p>
+					</div>
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data" style="margin-top: 20px;">
+						<?php wp_nonce_field( 'hwsync_restore_csv_action', 'hwsync_nonce' ); ?>
+						<input type="hidden" name="action" value="hwsync_restore_csv" />
+						<div style="margin-bottom: 12px;">
+							<input type="file" name="csv_file" accept=".csv" required style="font-size: 12px;" />
+						</div>
+						<button type="submit" class="button button-primary" style="background: #16a34a; border-color: #15803d; height: 38px; padding: 0 20px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
+							<span class="dashicons dashicons-backup"></span>
+							<span><?php esc_html_e( 'Restore Catalog', 'hwsync' ); ?></span>
+						</button>
+					</form>
+				</div>
+
+			</div>
+
+			<!-- Card 3: Danger Zone (Wipe & Reset to 1) -->
+			<div style="margin-top: 24px; background: #fff; padding: 24px; border: 1px solid #fecaca; border-left: 5px solid #ef4444; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+				<h2 style="margin-top: 0; font-size: 18px; color: #b91c1c; display: flex; align-items: center; gap: 8px;">
+					<span class="dashicons dashicons-trash" style="color: #ef4444;"></span>
+					<?php esc_html_e( 'Danger Zone: Wipe Hardware & Reset All Records (IDs to 1)', 'hwsync' ); ?>
+				</h2>
+				<p style="color: #475569; font-size: 13px; line-height: 1.6; max-width: 800px;">
+					<?php esc_html_e( 'This operation will permanently purge all hardware records: deletes all WordPress "hwsync_component" posts and postmeta, completely truncates all 3 custom database tables (wp_hwsync_components, wp_hwsync_vendor_prices, wp_hwsync_price_history), and resets table AUTO_INCREMENT IDs back to 1.', 'hwsync' ); ?>
+				</p>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" onsubmit="return confirm('⚠️ WARNING: This will permanently delete ALL hardware components, delete ALL WordPress component posts, and reset table IDs to 1. This action cannot be undone.\n\nAre you absolutely sure you want to proceed?');">
+					<?php wp_nonce_field( 'hwsync_wipe_reset_action', 'hwsync_nonce' ); ?>
+					<input type="hidden" name="action" value="hwsync_wipe_reset" />
+					<button type="submit" class="button button-primary" style="background: #dc2626; border-color: #b91c1c; height: 38px; padding: 0 20px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;">
+						<span class="dashicons dashicons-warning"></span>
+						<span><?php esc_html_e( 'Wipe Database & Reset IDs to 1', 'hwsync' ); ?></span>
+					</button>
+				</form>
+			</div>
+		</div>
+		<?php
+	}
+
+	public static function handle_export_csv() {
+		if ( ! current_user_can( 'manage_options' ) || ! check_admin_referer( 'hwsync_export_csv_action', 'hwsync_nonce' ) ) {
+			wp_die( __( 'Unauthorized request', 'hwsync' ) );
+		}
+		Backup_Manager::export_csv();
+	}
+
+	public static function handle_restore_csv() {
+		if ( ! current_user_can( 'manage_options' ) || ! check_admin_referer( 'hwsync_restore_csv_action', 'hwsync_nonce' ) ) {
+			wp_die( __( 'Unauthorized request', 'hwsync' ) );
+		}
+
+		if ( empty( $_FILES['csv_file']['tmp_name'] ) ) {
+			wp_safe_redirect( admin_url( 'admin.php?page=hwsync-maintenance&status=err_nofile' ) );
+			exit;
+		}
+
+		$result = Backup_Manager::restore_csv( $_FILES['csv_file']['tmp_name'] );
+		$status = ! empty( $result['success'] ) ? 'restore_success' : 'err_restore';
+		$count  = isset( $result['components_imported'] ) ? intval( $result['components_imported'] ) : 0;
+		wp_safe_redirect( admin_url( 'admin.php?page=hwsync-maintenance&status=' . $status . '&count=' . $count ) );
+		exit;
+	}
+
+	public static function handle_wipe_reset() {
+		if ( ! current_user_can( 'manage_options' ) || ! check_admin_referer( 'hwsync_wipe_reset_action', 'hwsync_nonce' ) ) {
+			wp_die( __( 'Unauthorized request', 'hwsync' ) );
+		}
+
+		$result = Backup_Manager::wipe_and_reset_all_data();
+		$deleted = isset( $result['deleted_posts_count'] ) ? intval( $result['deleted_posts_count'] ) : 0;
+		wp_safe_redirect( admin_url( 'admin.php?page=hwsync-maintenance&status=wipe_success&deleted=' . $deleted ) );
+		exit;
 	}
 }
