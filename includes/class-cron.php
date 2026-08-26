@@ -14,15 +14,17 @@ class Cron {
 	}
 
 	public static function add_custom_intervals( $schedules ) {
+		$hour = defined( 'HOUR_IN_SECONDS' ) ? HOUR_IN_SECONDS : 3600;
+
 		if ( ! isset( $schedules['every_six_hours'] ) ) {
 			$schedules['every_six_hours'] = array(
-				'interval' => 6 * HOUR_IN_SECONDS,
+				'interval' => 6 * $hour,
 				'display'  => \__( 'Every 6 Hours', 'hwsync' ),
 			);
 		}
 		if ( ! isset( $schedules['every_two_hours'] ) ) {
 			$schedules['every_two_hours'] = array(
-				'interval' => 2 * HOUR_IN_SECONDS,
+				'interval' => 2 * $hour,
 				'display'  => \__( 'Every 2 Hours', 'hwsync' ),
 			);
 		}
@@ -35,32 +37,42 @@ class Cron {
 	public static function update_schedule( $enabled, $frequency = 'daily', $time_str = '03:00' ) {
 		self::clear_events();
 
+		$freq_clean = function_exists( 'sanitize_text_field' ) ? sanitize_text_field( $frequency ) : trim( (string) $frequency );
+		$time_clean = function_exists( 'sanitize_text_field' ) ? sanitize_text_field( $time_str ) : trim( (string) $time_str );
+
 		update_option( 'hwsync_schedule_enabled', $enabled ? 1 : 0 );
-		update_option( 'hwsync_schedule_frequency', sanitize_text_field( $frequency ) );
-		update_option( 'hwsync_schedule_time', sanitize_text_field( $time_str ) );
+		update_option( 'hwsync_schedule_frequency', $freq_clean );
+		update_option( 'hwsync_schedule_time', $time_clean );
 
 		if ( ! $enabled ) {
 			return;
 		}
 
 		// Calculate first execution timestamp based on local site time
-		$time_parts = explode( ':', $time_str );
+		$time_parts = explode( ':', $time_clean );
 		$hour       = isset( $time_parts[0] ) ? intval( $time_parts[0] ) : 3;
 		$minute     = isset( $time_parts[1] ) ? intval( $time_parts[1] ) : 0;
 
-		$now        = current_time( 'timestamp' );
+		$now        = function_exists( 'current_time' ) ? current_time( 'timestamp' ) : time();
+		if ( ! is_numeric( $now ) ) {
+			$now = time();
+		}
 		$target     = strtotime( sprintf( '%02d:%02d:00', $hour, $minute ), $now );
+
+		$day_sec    = defined( 'DAY_IN_SECONDS' ) ? DAY_IN_SECONDS : 86400;
+		$hour_sec   = defined( 'HOUR_IN_SECONDS' ) ? HOUR_IN_SECONDS : 3600;
 
 		// If time has already passed today, schedule for tomorrow
 		if ( $target <= $now ) {
-			$target += DAY_IN_SECONDS;
+			$target += $day_sec;
 		}
 
 		// Convert local timestamp to UTC timestamp for WP Cron
-		$offset_seconds = get_option( 'gmt_offset' ) * HOUR_IN_SECONDS;
+		$gmt_offset     = get_option( 'gmt_offset', 0 );
+		$offset_seconds = ( is_numeric( $gmt_offset ) ? floatval( $gmt_offset ) : 0 ) * $hour_sec;
 		$utc_target     = $target - $offset_seconds;
 
-		wp_schedule_event( $utc_target, $frequency, self::CRON_HOOK );
+		wp_schedule_event( $utc_target, $freq_clean, self::CRON_HOOK );
 	}
 
 	public static function schedule_events() {

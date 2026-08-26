@@ -18,8 +18,20 @@ if ( ! defined( 'ARRAY_A' ) ) {
 if ( ! defined( 'ARRAY_N' ) ) {
 	define( 'ARRAY_N', 'ARRAY_N' );
 }
-if ( ! defined( 'OBJECT' ) ) {
-	define( 'OBJECT', 'OBJECT' );
+if ( ! defined( 'MINUTE_IN_SECONDS' ) ) {
+	define( 'MINUTE_IN_SECONDS', 60 );
+}
+if ( ! defined( 'HOUR_IN_SECONDS' ) ) {
+	define( 'HOUR_IN_SECONDS', 3600 );
+}
+if ( ! defined( 'DAY_IN_SECONDS' ) ) {
+	define( 'DAY_IN_SECONDS', 86400 );
+}
+
+if ( ! function_exists( 'sanitize_text_field' ) ) {
+	function sanitize_text_field( $str ) {
+		return is_string( $str ) ? trim( strip_tags( $str ) ) : $str;
+	}
 }
 
 if ( ! function_exists( 'trailingslashit' ) ) {
@@ -77,6 +89,9 @@ if ( ! function_exists( 'wp_parse_args' ) ) {
 
 if ( ! function_exists( 'current_time' ) ) {
 	function current_time( $type ) {
+		if ( $type === 'timestamp' || $type === 'U' ) {
+			return time();
+		}
 		return date( 'Y-m-d H:i:s' );
 	}
 }
