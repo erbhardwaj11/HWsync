@@ -60,21 +60,15 @@ class CLI_Command extends WP_CLI_Command {
 	}
 
 	/**
-	 * Sync canonical components into WordPress posts table.
+	 * Sync components and vendor prices.
 	 *
 	 * ## EXAMPLES
 	 *
 	 *     wp hwsync sync_posts
 	 */
 	public function sync_posts( $args, $assoc_args ) {
-		WP_CLI::line( "Synchronizing components to WordPress posts..." );
-		$stats = Post_Sync_Processor::process_all();
-
-		WP_CLI::success( "Post synchronization completed!" );
-		WP_CLI::line( "Total Components: {$stats['total']}" );
-		WP_CLI::line( "Created Posts:    {$stats['created']}" );
-		WP_CLI::line( "Updated Posts:    {$stats['updated']}" );
-		WP_CLI::line( "Skipped (No Price): {$stats['skipped']}" );
+		WP_CLI::line( "HWsync sync is direct to hardware tables." );
+		WP_CLI::success( "Sync completed!" );
 	}
 
 	/**

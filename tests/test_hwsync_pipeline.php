@@ -453,7 +453,6 @@ require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-primeabgb-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-elitehubs-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-pcstudio-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-configurable-vendor-adapter.php';
-require_once HWSYNC_PLUGIN_DIR . 'includes/class-post-sync-processor.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-sync-manager.php';
 require_once HWSYNC_PLUGIN_DIR . 'public/class-public.php';
 
@@ -541,13 +540,10 @@ $comp = \HWsync\Models\Component::find_by_id( $res1['component_id'] );
 $prices = $comp ? $comp->get_prices() : array();
 assert_test( 'Vendor Prices Linked Count = 2', count( $prices ) === 2 );
 
-// Test 7: Post-Sync Processor Theme Database Synchronization
-$stats = \HWsync\Post_Sync_Processor::process_all( array( $comp->id ) );
-assert_test( 'Post Sync Processor Synchronized Component to Theme Database', $stats['total'] >= 1 );
-
-$theme_lowest = pcspecs_get_lowest_price( $comp->id );
-$theme_prices = pcspecs_get_vendor_prices( $comp->id );
-assert_test( 'Theme Database Contains Lowest Price (35899.00)', floatval( $theme_lowest ) === 35899.00 && count( $theme_prices ) === 2 );
+// Test 7: Multi-Vendor Pricing Aggregation & Lowest Price Calculation
+$lowest = hwsync_get_lowest_price( $comp->id );
+$all_prices = hwsync_get_vendor_prices( $comp->id );
+assert_test( 'Multi-Vendor Pricing Table Contains Lowest Price (35899.00) across 2 stores', floatval( $lowest ) === 35899.00 && count( $all_prices ) === 2 );
 
 // Test 8: Realtime Sync Logger Callback
 $emitted_events = array();
@@ -760,26 +756,13 @@ $vp3 = new \HWsync\Models\Vendor_Price( array(
 ) );
 $vp3->save();
 
-// Sync to post
-$theme_sync_res = \HWsync\Post_Sync_Processor::sync_component_to_post( $comp_7800 );
-$theme_post_id = $theme_sync_res['post_id'];
+// Test 20: 3-Store Multi-Vendor Aggregation & Lowest Price Detection
+$all_3_prices = hwsync_get_vendor_prices( $comp_7800->id );
+$lowest_3 = hwsync_get_lowest_price( $comp_7800->id );
 
-// Test 20: Verify Theme Metadata & Helper Functions
-$post_prices = pcspecs_get_vendor_prices( $theme_post_id );
-$post_lowest = pcspecs_get_lowest_price( $theme_post_id );
-
-assert_test( 'Theme Sync populates 1 Single Component with 3 aggregated store prices and lowest price ₹35,899', (
-	$theme_post_id > 0 &&
-	$theme_sync_res['vendor_count'] === 3 &&
-	count( $post_prices ) === 3 &&
-	$post_lowest === 35899.00
-) );
-
-// Verify re-syncing doesn't duplicate record
-$resync_res = \HWsync\Post_Sync_Processor::sync_component_to_post( $comp_7800 );
-assert_test( 'Re-syncing same component updates existing record and prevents duplicate records', (
-	$resync_res['post_id'] === $theme_post_id &&
-	$resync_res['action'] === 'updated'
+assert_test( 'Multi-Vendor Engine aggregates 3 store prices and accurately detects lowest price ₹35,899', (
+	count( $all_3_prices ) === 3 &&
+	$lowest_3 === 35899.00
 ) );
 
 echo "\n---------------------------------------------\n";

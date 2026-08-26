@@ -3,7 +3,7 @@
  * Plugin Name: HWsync - Indian PC Component & Multi-Vendor Price Synchronizer
  * Plugin URI: https://github.com/hwsync/hwsync
  * Description: High-performance hardware component and multi-vendor pricing synchronizer for Indian PC retailers. Tracks canonical components, links vendor prices, and updates WordPress posts.
- * Version: 0.0.0.4
+ * Version: 0.0.0.5
  * Author: HWsync Team
  * Author URI: https://github.com/hwsync
  * License: GPL-2.0+
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly.
 }
 
-define( 'HWSYNC_VERSION', '0.0.0.4' );
+define( 'HWSYNC_VERSION', '0.0.0.5' );
 define( 'HWSYNC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HWSYNC_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'HWSYNC_PLUGIN_FILE', __FILE__ );
@@ -50,7 +50,6 @@ require_once HWSYNC_PLUGIN_DIR . 'includes/class-backup-manager.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-specs-sync-manager.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-sync-manager.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-matching-engine.php';
-require_once HWSYNC_PLUGIN_DIR . 'includes/class-post-sync-processor.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-cron.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/models/class-component.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/models/class-vendor.php';

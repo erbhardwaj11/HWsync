@@ -232,22 +232,15 @@ class Backup_Manager {
 
 		fclose( $handle );
 
-		// Re-sync WordPress posts
-		$post_stats = array( 'created' => 0, 'updated' => 0 );
-		if ( ! empty( $touched_comp_ids ) ) {
-			$post_stats = Post_Sync_Processor::process_all( array_keys( $touched_comp_ids ) );
-		}
-
 		return array(
 			'success'             => true,
 			'components_imported' => $imported_components,
 			'prices_imported'     => $imported_prices,
-			'posts_synced'        => ( $post_stats['created'] + $post_stats['updated'] ),
+			'posts_synced'        => 0,
 			'message'             => sprintf(
-				\__( 'CSV Restore Completed: %d components processed, %d vendor prices imported, %d WordPress posts synced.', 'hwsync' ),
+				\__( 'CSV Restore Completed: %d components processed, %d vendor prices imported.', 'hwsync' ),
 				count( $touched_comp_ids ),
-				$imported_prices,
-				( $post_stats['created'] + $post_stats['updated'] )
+				$imported_prices
 			),
 		);
 	}

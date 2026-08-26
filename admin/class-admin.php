@@ -26,7 +26,6 @@ class Admin {
 		add_action( 'wp_ajax_hwsync_save_vendor', array( __CLASS__, 'handle_save_vendor' ) );
 		add_action( 'wp_ajax_hwsync_delete_vendor', array( __CLASS__, 'handle_delete_vendor' ) );
 		add_action( 'wp_ajax_hwsync_test_vendor_sync', array( __CLASS__, 'handle_test_vendor_sync' ) );
-		add_action( 'wp_ajax_hwsync_sync_theme_chunk', array( __CLASS__, 'handle_sync_theme_chunk' ) );
 	}
 
 	public static function register_admin_menu() {
@@ -156,14 +155,7 @@ class Admin {
 								</select>
 							</div>
 
-							<div style="margin-bottom: 20px; padding: 12px 14px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
-								<p style="margin: 0; font-size: 12px; color: #475569; line-height: 1.5;">
-									<strong style="color: #1e293b;">⚡ <?php esc_html_e( 'Direct PC Part-Picker Sync:', 'hwsync' ); ?></strong>
-									<?php esc_html_e( 'Syncs canonical components, technical specifications, and multi-vendor prices directly into the pcspecs Theme engine without cluttering your WordPress Posts.', 'hwsync' ); ?>
-								</p>
-							</div>
-
-							<div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+							<div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 15px;">
 								<button type="button" id="btn-start-live-sync" class="button button-primary" style="background: #2563eb; border-color: #1d4ed8; padding: 6px 16px; font-weight: 600; border-radius: 6px; height: 38px; display: inline-flex; align-items: center; gap: 6px;">
 									<span class="dashicons dashicons-update" style="line-height: 1;"></span>
 									<span><?php esc_html_e( 'Live Scrape Sync', 'hwsync' ); ?></span>
@@ -172,19 +164,11 @@ class Admin {
 									<span class="dashicons dashicons-admin-generic" style="line-height: 1;"></span>
 									<span><?php esc_html_e( 'Sync Specs', 'hwsync' ); ?></span>
 								</button>
-								<button type="button" id="btn-sync-theme" class="button" style="background: #7c3aed; border-color: #6d28d9; color: #fff; padding: 6px 14px; font-weight: 600; border-radius: 6px; height: 38px; display: inline-flex; align-items: center; gap: 6px;">
-									<span class="dashicons dashicons-admin-appearance" style="line-height: 1;"></span>
-									<span><?php esc_html_e( 'Sync to pcspecs Theme', 'hwsync' ); ?></span>
-								</button>
 								<button type="button" id="btn-stop-sync" class="button" style="display: none; border-color: #ef4444; color: #ef4444; height: 38px; border-radius: 6px;">
 									<?php esc_html_e( 'Stop Sync', 'hwsync' ); ?>
 								</button>
 							</div>
 						</form>
-					</div>
-
-					<div style="margin-top: 20px; padding-top: 14px; border-top: 1px solid #f1f5f9; color: #94a3b8; font-size: 12px;">
-						<?php esc_html_e( 'Theme Sync populates the native pcspecs database with multi-vendor price comparisons.', 'hwsync' ); ?>
 					</div>
 				</div>
 
@@ -240,7 +224,6 @@ class Admin {
 			document.addEventListener('DOMContentLoaded', function() {
 				var startBtn = document.getElementById('btn-start-live-sync');
 				var syncSpecsBtn = document.getElementById('btn-sync-specs');
-				var syncThemeBtn = document.getElementById('btn-sync-theme');
 				var stopBtn = document.getElementById('btn-stop-sync');
 				var clearBtn = document.getElementById('btn-clear-console');
 				var terminal = document.getElementById('hwsync-terminal');
@@ -307,7 +290,6 @@ class Admin {
 
 					startBtn.disabled = true;
 					syncSpecsBtn.disabled = true;
-					if (syncThemeBtn) syncThemeBtn.disabled = true;
 					startBtn.innerHTML = '<span class="dashicons dashicons-update spin" style="animation: rotation 1s infinite linear;"></span> Syncing...';
 					stopBtn.style.display = 'inline-block';
 
@@ -330,7 +312,6 @@ class Admin {
 
 					startBtn.disabled = true;
 					syncSpecsBtn.disabled = true;
-					if (syncThemeBtn) syncThemeBtn.disabled = true;
 					syncSpecsBtn.innerHTML = '<span class="dashicons dashicons-update spin" style="animation: rotation 1s infinite linear;"></span> Syncing Specs...';
 					stopBtn.style.display = 'inline-block';
 
@@ -346,113 +327,6 @@ class Admin {
 
 					runChunkedSpecsSync(category, nonce);
 				});
-
-				if (syncThemeBtn) {
-					syncThemeBtn.addEventListener('click', function() {
-						var category = document.getElementById('target_category').value;
-						var nonce = document.querySelector('input[name="hwsync_nonce"]').value;
-
-						startBtn.disabled = true;
-						syncSpecsBtn.disabled = true;
-						syncThemeBtn.disabled = true;
-						syncThemeBtn.innerHTML = '<span class="dashicons dashicons-update spin" style="animation: rotation 1s infinite linear;"></span> Syncing Theme...';
-						stopBtn.style.display = 'inline-block';
-
-						statusDot.style.background = '#7c3aed';
-						statusDot.style.boxShadow = '0 0 10px #7c3aed';
-						statusBadge.textContent = 'THEME SYNC';
-						statusBadge.style.background = '#6d28d9';
-						statusBadge.style.color = '#fff';
-
-						appendLog('info', 'Synchronizing hardware database to pcspecs Theme Part-Picker Engine for category [' + category + ']...');
-
-						abortController = new AbortController();
-
-						runChunkedThemeSync(category, nonce);
-					});
-				}
-
-				function runChunkedThemeSync(categoryChoice, nonce) {
-					var currentOffset = 0;
-					var batchSize = 10;
-					var totalCreated = 0;
-					var totalUpdated = 0;
-					var retryCount = 0;
-
-					function fetchThemeStep() {
-						if (abortController && abortController.signal.aborted) {
-							appendLog('warning', 'Theme sync aborted by user.');
-							finishSync();
-							return;
-						}
-
-						var postData = new URLSearchParams();
-						postData.append('action', 'hwsync_sync_theme_chunk');
-						postData.append('target_category', categoryChoice);
-						postData.append('offset', currentOffset);
-						postData.append('limit', batchSize);
-						postData.append('hwsync_nonce', nonce);
-
-						fetch(ajaxurl, {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-							body: postData.toString(),
-							signal: abortController ? abortController.signal : null
-						}).then(function(res) {
-							return res.text();
-						}).then(function(responseText) {
-							try {
-								var json = JSON.parse(responseText);
-								if (json.success && json.data) {
-									var d = json.data;
-									totalCreated += (d.created || 0);
-									totalUpdated += (d.updated || 0);
-
-									if (d.logs && Array.isArray(d.logs)) {
-										d.logs.forEach(function(msg) {
-											appendLog('match', msg);
-										});
-									}
-
-									if (!d.is_done && d.offset < d.total) {
-										currentOffset = d.offset;
-										retryCount = 0;
-										fetchThemeStep();
-									} else {
-										appendLog('finish', '✓ Theme Catalog Sync Completed! Total Created: ' + totalCreated + ', Updated: ' + totalUpdated + ' posts with multi-vendor pricing.');
-										finishSync();
-									}
-								} else {
-									var errMsg = (json.data && json.data.message) ? json.data.message : 'Theme sync chunk returned no data.';
-									appendLog('warning', errMsg);
-									finishSync();
-								}
-							} catch (e) {
-								appendLog('warning', 'Server response: ' + responseText.substring(0, 150));
-								if (retryCount < 2) {
-									retryCount++;
-									setTimeout(fetchThemeStep, 2000);
-								} else {
-									finishSync();
-								}
-							}
-						}).catch(function(err) {
-							if (err.name === 'AbortError') {
-								appendLog('warning', 'Theme sync aborted.');
-								finishSync();
-							} else if (retryCount < 2) {
-								retryCount++;
-								appendLog('warning', 'Theme sync error (' + err.message + '). Retrying in 2s...');
-								setTimeout(fetchThemeStep, 2000);
-							} else {
-								appendLog('error', 'Theme sync failed: ' + err.message);
-								finishSync();
-							}
-						});
-					}
-
-					fetchThemeStep();
-				}
 
 				function runChunkedMainSync(vendorChoice, categoryChoice, nonce) {
 					var allVendors = (vendorChoice === 'all') 
@@ -823,10 +697,6 @@ class Admin {
 					startBtn.innerHTML = '<span class="dashicons dashicons-update"></span> <?php esc_html_e( "Start Live Sync", "hwsync" ); ?>';
 					syncSpecsBtn.disabled = false;
 					syncSpecsBtn.innerHTML = '<span class="dashicons dashicons-admin-generic"></span> <?php esc_html_e( "Sync Specs", "hwsync" ); ?>';
-					if (syncThemeBtn) {
-						syncThemeBtn.disabled = false;
-						syncThemeBtn.innerHTML = '<span class="dashicons dashicons-admin-appearance"></span> <?php esc_html_e( "Sync to pcspecs Theme", "hwsync" ); ?>';
-					}
 					stopBtn.style.display = 'none';
 
 					statusDot.style.background = '#64748b';
@@ -1751,32 +1621,6 @@ class Admin {
 				'duration_ms' => $duration,
 				'message'     => $e->getMessage(),
 			) );
-		}
-	}
-
-	public static function handle_sync_theme_chunk() {
-		if ( ! check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce', false ) ) {
-			wp_send_json_error( array( 'message' => \__( 'Security check failed. Please refresh the page.', 'hwsync' ) ) );
-		}
-
-		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_send_json_error( array( 'message' => \__( 'Unauthorized', 'hwsync' ) ) );
-		}
-
-		try {
-			$category = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
-			$offset   = isset( $_POST['offset'] ) ? intval( $_POST['offset'] ) : 0;
-			$limit    = isset( $_POST['limit'] ) ? intval( $_POST['limit'] ) : 10;
-
-			$result = Post_Sync_Processor::sync_theme_chunk( array(
-				'category' => $category,
-				'offset'   => $offset,
-				'limit'    => $limit,
-			) );
-
-			wp_send_json_success( $result );
-		} catch ( \Throwable $e ) {
-			wp_send_json_error( array( 'message' => $e->getMessage() ) );
 		}
 	}
 
