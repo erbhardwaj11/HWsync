@@ -147,6 +147,30 @@ if ( ! function_exists( 'esc_attr__' ) ) {
 	}
 }
 
+if ( ! function_exists( 'post_type_exists' ) ) {
+	function post_type_exists( $post_type ) {
+		return in_array( $post_type, array( 'post', 'page', 'hwsync_component', 'pcspecs_component' ) );
+	}
+}
+
+if ( ! function_exists( 'taxonomy_exists' ) ) {
+	function taxonomy_exists( $taxonomy ) {
+		return in_array( $taxonomy, array( 'category', 'post_tag', 'hwsync_category', 'hwsync_brand', 'pcspecs_category', 'pcspecs_brand' ) );
+	}
+}
+
+if ( ! function_exists( 'wp_set_object_terms' ) ) {
+	function wp_set_object_terms( $object_id, $terms, $taxonomy ) {
+		return array( 1 );
+	}
+}
+
+if ( ! function_exists( 'do_shortcode' ) ) {
+	function do_shortcode( $content ) {
+		return $content;
+	}
+}
+
 // In-memory Mock WPDB
 class MockWPDB {
 	public $prefix = 'wp_';

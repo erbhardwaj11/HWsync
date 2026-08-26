@@ -84,12 +84,12 @@ class Post_Sync_Processor {
 	 * Get the target post type for theme syncing (defaults to pcspecs_component if exists, else hwsync_component or post)
 	 */
 	public static function get_target_post_type() {
-		$saved = get_option( 'hwsync_target_post_type' );
+		$saved = function_exists( 'get_option' ) ? get_option( 'hwsync_target_post_type' ) : '';
 		if ( ! empty( $saved ) ) {
 			return $saved;
 		}
 
-		if ( post_type_exists( 'pcspecs_component' ) ) {
+		if ( function_exists( 'post_type_exists' ) && \post_type_exists( 'pcspecs_component' ) ) {
 			return 'pcspecs_component';
 		}
 
@@ -322,28 +322,28 @@ class Post_Sync_Processor {
 			update_post_meta( $post_id, '_hwsync_last_synced_at', current_time( 'mysql' ) );
 
 			// Assign Taxonomies
-			if ( ! empty( $component->category ) ) {
+			if ( ! empty( $component->category ) && function_exists( 'wp_set_object_terms' ) ) {
 				$cat_name = ucfirst( $component->category );
-				if ( taxonomy_exists( self::TAXONOMY_CAT ) ) {
-					wp_set_object_terms( $post_id, $cat_name, self::TAXONOMY_CAT );
+				if ( function_exists( 'taxonomy_exists' ) && \taxonomy_exists( self::TAXONOMY_CAT ) ) {
+					\wp_set_object_terms( $post_id, $cat_name, self::TAXONOMY_CAT );
 				}
-				if ( taxonomy_exists( 'category' ) && $post_type === 'post' ) {
-					wp_set_object_terms( $post_id, $cat_name, 'category' );
+				if ( function_exists( 'taxonomy_exists' ) && \taxonomy_exists( 'category' ) && $post_type === 'post' ) {
+					\wp_set_object_terms( $post_id, $cat_name, 'category' );
 				}
-				if ( taxonomy_exists( 'pcspecs_category' ) ) {
-					wp_set_object_terms( $post_id, $cat_name, 'pcspecs_category' );
+				if ( function_exists( 'taxonomy_exists' ) && \taxonomy_exists( 'pcspecs_category' ) ) {
+					\wp_set_object_terms( $post_id, $cat_name, 'pcspecs_category' );
 				}
 			}
 
-			if ( ! empty( $component->brand ) ) {
-				if ( taxonomy_exists( self::TAXONOMY_BRAND ) ) {
-					wp_set_object_terms( $post_id, $component->brand, self::TAXONOMY_BRAND );
+			if ( ! empty( $component->brand ) && function_exists( 'wp_set_object_terms' ) ) {
+				if ( function_exists( 'taxonomy_exists' ) && \taxonomy_exists( self::TAXONOMY_BRAND ) ) {
+					\wp_set_object_terms( $post_id, $component->brand, self::TAXONOMY_BRAND );
 				}
-				if ( taxonomy_exists( 'post_tag' ) && $post_type === 'post' ) {
-					wp_set_object_terms( $post_id, $component->brand, 'post_tag' );
+				if ( function_exists( 'taxonomy_exists' ) && \taxonomy_exists( 'post_tag' ) && $post_type === 'post' ) {
+					\wp_set_object_terms( $post_id, $component->brand, 'post_tag' );
 				}
-				if ( taxonomy_exists( 'pcspecs_brand' ) ) {
-					wp_set_object_terms( $post_id, $component->brand, 'pcspecs_brand' );
+				if ( function_exists( 'taxonomy_exists' ) && \taxonomy_exists( 'pcspecs_brand' ) ) {
+					\wp_set_object_terms( $post_id, $component->brand, 'pcspecs_brand' );
 				}
 			}
 		}
