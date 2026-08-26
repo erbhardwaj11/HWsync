@@ -706,26 +706,38 @@ $v_md = \HWsync\Models\Vendor::find_by_slug( 'mdcomputers' );
 $v_vd = \HWsync\Models\Vendor::find_by_slug( 'vedant' );
 $v_pr = \HWsync\Models\Vendor::find_by_slug( 'primeabgb' );
 
-\HWsync\Matching_Engine::save_vendor_price( $comp_7800->id, $v_md ? $v_md->id : 1, array(
-	'title'    => 'MDComputers AMD Ryzen 7 7800X3D Processor',
-	'price'    => 36499.00,
-	'url'      => 'https://mdcomputers.in/amd-ryzen-7-7800x3d',
-	'in_stock' => true,
+$vp1 = new \HWsync\Models\Vendor_Price( array(
+	'component_id'         => $comp_7800->id,
+	'vendor_id'            => $v_md ? $v_md->id : 1,
+	'vendor_product_title' => 'MDComputers AMD Ryzen 7 7800X3D Processor',
+	'price'                => 36499.00,
+	'product_url'          => 'https://mdcomputers.in/amd-ryzen-7-7800x3d',
+	'is_in_stock'          => 1,
+	'stock_status'         => 'in_stock',
 ) );
+$vp1->save();
 
-\HWsync\Matching_Engine::save_vendor_price( $comp_7800->id, $v_vd ? $v_vd->id : 2, array(
-	'title'    => 'Vedant Computers AMD Ryzen 7 7800X3D',
-	'price'    => 35899.00,
-	'url'      => 'https://vedantcomputers.com/amd-ryzen-7-7800x3d',
-	'in_stock' => true,
+$vp2 = new \HWsync\Models\Vendor_Price( array(
+	'component_id'         => $comp_7800->id,
+	'vendor_id'            => $v_vd ? $v_vd->id : 2,
+	'vendor_product_title' => 'Vedant Computers AMD Ryzen 7 7800X3D',
+	'price'                => 35899.00,
+	'product_url'          => 'https://vedantcomputers.com/amd-ryzen-7-7800x3d',
+	'is_in_stock'          => 1,
+	'stock_status'         => 'in_stock',
 ) );
+$vp2->save();
 
-\HWsync\Matching_Engine::save_vendor_price( $comp_7800->id, $v_pr ? $v_pr->id : 3, array(
-	'title'    => 'PrimeABGB AMD Ryzen 7 7800X3D CPU',
-	'price'    => 36200.00,
-	'url'      => 'https://primeabgb.com/amd-ryzen-7-7800x3d',
-	'in_stock' => true,
+$vp3 = new \HWsync\Models\Vendor_Price( array(
+	'component_id'         => $comp_7800->id,
+	'vendor_id'            => $v_pr ? $v_pr->id : 3,
+	'vendor_product_title' => 'PrimeABGB AMD Ryzen 7 7800X3D CPU',
+	'price'                => 36200.00,
+	'product_url'          => 'https://primeabgb.com/amd-ryzen-7-7800x3d',
+	'is_in_stock'          => 1,
+	'stock_status'         => 'in_stock',
 ) );
+$vp3->save();
 
 // Sync to post
 $theme_sync_res = \HWsync\Post_Sync_Processor::sync_component_to_post( $comp_7800 );

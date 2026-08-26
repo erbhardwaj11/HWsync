@@ -149,13 +149,13 @@ class Configurable_Vendor_Adapter extends Abstract_Vendor_Adapter {
 
 				// Title
 				$title = '';
-				if ( preg_match( '/title="([^"]+)"/i', $p, $tm ) ) {
-					$title = $tm[1];
-				} elseif ( preg_match( '/<h[234][^>]*class="[^"]*(?:product-title|title|name|woocommerce-loop-product__title)[^"]*"[^>]*>\s*<a[^>]*>([^<]+)<\/a>/i', $p, $tm ) ) {
+				if ( preg_match( '/<h[234][^>]*class="[^"]*(?:product-title|title|name|woocommerce-loop-product__title)[^"]*"[^>]*>\s*(?:<a[^>]*>)?([^<]+)(?:<\/a>)?<\/h[234]>/i', $p, $tm ) ) {
 					$title = $tm[1];
 				} elseif ( preg_match( '/<h[234][^>]*>\s*<a[^>]*>([^<]+)<\/a>/i', $p, $tm ) ) {
 					$title = $tm[1];
-				} elseif ( preg_match( '/alt="([^"]+)"/i', $p, $tm ) ) {
+				} elseif ( preg_match( '/\btitle="([^"]+)"/i', $p, $tm ) ) {
+					$title = $tm[1];
+				} elseif ( preg_match( '/\balt="([^"]+)"/i', $p, $tm ) ) {
 					$title = $tm[1];
 				}
 
