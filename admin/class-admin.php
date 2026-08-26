@@ -221,11 +221,22 @@ class Admin {
 					</div>
 
 				</div>
-
 			</div>
 
 			<!-- Live Streaming JS Controller -->
 			<script>
+			window.hwsyncVendorsRegistry = <?php echo wp_json_encode( array_map( function( $v ) {
+				return array(
+					'id'          => intval( $v->id ),
+					'name'        => $v->vendor_name,
+					'slug'        => $v->vendor_slug,
+					'base_url'    => $v->base_url,
+					'sync_method' => $v->sync_method ?: 'curl_html',
+					'endpoints'   => $v->get_config()['endpoints'] ?? array(),
+					'is_active'   => intval( $v->is_active ),
+				);
+			}, Vendor::get_all() ) ); ?>;
+
 			document.addEventListener('DOMContentLoaded', function() {
 				var startBtn = document.getElementById('btn-start-live-sync');
 				var syncSpecsBtn = document.getElementById('btn-sync-specs');
@@ -356,10 +367,25 @@ class Admin {
 				}
 
 				function runChunkedMainSync(vendorChoice, categoryChoice, nonce) {
-					var allVendors = (vendorChoice === 'all') 
-						? ['primeabgb', 'pcstudio', 'elitehubs'] 
-						: (vendorChoice === 'mdcomputers' ? [] : [vendorChoice]);
-					
+					var allVendors = window.hwsyncVendorsRegistry || [];
+					var activeVendors = allVendors.filter(function(v) { return v.is_active === 1; });
+
+					var targetVendors = [];
+					if (vendorChoice === 'all') {
+						targetVendors = activeVendors;
+					} else {
+						targetVendors = allVendors.filter(function(v) { return v.slug === vendorChoice; });
+						if (targetVendors.length === 0) {
+							targetVendors = [{
+								name: vendorChoice,
+								slug: vendorChoice,
+								sync_method: 'curl_html',
+								base_url: '',
+								endpoints: {}
+							}];
+						}
+					}
+
 					var allCategories = (categoryChoice === 'all') 
 						? ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet'] 
 						: [categoryChoice];
@@ -373,121 +399,111 @@ class Admin {
 							return;
 						}
 
-						if (currentVendorIdx >= allVendors.length) {
-							var onScrapeFinished = function() {
-								appendLog('info', '=== Automatically Running Multi-Vendor Deduplication & Merge Phase ===');
-								runChunkedMerge(categoryChoice, nonce, function() {
-									appendLog('success', 'Full sync & multi-vendor merge completed successfully!');
-									finishSync();
-								});
-							};
-
-							if (vendorChoice === 'all' || vendorChoice === 'mdcomputers') {
-								appendLog('info', '=== Running In-Browser Headless Scraper for MDComputers ===');
-								runBrowserHeadlessSync('mdcomputers', categoryChoice, nonce, function() {
-									onScrapeFinished();
-								});
-							} else {
-								onScrapeFinished();
-							}
+						if (currentVendorIdx >= targetVendors.length) {
+							appendLog('info', '=== Automatically Running Multi-Vendor Deduplication & Merge Phase ===');
+							runChunkedMerge(categoryChoice, nonce, function() {
+								appendLog('success', 'Full sync & multi-vendor merge completed successfully!');
+								finishSync();
+							});
 							return;
 						}
 
-						var curVendor = allVendors[currentVendorIdx++];
-						var curCatIdx = 0;
-						appendLog('info', '=== Connecting to ' + curVendor.toUpperCase() + ' ===');
+						var curVendorObj = targetVendors[currentVendorIdx++];
+						var curVendorSlug = curVendorObj.slug;
+						var curVendorName = curVendorObj.name || curVendorSlug;
+						var syncMethod = curVendorObj.sync_method || 'curl_html';
 
-						function processNextCategory() {
-							if (abortController && abortController.signal.aborted) {
-								appendLog('warning', 'Live Sync aborted by user.');
-								finishSync();
-								return;
-							}
+						appendLog('info', '=== Connecting to ' + curVendorName.toUpperCase() + ' (Method: ' + syncMethod + ') ===');
 
-							if (curCatIdx >= allCategories.length) {
+						if (syncMethod === 'browser_headless') {
+							runBrowserHeadlessSyncForVendor(curVendorObj, categoryChoice, nonce, function() {
 								processNextVendor();
-								return;
-							}
+							});
+						} else {
+							var curCatIdx = 0;
 
-							var curCat = allCategories[curCatIdx++];
-							var curPage = 1;
-							var retryCount = 0;
-
-							function fetchPageStep() {
+							function processNextCategory() {
 								if (abortController && abortController.signal.aborted) {
+									appendLog('warning', 'Live Sync aborted by user.');
 									finishSync();
 									return;
 								}
 
-								var postData = new URLSearchParams();
-								postData.append('action', 'hwsync_sync_batch');
-								postData.append('target_vendor', curVendor);
-								postData.append('target_category', curCat);
-								postData.append('page', curPage);
-								postData.append('hwsync_nonce', nonce);
+								if (curCatIdx >= allCategories.length) {
+									processNextVendor();
+									return;
+								}
 
-								fetch(ajaxurl, {
-									method: 'POST',
-									headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-									body: postData.toString(),
-									signal: abortController ? abortController.signal : null
-								}).then(function(res) {
-									return res.json();
-								}).then(function(json) {
-									if (json.success && json.data) {
-										var d = json.data;
-										if (d.logs && Array.isArray(d.logs)) {
-											d.logs.forEach(function(l) {
-												appendLog(l.level, l.message);
-											});
-										}
+								var curCat = allCategories[curCatIdx++];
+								var curPage = 1;
 
-										var curScraped = parseInt(mScraped.textContent) || 0;
-										var curMatched = parseInt(mMatched.textContent) || 0;
-										var curPrices = parseInt(mPrices.textContent) || 0;
+								function fetchPageStep() {
+									if (abortController && abortController.signal.aborted) {
+										finishSync();
+										return;
+									}
 
-										mScraped.textContent = curScraped + (d.items_count || 0);
-										mMatched.textContent = curMatched + (d.components || 0);
-										mPrices.textContent = curPrices + (d.prices_saved || 0);
+									var postData = new URLSearchParams();
+									postData.append('action', 'hwsync_sync_batch');
+									postData.append('target_vendor', curVendorSlug);
+									postData.append('target_category', curCat);
+									postData.append('page', curPage);
+									postData.append('hwsync_nonce', nonce);
 
-										if (d.has_more && curPage < 50) {
-											curPage++;
-											retryCount = 0;
-											fetchPageStep();
+									fetch(ajaxurl, {
+										method: 'POST',
+										headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+										body: postData.toString(),
+										signal: abortController ? abortController.signal : null
+									}).then(function(res) {
+										return res.json();
+									}).then(function(json) {
+										if (json.success && json.data) {
+											var d = json.data;
+											if (d.logs && Array.isArray(d.logs)) {
+												d.logs.forEach(function(l) {
+													appendLog(l.level, l.message);
+												});
+											}
+
+											var curScraped = parseInt(mScraped.textContent) || 0;
+											var curMatched = parseInt(mMatched.textContent) || 0;
+											var curPrices = parseInt(mPrices.textContent) || 0;
+
+											mScraped.textContent = curScraped + (d.items_count || 0);
+											mMatched.textContent = curMatched + (d.components || 0);
+											mPrices.textContent = curPrices + (d.prices_saved || 0);
+
+											if (d.has_more && curPage < 50) {
+												curPage++;
+												fetchPageStep();
+											} else {
+												processNextCategory();
+											}
 										} else {
+											appendLog('warning', '[' + curVendorName + '] Category ' + curCat + ' ended on Page ' + curPage);
 											processNextCategory();
 										}
-									} else {
-										appendLog('warning', '[' + curVendor + '] Category ' + curCat + ' ended on Page ' + curPage);
+									}).catch(function(err) {
+										appendLog('error', '[' + curVendorName + '] Category ' + curCat + ' error: ' + err.message);
 										processNextCategory();
-									}
-								}).catch(function(err) {
-									if (err.name === 'AbortError') {
-										appendLog('warning', 'Sync aborted.');
-										finishSync();
-									} else if (retryCount < 2) {
-										retryCount++;
-										appendLog('warning', '[' + curVendor + ' - ' + curCat + ' Page ' + curPage + '] Network hiccup (' + err.message + '). Retrying step (' + retryCount + '/2)...');
-										setTimeout(fetchPageStep, 1500);
-									} else {
-										appendLog('error', '[' + curVendor + ' - ' + curCat + '] Error after retries: ' + err.message + '. Moving to next category.');
-										processNextCategory();
-									}
-								});
+									});
+								}
+
+								fetchPageStep();
 							}
 
-							fetchPageStep();
+							processNextCategory();
 						}
-
-						processNextCategory();
 					}
 
 					processNextVendor();
 				}
 
-				function runChunkedSpecsSync(targetCategory, nonce) {
-					var currentOffset = 0;
-					var retryCount = 0;
+				function runChunkedSpecsSync(categoryChoice, nonce) {
+					var offset = 0;
+					var limit = 4;
+					var totalProcessed = 0;
 
 					function fetchSpecsStep() {
 						if (abortController && abortController.signal.aborted) {
@@ -498,9 +514,9 @@ class Admin {
 
 						var postData = new URLSearchParams();
 						postData.append('action', 'hwsync_sync_specs_chunk');
-						postData.append('target_category', targetCategory);
-						postData.append('offset', currentOffset);
-						postData.append('limit', 5);
+						postData.append('target_category', categoryChoice);
+						postData.append('offset', offset);
+						postData.append('limit', limit);
 						postData.append('hwsync_nonce', nonce);
 
 						fetch(ajaxurl, {
@@ -509,78 +525,62 @@ class Admin {
 							body: postData.toString(),
 							signal: abortController ? abortController.signal : null
 						}).then(function(res) {
-							return res.text();
-						}).then(function(responseText) {
-							try {
-								var json = JSON.parse(responseText);
-								if (json.success && json.data) {
-									var d = json.data;
-									if (d.logs && Array.isArray(d.logs)) {
-										d.logs.forEach(function(l) {
-											appendLog(l.level, l.message);
-										});
-									}
+							return res.json();
+						}).then(function(json) {
+							if (json.success && json.data) {
+								var d = json.data;
+								if (d.logs && Array.isArray(d.logs)) {
+									d.logs.forEach(function(l) {
+										appendLog(l.level, l.message);
+									});
+								}
 
-									var curSpecs = parseInt(mSpecs.textContent) || 0;
-									mSpecs.textContent = curSpecs + (d.updated || 0);
+								var curSpecs = parseInt(mSpecs.textContent) || 0;
+								mSpecs.textContent = curSpecs + (d.specs_updated || 0);
+								totalProcessed += (d.processed || 0);
 
-									if (d.has_more && d.next_offset) {
-										currentOffset = d.next_offset;
-										retryCount = 0;
-										fetchSpecsStep();
-									} else {
-										appendLog('finish', 'Technical Specifications Sync completed for all components in database!');
-										finishSync();
-									}
+								if (d.has_more) {
+									offset += limit;
+									fetchSpecsStep();
 								} else {
-									appendLog('finish', 'Specs sync completed.');
+									appendLog('success', 'Specifications Extraction completed! Updated ' + mSpecs.textContent + ' components.');
 									finishSync();
 								}
-							} catch (e) {
-								appendLog('warning', 'Specs response parsing issue: ' + responseText.substring(0, 150));
-								if (retryCount < 2) {
-									retryCount++;
-									setTimeout(fetchSpecsStep, 2000);
-								} else {
-									finishSync();
-								}
+							} else {
+								appendLog('warning', 'Specs sync step returned no data. Finished.');
+								finishSync();
 							}
 						}).catch(function(err) {
-							if (err.name === 'AbortError') {
-								appendLog('warning', 'Specs sync aborted.');
-								finishSync();
-							} else if (retryCount < 2) {
-								retryCount++;
-								appendLog('warning', 'Specs sync transient error (' + err.message + '). Retrying batch in 2s (' + retryCount + '/2)...');
-								setTimeout(fetchSpecsStep, 2000);
-							} else {
-								appendLog('error', 'Specs sync error: ' + err.message);
-								finishSync();
-							}
+							appendLog('error', 'Specs request error: ' + err.message);
+							finishSync();
 						});
 					}
 
 					fetchSpecsStep();
 				}
 
-				function runBrowserHeadlessSync(vendorSlug, category, nonce, nextCallback) {
-					var endpoints = {
-						'cpu': 'https://mdcomputers.in/catalog/processor',
-						'gpu': 'https://mdcomputers.in/catalog/graphics-card',
-						'motherboard': 'https://mdcomputers.in/catalog/motherboard',
-						'ram': 'https://mdcomputers.in/catalog/ram/desktop-ram',
-						'storage': 'https://mdcomputers.in/catalog/storage',
-						'psu': 'https://mdcomputers.in/catalog/smps',
-						'cooler': 'https://mdcomputers.in/cooling-system.html',
-						'cabinet': 'https://mdcomputers.in/catalog/cabinet'
+				function runBrowserHeadlessSyncForVendor(vendorObj, categoryChoice, nonce, nextCallback) {
+					var endpoints = vendorObj.endpoints || {};
+					var baseUrl = (vendorObj.base_url || '').replace(/\/+$/, '');
+
+					var defaultPaths = {
+						'cpu': '/catalog/processor',
+						'gpu': '/catalog/graphics-card',
+						'motherboard': '/catalog/motherboard',
+						'ram': '/catalog/ram/desktop-ram',
+						'storage': '/catalog/storage',
+						'psu': '/catalog/smps',
+						'cooler': '/cooling-system.html',
+						'cabinet': '/catalog/cabinet'
 					};
 
-					var catsToSync = (category === 'all') ? Object.keys(endpoints) : [category];
+					var allCats = ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet'];
+					var catsToSync = (categoryChoice === 'all') ? allCats : [categoryChoice];
 					var currentCatIndex = 0;
 
 					function processNextCategory() {
 						if (currentCatIndex >= catsToSync.length) {
-							appendLog('success', 'In-Browser headless sync completed for MDComputers.');
+							appendLog('success', 'In-Browser headless sync completed for ' + vendorObj.name + '.');
 							if (typeof nextCallback === 'function') {
 								nextCallback();
 							} else {
@@ -590,7 +590,8 @@ class Admin {
 						}
 
 						var currentCat = catsToSync[currentCatIndex++];
-						var baseEndpoint = endpoints[currentCat] || endpoints['cpu'];
+						var endpointPath = endpoints[currentCat] || defaultPaths[currentCat] || ('/product-category/' + currentCat);
+						var baseEndpoint = baseUrl ? (baseUrl + (endpointPath.startsWith('/') ? '' : '/') + endpointPath) : endpointPath;
 						var currentPage = 1;
 						var maxPages = 25;
 
@@ -601,7 +602,7 @@ class Admin {
 							}
 
 							var pageUrl = baseEndpoint + (baseEndpoint.indexOf('?') !== -1 ? '&' : '?') + 'page=' + page;
-							appendLog('info', '[MDComputers] In-Browser Headless Request [' + currentCat + '] Page ' + page + ' (' + pageUrl + ')...');
+							appendLog('info', '[' + vendorObj.name + '] In-Browser Headless Request [' + currentCat + '] Page ' + page + ' (' + pageUrl + ')...');
 
 							fetch(pageUrl, {
 								method: 'GET',
@@ -612,32 +613,33 @@ class Admin {
 							}).then(function(htmlText) {
 								var parser = new DOMParser();
 								var doc = parser.parseFromString(htmlText, 'text/html');
-								var productElements = doc.querySelectorAll('.product-grid-item, .product-item-container, .product-thumb, .product-layout');
+								var productElements = doc.querySelectorAll('.product-grid-item, .product-item-container, .product-thumb, .product-layout, .product-small, li.product');
 
 								if (!productElements || productElements.length === 0) {
-									appendLog('debug', '[MDComputers] No more items found on Page ' + page + ' for [' + currentCat + '].');
+									appendLog('debug', '[' + vendorObj.name + '] No more items found on Page ' + page + ' for [' + currentCat + '].');
 									processNextCategory();
 									return;
 								}
 
-								appendLog('info', '[MDComputers] Detected ' + productElements.length + ' raw cards on Page ' + page + '.');
+								appendLog('info', '[' + vendorObj.name + '] Detected ' + productElements.length + ' raw cards on Page ' + page + '.');
 
 								var parsedItems = [];
 								productElements.forEach(function(el) {
-									var titleEl = el.querySelector('h3 a, h4 a, .product-entities-title a, .name a');
+									var titleEl = el.querySelector('h3 a, h4 a, h2 a, .product-entities-title a, .name a, a.woocommerce-LoopProduct-link');
 									if (!titleEl) return;
 									var title = titleEl.textContent.trim();
 									var link = titleEl.getAttribute('href');
+									if (link && !link.startsWith('http')) link = baseUrl + '/' + link.replace(/^\//, '');
 
 									// Stock status check
 									var cardText = el.textContent.toLowerCase();
 									var isOutOfStock = cardText.indexOf('out of stock') !== -1 || cardText.indexOf('sold out') !== -1;
 									if (isOutOfStock) {
-										appendLog('debug', '[MDComputers] Skipped Out-of-Stock: "' + title + '"');
+										appendLog('debug', '[' + vendorObj.name + '] Skipped Out-of-Stock: "' + title + '"');
 										return;
 									}
 
-									// Price extraction: prioritize discounted price-new first
+									// Price extraction: prioritize discounted price-new and .ins first
 									var price = 0;
 									var origPrice = null;
 
@@ -679,7 +681,7 @@ class Admin {
 										in_stock: true,
 										stock_status: 'in_stock',
 										category: currentCat,
-										vendor_slug: 'mdcomputers',
+										vendor_slug: vendorObj.slug,
 										raw_data: { raw_title: title, display_price: priceDisplay }
 									});
 								});
@@ -689,11 +691,11 @@ class Admin {
 									return;
 								}
 
-								appendLog('info', '[MDComputers] Sending ' + parsedItems.length + ' in-stock items (Page ' + page + ') to database...');
+								appendLog('info', '[' + vendorObj.name + '] Sending ' + parsedItems.length + ' in-stock items (Page ' + page + ') to database...');
 
 								var batchData = new URLSearchParams();
 								batchData.append('action', 'hwsync_process_browser_batch');
-								batchData.append('vendor_slug', 'mdcomputers');
+								batchData.append('vendor_slug', vendorObj.slug);
 								batchData.append('items', JSON.stringify(parsedItems));
 								batchData.append('hwsync_nonce', nonce);
 
@@ -715,15 +717,15 @@ class Admin {
 										mMatched.textContent = curMatched + (d.components || 0);
 										mPrices.textContent = curPrices + (d.prices_saved || 0);
 
-										appendLog('match', '[MDComputers] Page ' + page + ': Synced ' + (d.prices_saved || 0) + ' prices into component catalog.');
+										appendLog('match', '[' + vendorObj.name + '] Page ' + page + ': Synced ' + (d.prices_saved || 0) + ' prices into component catalog.');
 									}
 									fetchCategoryPage(page + 1);
 								}).catch(function(err) {
-									appendLog('warning', '[MDComputers] Batch save warning: ' + err.message);
+									appendLog('warning', '[' + vendorObj.name + '] Batch save warning: ' + err.message);
 									fetchCategoryPage(page + 1);
 								});
 							}).catch(function(err) {
-								appendLog('warning', '[MDComputers] In-browser request ended on Page ' + page + ': ' + err.message);
+								appendLog('warning', '[' + vendorObj.name + '] In-browser request ended on Page ' + page + ': ' + err.message);
 								processNextCategory();
 							});
 						}
@@ -1605,7 +1607,10 @@ class Admin {
 			}
 		}
 
-		$vendor = $id ? Vendor::find_by_id( $id ) : new Vendor();
+		$vendor = $id ? Vendor::find_by_id( $id ) : null;
+		if ( ! $vendor && ! empty( $vendor_slug ) ) {
+			$vendor = Vendor::find_by_slug( $vendor_slug );
+		}
 		if ( ! $vendor ) {
 			$vendor = new Vendor();
 		}
@@ -1618,6 +1623,11 @@ class Admin {
 		$vendor->set_config( array( 'endpoints' => $clean_endpoints ) );
 
 		$vendor_id = $vendor->save();
+		if ( ! $vendor_id ) {
+			global $wpdb;
+			$err = ! empty( $wpdb->last_error ) ? $wpdb->last_error : \__( 'Failed to save retailer to database.', 'hwsync' );
+			wp_send_json_error( array( 'message' => $err ) );
+		}
 
 		wp_send_json_success( array(
 			'vendor_id' => $vendor_id,

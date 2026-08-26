@@ -839,6 +839,33 @@ $comp_mobo_dummy->save();
 $is_same_cat = \HWsync\Matching_Engine::is_same_hardware_component( $comp_cpu_dummy, $comp_mobo_dummy );
 assert_test( 'Category Isolation prevents different hardware categories from ever merging', $is_same_cat === false );
 
+// Test 24: Add New Custom Vendor and Update Sync Method
+$custom_vendor = new \HWsync\Models\Vendor( array(
+	'vendor_name' => 'Kalyan Computers',
+	'vendor_slug' => 'kalyancomputers',
+	'base_url'    => 'https://kalyancomputers.com',
+	'sync_method' => 'shopify_json',
+	'is_active'   => 1,
+) );
+$custom_vendor->set_config( array( 'endpoints' => array( 'cpu' => 'processors-amd' ) ) );
+$v_id = $custom_vendor->save();
+
+$retrieved_vendor = \HWsync\Models\Vendor::find_by_slug( 'kalyancomputers' );
+assert_test( 'Vendor Model properly adds new retailer and persists custom sync_method and config_json', (
+	$v_id > 0 &&
+	$retrieved_vendor !== null &&
+	$retrieved_vendor->sync_method === 'shopify_json' &&
+	( $retrieved_vendor->get_config()['endpoints']['cpu'] ?? '' ) === 'processors-amd'
+) );
+
+// Test 25: Sync_Manager Dynamic Adapter Instance Selection
+$manager = new \HWsync\Sync_Manager();
+$adapter_instance = $manager->get_adapter_instance( $retrieved_vendor );
+
+assert_test( 'Sync_Manager dynamically generates Configurable_Vendor_Adapter obeying updated sync_method', (
+	$adapter_instance instanceof \HWsync\Vendors\Configurable_Vendor_Adapter
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

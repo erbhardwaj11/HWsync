@@ -328,23 +328,26 @@ class Sync_Manager {
 	}
 
 	public function get_adapter_instance( Vendor $vendor ) {
-		$class = ! empty( $vendor->adapter_class ) && class_exists( $vendor->adapter_class )
+		$sync_method = $vendor->sync_method ?: 'curl_html';
+		$cfg = $vendor->get_config();
+		$endpoints = isset( $cfg['endpoints'] ) ? $cfg['endpoints'] : array();
+		$has_custom_endpoints = ! empty( array_filter( $endpoints ) );
+
+		// If vendor uses standard native class and method is curl_html and no custom endpoints override
+		$native_class = ! empty( $vendor->adapter_class ) && class_exists( $vendor->adapter_class )
 			? $vendor->adapter_class
 			: ( isset( $this->adapter_map[ $vendor->vendor_slug ] ) ? $this->adapter_map[ $vendor->vendor_slug ] : null );
 
-		if ( $class && class_exists( $class ) ) {
-			return new $class();
+		if ( $native_class && class_exists( $native_class ) && $sync_method === 'curl_html' && ! $has_custom_endpoints ) {
+			return new $native_class();
 		}
 
-		// Fallback to dynamic Configurable_Vendor_Adapter
-		$cfg = $vendor->get_config();
-		$endpoints = isset( $cfg['endpoints'] ) ? $cfg['endpoints'] : array();
-
+		// Dynamically instantiate Configurable_Vendor_Adapter for all custom sync methods & endpoints
 		return new \HWsync\Vendors\Configurable_Vendor_Adapter(
 			$vendor->vendor_slug,
 			$vendor->vendor_name,
 			$vendor->base_url,
-			$vendor->sync_method ?: 'curl_html',
+			$sync_method,
 			$endpoints
 		);
 	}

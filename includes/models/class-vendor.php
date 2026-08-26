@@ -97,6 +97,14 @@ class Vendor {
 		global $wpdb;
 		$table = Database::get_table_name( 'vendors' );
 
+		// If no ID provided, check if a vendor with this slug already exists to prevent duplicate key errors
+		if ( ! $this->id && ! empty( $this->vendor_slug ) ) {
+			$existing_id = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE vendor_slug = %s", $this->vendor_slug ) );
+			if ( $existing_id ) {
+				$this->id = intval( $existing_id );
+			}
+		}
+
 		$data = array(
 			'vendor_slug'   => $this->vendor_slug,
 			'vendor_name'   => $this->vendor_name,
@@ -111,8 +119,10 @@ class Vendor {
 		if ( $this->id ) {
 			$wpdb->update( $table, $data, array( 'id' => $this->id ) );
 		} else {
-			$wpdb->insert( $table, $data );
-			$this->id = $wpdb->insert_id;
+			$inserted = $wpdb->insert( $table, $data );
+			if ( $inserted !== false && $wpdb->insert_id ) {
+				$this->id = $wpdb->insert_id;
+			}
 		}
 
 		return $this->id;
