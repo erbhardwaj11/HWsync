@@ -413,12 +413,10 @@ class Admin {
 										var curScraped = parseInt(mScraped.textContent) || 0;
 										var curMatched = parseInt(mMatched.textContent) || 0;
 										var curPrices = parseInt(mPrices.textContent) || 0;
-										var curPosts = parseInt(mPosts.textContent) || 0;
 
 										mScraped.textContent = curScraped + (d.items_count || 0);
 										mMatched.textContent = curMatched + (d.components || 0);
 										mPrices.textContent = curPrices + (d.prices_saved || 0);
-										mPosts.textContent = curPosts + (d.posts_synced || 0);
 
 										if (d.has_more && curPage < 50) {
 											curPage++;
@@ -664,12 +662,10 @@ class Admin {
 										var curScraped = parseInt(mScraped.textContent) || 0;
 										var curMatched = parseInt(mMatched.textContent) || 0;
 										var curPrices = parseInt(mPrices.textContent) || 0;
-										var curPosts = parseInt(mPosts.textContent) || 0;
 
 										mScraped.textContent = curScraped + (d.processed || 0);
 										mMatched.textContent = curMatched + (d.components || 0);
 										mPrices.textContent = curPrices + (d.prices_saved || 0);
-										mPosts.textContent = curPosts + (d.posts_synced || 0);
 
 										appendLog('match', '[MDComputers] Page ' + page + ': Synced ' + (d.prices_saved || 0) + ' prices into component catalog.');
 									}
