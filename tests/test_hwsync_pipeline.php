@@ -34,6 +34,24 @@ if ( ! function_exists( 'sanitize_text_field' ) ) {
 	}
 }
 
+if ( ! function_exists( 'sanitize_title' ) ) {
+	function sanitize_title( $title ) {
+		return strtolower( trim( preg_replace( '/[^a-zA-Z0-9_-]+/', '-', (string)$title ), '-' ) );
+	}
+}
+
+if ( ! function_exists( 'sanitize_key' ) ) {
+	function sanitize_key( $key ) {
+		return strtolower( preg_replace( '/[^a-z0-9_-]/i', '', (string)$key ) );
+	}
+}
+
+if ( ! function_exists( 'get_edit_post_link' ) ) {
+	function get_edit_post_link( $id ) {
+		return 'https://example.com/wp-admin/post.php?post=' . intval( $id ) . '&action=edit';
+	}
+}
+
 if ( ! function_exists( 'trailingslashit' ) ) {
 	function trailingslashit( $string ) {
 		return rtrim( $string, '/\\' ) . '/';
@@ -292,7 +310,35 @@ class MockWPDB {
 			$tbl = $m[1];
 			return isset( $this->tables[ $tbl ] ) ? count( $this->tables[ $tbl ] ) : 0;
 		}
-		return 0;
+		if ( preg_match( '/SELECT\s+(?:pm\.)?post_id\s+FROM/i', $query ) ) {
+			if ( preg_match( '/meta_value\s*=\s*(\d+)/i', $query, $m ) ) {
+				$cid = $m[1];
+				foreach ( $GLOBALS['mock_postmeta'] ?? array() as $pid => $meta ) {
+					if ( isset( $meta['_hwsync_component_id'] ) && (string)$meta['_hwsync_component_id'] === (string)$cid ) {
+						return $pid;
+					}
+				}
+			}
+		}
+		if ( preg_match( '/SELECT\s+ID\s+FROM/i', $query ) ) {
+			if ( preg_match( '/post_title\s*=\s*\'([^\']+)\'/i', $query, $m ) ) {
+				$title = stripslashes( $m[1] );
+				foreach ( $GLOBALS['mock_posts'] ?? array() as $pid => $p ) {
+					if ( isset( $p['post_title'] ) && strcasecmp( $p['post_title'], $title ) === 0 ) {
+						return $pid;
+					}
+				}
+			}
+			if ( preg_match( '/post_name\s*=\s*\'([^\']+)\'/i', $query, $m ) ) {
+				$slug = $m[1];
+				foreach ( $GLOBALS['mock_posts'] ?? array() as $pid => $p ) {
+					if ( isset( $p['post_name'] ) && strcasecmp( $p['post_name'], $slug ) === 0 ) {
+						return $pid;
+					}
+				}
+			}
+		}
+		return null;
 	}
 }
 

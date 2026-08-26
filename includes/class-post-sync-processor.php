@@ -397,7 +397,10 @@ class Post_Sync_Processor {
 		}
 
 		// 4. Query by slug
-		$slug = sanitize_title( $post_title );
+		$slug = function_exists( 'sanitize_title' ) 
+			? \sanitize_title( $post_title ) 
+			: strtolower( trim( preg_replace( '/[^a-zA-Z0-9_-]+/', '-', $post_title ), '-' ) );
+
 		$slug_match = $wpdb->get_var( $wpdb->prepare(
 			"SELECT ID FROM {$wpdb->posts} WHERE post_name = %s AND post_type = %s AND post_status != 'trash' LIMIT 1",
 			$slug,
