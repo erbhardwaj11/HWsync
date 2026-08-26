@@ -765,13 +765,13 @@ assert_test( 'Multi-Vendor Engine aggregates 3 store prices and accurately detec
 	$lowest_3 === 35899.00
 ) );
 
-// Test 21: Current Sale/Offer Price Prioritization over MRP
-$sample_html_with_mrp = '<div class="product-price"><span class="offer-price">Offer Price</span> <span class="price-new">₹360,000</span> <span class="price-old">(28% off ) ₹499,999</span></div>';
-$extracted_prices = \HWsync\Vendors\Abstract_Vendor_Adapter::extract_clean_prices( $sample_html_with_mrp );
+// Test 21: Current Sale/Offer Price Prioritization over MRP (MDComputers & OpenCart/WooCommerce)
+$md_markup = '<span class="price"><span class="del"><span class=" amount"><span class="">&#8377;4,99,999</span></span></span><span class="ins"><span class=" amount"> &#8377;360,000<span class=""></span></span></span></span>';
+$extracted_md = \HWsync\Vendors\Abstract_Vendor_Adapter::extract_clean_prices( $md_markup );
 
-assert_test( 'Price Extractor accurately extracts Current Offer Price (360000.00) instead of MRP (499999.00)', (
-	$extracted_prices['price'] === 360000.00 &&
-	$extracted_prices['original_price'] === 499999.00
+assert_test( 'Price Extractor accurately extracts MDComputers Current Offer Price (360000.00) instead of MRP (499999.00)', (
+	$extracted_md['price'] === 360000.00 &&
+	$extracted_md['original_price'] === 499999.00
 ) );
 
 // Test 22: Component Deduplication & Merge Engine

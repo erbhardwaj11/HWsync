@@ -641,8 +641,8 @@ class Admin {
 									var price = 0;
 									var origPrice = null;
 
-									var priceNewEl = el.querySelector('.price-new, .special-price, .offer-price, .sales-price, .sale-price, ins .amount, ins');
-									var priceOldEl = el.querySelector('.price-old, .old-price, .regular-price, del .amount, del');
+									var priceNewEl = el.querySelector('.ins, ins, .price-new, .special-price, .offer-price, .sales-price, .sale-price, .current-price, .price-normal');
+									var priceOldEl = el.querySelector('.del, del, .price-old, .old-price, .regular-price, .mrp, .strike');
 
 									if (priceOldEl) {
 										var opMatch = priceOldEl.textContent.replace(/,/g, '').match(/[\d]+(?:\.\d+)?/);
@@ -656,7 +656,7 @@ class Admin {
 										var priceEl = el.querySelector('.price, .amount');
 										if (priceEl) {
 											var clone = priceEl.cloneNode(true);
-											var oldEls = clone.querySelectorAll('.price-old, .old-price, .regular-price, del, .price-tax');
+											var oldEls = clone.querySelectorAll('.del, del, .price-old, .old-price, .regular-price, .price-tax, .mrp, .strike');
 											oldEls.forEach(function(o) { o.remove(); });
 											var pMatch = clone.textContent.replace(/,/g, '').match(/[\d]+(?:\.\d+)?/);
 											if (pMatch) price = parseFloat(pMatch[0]);

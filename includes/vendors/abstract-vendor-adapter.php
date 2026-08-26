@@ -190,12 +190,12 @@ abstract class Abstract_Vendor_Adapter {
 
 		// 1. Look for explicit sale / offer / discounted price tags FIRST
 		$sale_patterns = array(
-			// WooCommerce <ins> tag (contains sale price)
-			'/<ins[^>]*>[\s\S]*?<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
-			'/<ins[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/ins>/i',
-			// OpenCart / Journal / Custom sale price classes
-			'/<(?:span|div|p|ins)[^>]*class="[^"]*(?:price-new|special-price|offer-price|sales-price|sale-price|current-price|price-normal)[^"]*"[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)/i',
-			'/<(?:span|div|p|ins)[^>]*class="[^"]*(?:price-new|special-price|offer-price|sales-price|sale-price|current-price)[^"]*"[^>]*>[\s\S]*?<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
+			// MDComputers <span class="ins">, WooCommerce <ins>, OpenCart .price-new, etc.
+			'/<(?:ins|span|div|p)\b[^>]*class="[^"]*\b(?:ins|price-new|special-price|offer-price|sales-price|sale-price|current-price|price-normal)\b[^"]*"[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)/i',
+			'/<(?:ins|span|div|p)\b[^>]*class="[^"]*\b(?:ins|price-new|special-price|offer-price|sales-price|sale-price|current-price)\b[^"]*"[^>]*>[\s\S]*?<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
+			'/<ins\b[^>]*>[\s\S]*?<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
+			'/<ins\b[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/ins>/i',
+			'/<ins\b[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)/i',
 		);
 
 		foreach ( $sale_patterns as $pattern ) {
@@ -210,12 +210,12 @@ abstract class Abstract_Vendor_Adapter {
 
 		// 2. Look for explicit regular / MRP / old price tags
 		$old_patterns = array(
-			// WooCommerce <del> tag (contains regular MRP price)
-			'/<del[^>]*>[\s\S]*?<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
-			'/<del[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/del>/i',
-			// OpenCart / Custom old price classes
-			'/<(?:span|div|p|del)[^>]*class="[^"]*(?:price-old|old-price|regular-price|mrp|strike)[^"]*"[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)/i',
-			'/<(?:span|div|p|del)[^>]*class="[^"]*(?:price-old|old-price|regular-price|mrp|strike)[^"]*"[^>]*>[\s\S]*?<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
+			// MDComputers <span class="del">, WooCommerce <del>, OpenCart .price-old, etc.
+			'/<(?:del|span|div|p)\b[^>]*class="[^"]*\b(?:del|price-old|old-price|regular-price|mrp|strike)\b[^"]*"[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)',
+			'/<(?:del|span|div|p)\b[^>]*class="[^"]*\b(?:del|price-old|old-price|regular-price|mrp|strike)\b[^"]*"[^>]*>[\s\S]*?<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
+			'/<del\b[^>]*>[\s\S]*?<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
+			'/<del\b[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/del>/i',
+			'/<del\b[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)/i',
 		);
 
 		foreach ( $old_patterns as $pattern ) {
@@ -230,12 +230,13 @@ abstract class Abstract_Vendor_Adapter {
 
 		// 3. Fallback: If no explicit sale price was detected, strip old prices/del/taxes first, then extract standard price
 		if ( $current_price <= 0 ) {
-			$clean_html = preg_replace( '/<(?:del|span|div|p)[^>]*class="[^"]*(?:price-old|old-price|regular-price|mrp|strike|price-tax)[^"]*"[\s\S]*?<\/(?:del|span|div|p)>/i', '', $html );
-			$clean_html = preg_replace( '/<del[^>]*>[\s\S]*?<\/del>/i', '', $clean_html );
+			$clean_html = preg_replace( '/<(?:del|span|div|p)\b[^>]*class="[^"]*\b(?:del|price-old|old-price|regular-price|mrp|strike|price-tax)\b[^"]*"[\s\S]*?<\/(?:del|span|div|p)>/i', '', $html );
+			$clean_html = preg_replace( '/<del\b[^>]*>[\s\S]*?<\/del>/i', '', $clean_html );
 
 			$fallback_patterns = array(
 				'/<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
 				'/<bdi>[\s\S]*?([\d,]+(?:\.\d+)?)<\/bdi>/i',
+				'/<(?:span|div|p)\b[^>]*class="[^"]*\b(?:amount|price)\b[^"]*"[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)/i',
 				'/(?:price|amount)[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)/i',
 				'/(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)/i',
 			);
