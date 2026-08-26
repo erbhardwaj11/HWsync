@@ -104,7 +104,7 @@ class Specs_Sync_Manager {
 				$structured_specs['raw_specs_table'] = $merged_raw_specs;
 			}
 
-			// 4. Save updated specs
+			// 4. Save updated specs into DB table only
 			if ( ! empty( $structured_specs ) ) {
 				$component->specs_json = $structured_specs;
 				$component->save();
@@ -112,18 +112,12 @@ class Specs_Sync_Manager {
 
 				$spec_summary = self::format_specs_summary( $structured_specs );
 				$this->emit( $logger, 'success', "Specs Saved for #{$component->id} [{$component->model_name}]: {$spec_summary}" );
-
-				// 5. Update linked WordPress post content & meta
-				if ( ! empty( $component->wp_post_id ) ) {
-					Post_Sync_Processor::sync_component_to_post( $component->id );
-					$report['posts_refreshed']++;
-				}
 			} else {
 				$this->emit( $logger, 'debug', "No additional specifications discovered for #{$component->id}." );
 			}
 		}
 
-		$this->emit( $logger, 'finish', "Specifications Sync Completed! Updated {$report['specs_updated']} components and refreshed {$report['posts_refreshed']} WordPress posts." );
+		$this->emit( $logger, 'finish', "Specifications Sync Completed! Updated {$report['specs_updated']} components in database." );
 
 		return $report;
 	}
@@ -153,7 +147,6 @@ class Specs_Sync_Manager {
 
 		$logs = array();
 		$updated = 0;
-		$posts_refreshed = 0;
 
 		if ( empty( $components_raw ) ) {
 			return array(
@@ -167,52 +160,51 @@ class Specs_Sync_Manager {
 		}
 
 		foreach ( $components_raw as $c_row ) {
-			$component = new Component( $c_row );
-			$prices = $component->get_prices();
+			try {
+				$component = new Component( $c_row );
+				$prices = $component->get_prices();
 
-			if ( empty( $prices ) ) {
-				$logs[] = array( 'level' => 'debug', 'message' => "Component #{$component->id} has no linked price listings. Skipping." );
-				continue;
-			}
+				if ( empty( $prices ) ) {
+					$logs[] = array( 'level' => 'debug', 'message' => "Component #{$component->id} has no linked price listings. Skipping." );
+					continue;
+				}
 
-			$merged_raw_specs = is_array( $component->specs_json ) && isset( $component->specs_json['raw_specs_table'] )
-				? (array) $component->specs_json['raw_specs_table']
-				: array();
+				$merged_raw_specs = is_array( $component->specs_json ) && isset( $component->specs_json['raw_specs_table'] )
+					? (array) $component->specs_json['raw_specs_table']
+					: array();
 
-			$collected_text = $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
+				$collected_text = $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
 
-			foreach ( $prices as $p ) {
-				if ( empty( $p->product_url ) ) continue;
-				$vendor_slug = ! empty( $p->vendor_slug ) ? $p->vendor_slug : '';
-				$page_specs = $this->fetch_specs_from_product_url( $p->product_url, $vendor_slug, $component->category );
+				foreach ( $prices as $p ) {
+					if ( empty( $p->product_url ) ) continue;
+					$vendor_slug = ! empty( $p->vendor_slug ) ? $p->vendor_slug : '';
+					$page_specs = $this->fetch_specs_from_product_url( $p->product_url, $vendor_slug, $component->category );
 
-				if ( ! empty( $page_specs ) ) {
-					$merged_raw_specs = array_merge( $merged_raw_specs, $page_specs );
-					$logs[] = array( 'level' => 'match', 'message' => "[{$component->model_name}] Extracted " . count( $page_specs ) . " specs attributes from " . ucfirst( $vendor_slug ) . " product page." );
-					foreach ( $page_specs as $sk => $sv ) {
-						$collected_text .= " {$sk}: {$sv}";
+					if ( ! empty( $page_specs ) ) {
+						$merged_raw_specs = array_merge( $merged_raw_specs, $page_specs );
+						$logs[] = array( 'level' => 'match', 'message' => "[{$component->model_name}] Extracted " . count( $page_specs ) . " specs attributes from " . ucfirst( $vendor_slug ) . " product page." );
+						foreach ( $page_specs as $sk => $sv ) {
+							$collected_text .= " {$sk}: {$sv}";
+						}
+						break;
 					}
-					break;
 				}
-			}
 
-			$structured_specs = self::extract_detailed_specs( $component->category, $collected_text, $component->specs_json ?: array() );
-			if ( ! empty( $merged_raw_specs ) ) {
-				$structured_specs['raw_specs_table'] = $merged_raw_specs;
-			}
-
-			if ( ! empty( $structured_specs ) ) {
-				$component->specs_json = $structured_specs;
-				$component->save();
-				$updated++;
-
-				$summary = self::format_specs_summary( $structured_specs );
-				$logs[] = array( 'level' => 'success', 'message' => "Specs Saved for #{$component->id} [{$component->model_name}]: {$summary}" );
-
-				if ( ! empty( $component->wp_post_id ) ) {
-					Post_Sync_Processor::sync_component_to_post( $component->id );
-					$posts_refreshed++;
+				$structured_specs = self::extract_detailed_specs( $component->category, $collected_text, $component->specs_json ?: array() );
+				if ( ! empty( $merged_raw_specs ) ) {
+					$structured_specs['raw_specs_table'] = $merged_raw_specs;
 				}
+
+				if ( ! empty( $structured_specs ) ) {
+					$component->specs_json = $structured_specs;
+					$component->save();
+					$updated++;
+
+					$summary = self::format_specs_summary( $structured_specs );
+					$logs[] = array( 'level' => 'success', 'message' => "Specs Saved for #{$component->id} [{$component->model_name}]: {$summary}" );
+				}
+			} catch ( \Throwable $e ) {
+				$logs[] = array( 'level' => 'warning', 'message' => "Error syncing specs for component #{$c_row['id']}: " . $e->getMessage() );
 			}
 		}
 
@@ -224,7 +216,6 @@ class Specs_Sync_Manager {
 			'has_more'         => $has_more,
 			'processed'        => count( $components_raw ),
 			'updated'          => $updated,
-			'posts_refreshed'  => $posts_refreshed,
 			'total_components' => $total_count,
 			'next_offset'      => $next_offset,
 			'logs'             => $logs,

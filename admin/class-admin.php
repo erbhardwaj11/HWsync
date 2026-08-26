@@ -205,7 +205,7 @@ class Admin {
 							Prices: <strong id="m-prices" style="color: #facc15;">0</strong>
 						</div>
 						<div style="background: #1e293b; padding: 4px 6px; border-radius: 4px; color: #94a3b8;">
-							WP Posts: <strong id="m-posts" style="color: #4ade80;">0</strong>
+							Specs: <strong id="m-specs" style="color: #4ade80;">0</strong>
 						</div>
 					</div>
 
@@ -235,7 +235,7 @@ class Admin {
 				var mScraped = document.getElementById('m-scraped');
 				var mMatched = document.getElementById('m-matched');
 				var mPrices = document.getElementById('m-prices');
-				var mPosts = document.getElementById('m-posts');
+				var mSpecs = document.getElementById('m-specs');
 
 				var abortController = null;
 
@@ -258,8 +258,8 @@ class Admin {
 					var color = levelColors[level] || '#e2e8f0';
 
 					line.innerHTML = '<span style="color:#64748b; user-select:none;">[' + timeStr + ']</span> ' +
-						'<span style="color:' + color + '; font-weight:600; text-transform:uppercase; font-size:11px;">[' + level + ']</span> ' +
-						'<span style="color:' + (level === 'error' ? '#fca5a5' : '#e2e8f0') + ';">' + escapeHtml(message) + '</span>';
+						'<span style="color:' + color + '; font-weight:bold; text-transform:uppercase;">[' + level + ']</span> ' +
+						'<span style="color:#f1f5f9;">' + escapeHtml(message) + '</span>';
 
 					terminal.appendChild(line);
 
@@ -269,14 +269,19 @@ class Admin {
 				}
 
 				function escapeHtml(text) {
-					var div = document.createElement('div');
-					div.textContent = text;
-					return div.innerHTML;
+					if (typeof text !== 'string') return text;
+					var map = {
+						'&': '&amp;',
+						'<': '&lt;',
+						'>': '&gt;',
+						'"': '&quot;',
+						"'": '&#039;'
+					};
+					return text.replace(/[&<>"']/g, function(m) { return map[m]; });
 				}
 
 				clearBtn.addEventListener('click', function() {
 					terminal.innerHTML = '';
-					appendLog('info', 'Console cleared.');
 				});
 
 				startBtn.addEventListener('click', function() {
@@ -474,27 +479,41 @@ class Admin {
 							body: postData.toString(),
 							signal: abortController ? abortController.signal : null
 						}).then(function(res) {
-							return res.json();
-						}).then(function(json) {
-							if (json.success && json.data) {
-								var d = json.data;
-								if (d.logs && Array.isArray(d.logs)) {
-									d.logs.forEach(function(l) {
-										appendLog(l.level, l.message);
-									});
-								}
+							return res.text();
+						}).then(function(responseText) {
+							try {
+								var json = JSON.parse(responseText);
+								if (json.success && json.data) {
+									var d = json.data;
+									if (d.logs && Array.isArray(d.logs)) {
+										d.logs.forEach(function(l) {
+											appendLog(l.level, l.message);
+										});
+									}
 
-								if (d.has_more && d.next_offset) {
-									currentOffset = d.next_offset;
-									retryCount = 0;
-									fetchSpecsStep();
+									var curSpecs = parseInt(mSpecs.textContent) || 0;
+									mSpecs.textContent = curSpecs + (d.updated || 0);
+
+									if (d.has_more && d.next_offset) {
+										currentOffset = d.next_offset;
+										retryCount = 0;
+										fetchSpecsStep();
+									} else {
+										appendLog('finish', 'Technical Specifications Sync completed for all components in database!');
+										finishSync();
+									}
 								} else {
-									appendLog('finish', 'Technical Specifications Sync completed for all components in database!');
+									appendLog('finish', 'Specs sync completed.');
 									finishSync();
 								}
-							} else {
-								appendLog('finish', 'Specs sync completed.');
-								finishSync();
+							} catch (e) {
+								appendLog('warning', 'Specs response parsing issue: ' + responseText.substring(0, 150));
+								if (retryCount < 2) {
+									retryCount++;
+									setTimeout(fetchSpecsStep, 2000);
+								} else {
+									finishSync();
+								}
 							}
 						}).catch(function(err) {
 							if (err.name === 'AbortError') {
@@ -955,16 +974,11 @@ class Admin {
 
 		$vendor->update_last_sync();
 
-		$post_stats = array( 'created' => 0, 'updated' => 0 );
-		if ( ! empty( $touched_ids ) ) {
-			$post_stats = Post_Sync_Processor::process_all( array_keys( $touched_ids ) );
-		}
-
 		wp_send_json_success( array(
 			'processed'    => $processed,
 			'prices_saved' => $prices_saved,
 			'components'   => count( $touched_ids ),
-			'posts_synced' => ( $post_stats['created'] + $post_stats['updated'] ),
+			'posts_synced' => 0,
 		) );
 	}
 

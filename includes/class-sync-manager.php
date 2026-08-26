@@ -132,19 +132,8 @@ class Sync_Manager {
 		$touched_ids = array_keys( $report['touched_component_ids'] );
 		$report['components_processed'] = count( $touched_ids );
 
-		// Step 3: Trigger Post Sync Processor once component & price syncing is complete
-		if ( ! empty( $touched_ids ) ) {
-			$this->emit( $logger, 'info', "Processing post-sync: Publishing and updating WordPress component posts...", $report );
-			$post_stats = Post_Sync_Processor::process_all( $touched_ids );
-			$report['posts_synced'] = $post_stats['created'] + $post_stats['updated'];
-			$report['post_stats']   = $post_stats;
-			$this->emit( $logger, 'success', "WordPress Catalog Updated! Posts Created: {$post_stats['created']}, Updated: {$post_stats['updated']}, Unchanged: {$post_stats['skipped']}", $report );
-		} else {
-			$this->emit( $logger, 'info', "No new or modified components to sync to WordPress posts.", $report );
-		}
-
 		$report['completed_at'] = current_time( 'mysql' );
-		$this->emit( $logger, 'finish', "HWsync process finished successfully! Total scraped: {$report['total_items_fetched']}, Prices saved/updated: {$report['prices_updated']}, Posts synced: {$report['posts_synced']}.", $report );
+		$this->emit( $logger, 'finish', "HWsync process finished successfully! Total scraped: {$report['total_items_fetched']}, Prices saved/updated: {$report['prices_updated']}, Components in DB: {$report['components_processed']}.", $report );
 
 		return $report;
 	}
@@ -322,11 +311,6 @@ class Sync_Manager {
 			}
 		}
 
-		$post_stats = array( 'created' => 0, 'updated' => 0 );
-		if ( ! empty( $touched_ids ) ) {
-			$post_stats = Post_Sync_Processor::process_all( array_keys( $touched_ids ) );
-		}
-
 		$vendor->update_last_sync();
 
 		// Has more pages if we received full batch and page < 50
@@ -338,7 +322,7 @@ class Sync_Manager {
 			'items_count'  => count( $raw_items ),
 			'prices_saved' => $prices_saved,
 			'components'   => count( $touched_ids ),
-			'posts_synced' => ( $post_stats['created'] + $post_stats['updated'] ),
+			'posts_synced' => 0,
 			'logs'         => $logs,
 		);
 	}
