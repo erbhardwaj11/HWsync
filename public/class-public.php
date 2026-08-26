@@ -166,62 +166,65 @@ class Public_Handler {
 	}
 }
 
-/**
- * Global Theme Helper Functions for pcspecs & Theme Developers
- */
-if ( ! function_exists( 'pcspecs_get_vendor_prices' ) ) {
-	function pcspecs_get_vendor_prices( $post_id = 0 ) {
-		if ( empty( $post_id ) ) {
-			$post_id = get_the_ID();
-		}
-		$prices = get_post_meta( $post_id, '_pcspecs_vendor_prices', true );
-		if ( ! empty( $prices ) && is_array( $prices ) ) {
-			return $prices;
-		}
-		return get_post_meta( $post_id, '_hwsync_vendor_prices', true ) ?: array();
-	}
-}
+namespace {
 
-if ( ! function_exists( 'pcspecs_get_lowest_price' ) ) {
-	function pcspecs_get_lowest_price( $post_id = 0 ) {
-		if ( empty( $post_id ) ) {
-			$post_id = get_the_ID();
+	/**
+	 * Global Theme Helper Functions for pcspecs & Theme Developers
+	 */
+	if ( ! function_exists( 'pcspecs_get_vendor_prices' ) ) {
+		function pcspecs_get_vendor_prices( $post_id = 0 ) {
+			if ( empty( $post_id ) && function_exists( 'get_the_ID' ) ) {
+				$post_id = get_the_ID();
+			}
+			$prices = get_post_meta( $post_id, '_pcspecs_vendor_prices', true );
+			if ( ! empty( $prices ) && is_array( $prices ) ) {
+				return $prices;
+			}
+			return get_post_meta( $post_id, '_hwsync_vendor_prices', true ) ?: array();
 		}
-		$lowest = get_post_meta( $post_id, '_pcspecs_lowest_price', true );
-		if ( ! empty( $lowest ) ) {
-			return floatval( $lowest );
+	}
+
+	if ( ! function_exists( 'pcspecs_get_lowest_price' ) ) {
+		function pcspecs_get_lowest_price( $post_id = 0 ) {
+			if ( empty( $post_id ) && function_exists( 'get_the_ID' ) ) {
+				$post_id = get_the_ID();
+			}
+			$lowest = get_post_meta( $post_id, '_pcspecs_lowest_price', true );
+			if ( ! empty( $lowest ) ) {
+				return floatval( $lowest );
+			}
+			return floatval( get_post_meta( $post_id, '_hwsync_lowest_price', true ) );
 		}
-		return floatval( get_post_meta( $post_id, '_hwsync_lowest_price', true ) );
 	}
-}
 
-if ( ! function_exists( 'pcspecs_render_price_table' ) ) {
-	function pcspecs_render_price_table( $post_id = 0 ) {
-		if ( empty( $post_id ) ) {
-			$post_id = get_the_ID();
+	if ( ! function_exists( 'pcspecs_render_price_table' ) ) {
+		function pcspecs_render_price_table( $post_id = 0 ) {
+			if ( empty( $post_id ) && function_exists( 'get_the_ID' ) ) {
+				$post_id = get_the_ID();
+			}
+			$component_id = get_post_meta( $post_id, '_pcspecs_component_id', true ) ?: get_post_meta( $post_id, '_hwsync_component_id', true );
+			if ( $component_id && function_exists( 'do_shortcode' ) ) {
+				return do_shortcode( '[hwsync_price_table id="' . intval( $component_id ) . '"]' );
+			}
+			return '';
 		}
-		$component_id = get_post_meta( $post_id, '_pcspecs_component_id', true ) ?: get_post_meta( $post_id, '_hwsync_component_id', true );
-		if ( $component_id ) {
-			return do_shortcode( '[hwsync_price_table id="' . intval( $component_id ) . '"]' );
+	}
+
+	if ( ! function_exists( 'hwsync_get_vendor_prices' ) ) {
+		function hwsync_get_vendor_prices( $post_id = 0 ) {
+			return pcspecs_get_vendor_prices( $post_id );
 		}
-		return '';
 	}
-}
 
-if ( ! function_exists( 'hwsync_get_vendor_prices' ) ) {
-	function hwsync_get_vendor_prices( $post_id = 0 ) {
-		return pcspecs_get_vendor_prices( $post_id );
+	if ( ! function_exists( 'hwsync_get_lowest_price' ) ) {
+		function hwsync_get_lowest_price( $post_id = 0 ) {
+			return pcspecs_get_lowest_price( $post_id );
+		}
 	}
-}
 
-if ( ! function_exists( 'hwsync_get_lowest_price' ) ) {
-	function hwsync_get_lowest_price( $post_id = 0 ) {
-		return pcspecs_get_lowest_price( $post_id );
-	}
-}
-
-if ( ! function_exists( 'hwsync_render_price_table' ) ) {
-	function hwsync_render_price_table( $post_id = 0 ) {
-		return pcspecs_render_price_table( $post_id );
+	if ( ! function_exists( 'hwsync_render_price_table' ) ) {
+		function hwsync_render_price_table( $post_id = 0 ) {
+			return pcspecs_render_price_table( $post_id );
+		}
 	}
 }

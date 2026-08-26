@@ -15,6 +15,8 @@ class Vendor_Price {
 	public $id;
 	public $component_id;
 	public $vendor_id;
+	public $vendor_slug;
+	public $vendor_name;
 	public $vendor_sku;
 	public $vendor_product_title;
 	public $product_url;

@@ -254,10 +254,23 @@ class Post_Sync_Processor {
 				$highest_price = floatval( $p->price );
 			}
 
+			$v_slug = ! empty( $p->vendor_slug ) ? $p->vendor_slug : '';
+			$v_name = ! empty( $p->vendor_name ) ? $p->vendor_name : '';
+			if ( empty( $v_slug ) && ! empty( $p->vendor_id ) ) {
+				$v_obj = \HWsync\Models\Vendor::find_by_id( $p->vendor_id );
+				if ( $v_obj ) {
+					$v_slug = $v_obj->vendor_slug;
+					$v_name = $v_obj->vendor_name;
+				}
+			}
+			if ( empty( $v_name ) ) {
+				$v_name = ! empty( $v_slug ) ? ucfirst( $v_slug ) : 'Retailer';
+			}
+
 			$vendor_prices_data[] = array(
 				'vendor_id'            => $p->vendor_id,
-				'vendor_slug'          => $p->vendor_slug,
-				'vendor_name'          => $p->vendor_name ?: ucfirst( $p->vendor_slug ),
+				'vendor_slug'          => $v_slug,
+				'vendor_name'          => $v_name,
 				'vendor_product_title' => $p->vendor_product_title,
 				'price'                => floatval( $p->price ),
 				'original_price'       => ! empty( $p->original_price ) ? floatval( $p->original_price ) : null,
