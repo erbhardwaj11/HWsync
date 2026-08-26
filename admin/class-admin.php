@@ -588,12 +588,21 @@ class Admin {
 										return;
 									}
 
-									// Price extraction
-									var priceEl = el.querySelector('.price-new, .price, .amount, .special-price');
+									// Price extraction: prioritize discounted price-new first
 									var price = 0;
-									if (priceEl) {
-										var pMatch = priceEl.textContent.replace(/,/g, '').match(/[\d]+(?:\.\d+)?/);
+									var priceNewEl = el.querySelector('.price-new, .special-price, ins .amount');
+									if (priceNewEl) {
+										var pMatch = priceNewEl.textContent.replace(/,/g, '').match(/[\d]+(?:\.\d+)?/);
 										if (pMatch) price = parseFloat(pMatch[0]);
+									} else {
+										var priceEl = el.querySelector('.price, .amount');
+										if (priceEl) {
+											var clone = priceEl.cloneNode(true);
+											var oldEls = clone.querySelectorAll('.price-old, del, .price-tax');
+											oldEls.forEach(function(o) { o.remove(); });
+											var pMatch = clone.textContent.replace(/,/g, '').match(/[\d]+(?:\.\d+)?/);
+											if (pMatch) price = parseFloat(pMatch[0]);
+										}
 									}
 
 									var priceDisplay = (price > 0) ? '₹' + price.toFixed(2) : 'NA';

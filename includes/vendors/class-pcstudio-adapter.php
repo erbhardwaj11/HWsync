@@ -44,38 +44,39 @@ class PCStudio_Adapter extends Abstract_Vendor_Adapter {
 		}
 
 		// Split HTML by product block boundary
-		$parts = preg_split( '/<li[^>]*class="[^"]*(?:product\s+type-product|type-product\s+post-)[^"]*"/', $html_content );
-		if ( count( $parts ) <= 1 ) {
-			$parts = preg_split( '/<div[^>]*class="[^"]*(?:product-small|product-item)[^"]*"/', $html_content );
-		}
-
+		$parts = preg_split( '/<(?:li|div)[^>]*class="[^"]*(?:product\s+type-product|type-product\s+post-|product-small|product-item)[^"]*"/', $html_content );
 		if ( count( $parts ) > 1 ) {
-			// Skip preamble
-			array_shift( $parts );
+			array_shift( $parts ); // Skip preamble
 
 			foreach ( $parts as $p ) {
 				// URL
 				$url = '';
-				if ( preg_match( '/<a\s+href="([^"]+)"\s+class="[^"]*woocommerce-LoopProduct-link/i', $p, $um ) ||
+				if ( preg_match( '/href="(https:\/\/www\.pcstudio\.in\/product\/[^"]+)"/i', $p, $um ) ||
+				     preg_match( '/<a\s+href="([^"]+)"\s+class="[^"]*woocommerce-LoopProduct-link/i', $p, $um ) ||
 				     preg_match( '/<h[23][^>]*>\s*<a\s+href="([^"]+)"/i', $p, $um ) ) {
 					$url = $um[1];
 				}
 
 				// Title
 				$title = '';
-				if ( preg_match( '/<span\s+title="([^"]+)"/i', $p, $tm ) ) {
-					$title = $tm[1];
-				} elseif ( preg_match( '/alt="&lt;span title=&quot;([^&]+)&quot;/i', $p, $tm ) ) {
+				if ( preg_match( '/title="([^"]+)"/i', $p, $tm ) ) {
 					$title = $tm[1];
 				} elseif ( preg_match( '/<h[23][^>]*>\s*<a[^>]*>([^<]+)<\/a>/i', $p, $tm ) ) {
 					$title = $tm[1];
+				} elseif ( preg_match( '/alt="([^"]+)"/i', $p, $tm ) ) {
+					$title = $tm[1];
 				}
 
-				// Price
+				if ( ! empty( $title ) ) {
+					$title = html_entity_decode( trim( strip_tags( $title ) ), ENT_QUOTES, 'UTF-8' );
+				}
+
+				// Price: Must check <ins> (sale price) first, then fallback to <bdi> or amount
 				$price = 0.0;
 				if ( preg_match( '/<ins[^>]*>[\s\S]*?<bdi>[\s\S]*?([\d,]+(?:\.\d+)?)<\/bdi>/i', $p, $pm ) ||
+				     preg_match( '/<ins[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $p, $pm ) ||
 				     preg_match( '/<bdi>[\s\S]*?([\d,]+(?:\.\d+)?)<\/bdi>/i', $p, $pm ) ||
-				     preg_match( '/Current price is:[\s\S]*?([\d,]+(?:\.\d+)?)/i', $p, $pm ) ) {
+				     preg_match( '/(?:price-new|amount)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $p, $pm ) ) {
 					$price = self::clean_price( $pm[1] );
 				}
 
@@ -85,15 +86,17 @@ class PCStudio_Adapter extends Abstract_Vendor_Adapter {
 					$sku = trim( $sm[1] );
 				}
 
+				$in_stock = ( stripos( $p, 'out-of-stock' ) === false && stripos( $p, 'sold out' ) === false );
+
 				if ( ! empty( $url ) && ! empty( $title ) && $price > 0 ) {
 					$items[] = array(
-						'title'          => html_entity_decode( trim( $title ), ENT_QUOTES, 'UTF-8' ),
+						'title'          => $title,
 						'url'            => $url,
 						'price'          => $price,
 						'original_price' => null,
 						'sku'            => $sku,
-						'in_stock'       => true,
-						'stock_status'   => 'in_stock',
+						'in_stock'       => $in_stock,
+						'stock_status'   => $in_stock ? 'in_stock' : 'out_of_stock',
 						'category'       => $category,
 						'vendor_slug'    => $this->vendor_slug,
 						'raw_data'       => array( 'raw_title' => $title, 'price' => $price, 'sku' => $sku ),

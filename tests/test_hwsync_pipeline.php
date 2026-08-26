@@ -551,6 +551,25 @@ assert_test( 'Cron Schedule Configuration Successfully Saved and Event Scheduled
 $page_sync_res = $sync_manager->sync_page( 'mdcomputers', 'cpu', 1, false );
 assert_test( 'Chunked Page Sync (Single Step) executes without error and returns logs', ( $page_sync_res['success'] && isset( $page_sync_res['logs'] ) && is_array( $page_sync_res['logs'] ) ) );
 
+// Test 16: Strict Hardware Model Isolation (No False Fuzzy Matches Across Chipsets)
+$item_5050 = array(
+	'title'    => 'MSI RTX 5050 Shadow 2X OC 8GB GDDR6 Graphics Card',
+	'price'    => 47700.00,
+	'category' => 'gpu',
+	'in_stock' => true,
+);
+$c_5050 = \HWsync\Matching_Engine::match_or_create_component( $item_5050 );
+
+$item_4070 = array(
+	'title'    => 'MSI RTX 4070 Shadow 2X OC 12GB GDDR6X Graphics Card',
+	'price'    => 59999.00,
+	'category' => 'gpu',
+	'in_stock' => true,
+);
+$c_4070 = \HWsync\Matching_Engine::match_or_create_component( $item_4070 );
+
+assert_test( 'Different GPU Chipsets (RTX 5050 vs RTX 4070) produce distinct canonical component IDs', ( $c_5050 && $c_4070 && $c_5050->id !== $c_4070->id ) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";
