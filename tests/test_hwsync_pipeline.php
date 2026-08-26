@@ -114,9 +114,29 @@ if ( ! function_exists( 'wp_trim_words' ) ) {
 	}
 }
 
+if ( ! function_exists( '__' ) ) {
+	function __( $text, $domain = 'default' ) {
+		return $text;
+	}
+}
+
+if ( ! function_exists( 'esc_html__' ) ) {
+	function esc_html__( $text, $domain = 'default' ) {
+		return $text;
+	}
+}
+
+if ( ! function_exists( 'esc_attr__' ) ) {
+	function esc_attr__( $text, $domain = 'default' ) {
+		return $text;
+	}
+}
+
 // In-memory Mock WPDB
 class MockWPDB {
 	public $prefix = 'wp_';
+	public $posts = 'wp_posts';
+	public $postmeta = 'wp_postmeta';
 	public $insert_id = 0;
 	private $auto_increment = 1;
 	public $tables = array();

@@ -125,7 +125,7 @@ class Backup_Manager {
 		if ( ! file_exists( $file_path ) || ! is_readable( $file_path ) ) {
 			return array(
 				'success' => false,
-				'message' => __( 'CSV file not found or unreadable.', 'hwsync' ),
+				'message' => \__( 'CSV file not found or unreadable.', 'hwsync' ),
 			);
 		}
 
@@ -133,7 +133,7 @@ class Backup_Manager {
 		if ( ! $handle ) {
 			return array(
 				'success' => false,
-				'message' => __( 'Could not open CSV file.', 'hwsync' ),
+				'message' => \__( 'Could not open CSV file.', 'hwsync' ),
 			);
 		}
 
@@ -143,7 +143,7 @@ class Backup_Manager {
 			fclose( $handle );
 			return array(
 				'success' => false,
-				'message' => __( 'Invalid CSV format or missing columns.', 'hwsync' ),
+				'message' => \__( 'Invalid CSV format or missing columns.', 'hwsync' ),
 			);
 		}
 
@@ -244,7 +244,7 @@ class Backup_Manager {
 			'prices_imported'     => $imported_prices,
 			'posts_synced'        => ( $post_stats['created'] + $post_stats['updated'] ),
 			'message'             => sprintf(
-				__( 'CSV Restore Completed: %d components processed, %d vendor prices imported, %d WordPress posts synced.', 'hwsync' ),
+				\__( 'CSV Restore Completed: %d components processed, %d vendor prices imported, %d WordPress posts synced.', 'hwsync' ),
 				count( $touched_comp_ids ),
 				$imported_prices,
 				( $post_stats['created'] + $post_stats['updated'] )
@@ -304,7 +304,7 @@ class Backup_Manager {
 			'tables_truncated'    => array( 'components', 'vendor_prices', 'price_history' ),
 			'auto_increment_reset'=> true,
 			'message'             => sprintf(
-				__( 'Complete Wipe Successful: Deleted %d WordPress component posts, truncated all hardware tables, and reset all table IDs to 1.', 'hwsync' ),
+				\__( 'Complete Wipe Successful: Deleted %d WordPress component posts, truncated all hardware tables, and reset all table IDs to 1.', 'hwsync' ),
 				$deleted_posts_count
 			),
 		);
