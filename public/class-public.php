@@ -165,6 +165,7 @@ class Public_Handler {
 		";
 	}
 }
+}
 
 namespace {
 
