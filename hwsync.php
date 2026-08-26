@@ -61,6 +61,7 @@ require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-vedant-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-primeabgb-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-elitehubs-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-pcstudio-adapter.php';
+require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-configurable-vendor-adapter.php';
 
 if ( is_admin() ) {
 	require_once HWSYNC_PLUGIN_DIR . 'admin/class-admin.php';

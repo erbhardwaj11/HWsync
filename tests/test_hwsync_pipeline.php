@@ -427,8 +427,11 @@ require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-mdcomputers-adapter.php
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-vedant-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-primeabgb-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-elitehubs-adapter.php';
+require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-pcstudio-adapter.php';
+require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-configurable-vendor-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-post-sync-processor.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-sync-manager.php';
+require_once HWSYNC_PLUGIN_DIR . 'public/class-public.php';
 
 // Begin Tests
 echo "=============================================\n";
