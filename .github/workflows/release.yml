@@ -4,12 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+      - '[0-9]+.*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version tag (e.g. v0.0.0.1)'
+        description: 'Release version tag (e.g. v0.0.0.2)'
         required: true
-        default: 'v0.0.0.1'
+        default: 'v0.0.0.2'
 
 permissions:
   contents: write
@@ -22,17 +23,20 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Determine Version
         id: get_version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-            echo "TAG=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            INPUT_TAG="${{ github.event.inputs.version }}"
+            echo "VERSION=${INPUT_TAG#v}" >> $GITHUB_OUTPUT
+            echo "TAG=${INPUT_TAG}" >> $GITHUB_OUTPUT
           else
-            TAG_NAME="${GITHUB_REF#refs/tags/}"
-            echo "VERSION=${TAG_NAME#v}" >> $GITHUB_OUTPUT
-            echo "TAG=${TAG_NAME}" >> $GITHUB_OUTPUT
+            RAW_TAG="${GITHUB_REF#refs/tags/}"
+            echo "VERSION=${RAW_TAG#v}" >> $GITHUB_OUTPUT
+            echo "TAG=${RAW_TAG}" >> $GITHUB_OUTPUT
           fi
 
       - name: Setup PHP
@@ -54,16 +58,22 @@ jobs:
           mkdir -p build/hwsync
           
           # Copy production files
-          cp -r admin includes public templates languages hwsync.php README.md build/hwsync/ 2>/dev/null || cp -r admin includes public templates hwsync.php README.md build/hwsync/
+          cp -r admin includes public templates hwsync.php README.md build/hwsync/
+          if [ -d "languages" ]; then
+            cp -r languages build/hwsync/
+          fi
           
           cd build
           zip -r "../${PKG_NAME}" hwsync/
+          zip -r "../hwsync.zip" hwsync/
           cd ..
           
           echo "PACKAGE_PATH=${PKG_NAME}" >> $GITHUB_ENV
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ steps.get_version.outputs.TAG }}
           name: Release ${{ steps.get_version.outputs.TAG }}
@@ -71,17 +81,22 @@ jobs:
             ## HWsync Release ${{ steps.get_version.outputs.TAG }}
             
             ### Features & Capabilities:
-            - **Multi-Vendor Retailer Scrapers**: Real-time integration with MDComputers, Vedant Computers, PrimeABGB, EliteHubs, and PCStudio.
-            - **Intelligent Component Matching Engine**: Normalization, MPN detection, socket/spec extraction, and fuzzy similarity matching.
-            - **Normalized Database Schema**: High-performance tables for canonical components, vendor pricing, and price history.
-            - **Post-Sync WordPress Post Generator**: Automatic generation of `hwsync_component` custom posts with interactive multi-vendor comparison tables.
-            - **WP-CLI & Cron Scheduler**: Background synchronization jobs and CLI management tooling.
+            - **Native PCSpecs Theme Database Sync**: Directly synchronizes canonical components, specs JSON, and multi-vendor pricing matrices into `wp_pc_components` and `wp_pc_vendor_prices` (powering the Headless React PC Part-Picker SPA & REST API `/wp-json/pc-builder/v1/components`).
+            - **Clean Admin Experience**: Completely eliminated redundant CPT post clutter from WordPress Admin sidebar.
+            - **Multi-Vendor Retailer Scrapers**: Real-time integration with MDComputers, Vedant Computers, PrimeABGB, EliteHubs, and PCStudio with in-browser headless and cURL adapters.
+            - **Intelligent Component Matching Engine**: Multi-stage fuzzy matching, MPN detection, and automatic brand/model normalization.
+            - **Detailed Specifications Scraper**: On-demand specs extraction from retailer product pages.
+            - **Interactive Price Comparison**: Standalone shortcode `[hwsync_price_table]` with live affiliate buy buttons.
+            - **Maintenance & Disaster Recovery**: Full database CSV Export, Restore, and Reset utilities.
             
             ### Installation:
-            1. Download the `hwsync-${{ steps.get_version.outputs.TAG }}.zip` archive below.
+            1. Download `hwsync-${{ steps.get_version.outputs.TAG }}.zip` or `hwsync.zip` below.
             2. In WordPress Admin, navigate to **Plugins > Add New > Upload Plugin**.
-            3. Upload the zip file, activate it, and trigger the sync under **HWsync > Dashboard**.
+            3. Upload the zip file, activate it, and manage your sync catalog under **HWsync > Dashboard**.
           files: |
             ${{ env.PACKAGE_PATH }}
+            hwsync.zip
           draft: false
           prerelease: false
+          make_latest: true
+
