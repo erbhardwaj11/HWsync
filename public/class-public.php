@@ -1,5 +1,5 @@
 <?php
-namespace HWsync;
+namespace HWsync {
 
 use HWsync\Models\Component;
 
