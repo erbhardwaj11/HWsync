@@ -260,9 +260,34 @@ class MockWPDB {
 global $wpdb;
 $wpdb = new MockWPDB();
 
-// Mock WordPress Post functions
+// Mock WordPress Post and Cron functions
 $GLOBALS['mock_posts'] = array();
 $GLOBALS['mock_postmeta'] = array();
+$GLOBALS['mock_options'] = array();
+$GLOBALS['mock_cron'] = array();
+
+function get_option( $option, $default = false ) {
+	return $GLOBALS['mock_options'][ $option ] ?? $default;
+}
+
+function update_option( $option, $value, $autoload = null ) {
+	$GLOBALS['mock_options'][ $option ] = $value;
+	return true;
+}
+
+function wp_next_scheduled( $hook ) {
+	return $GLOBALS['mock_cron'][ $hook ] ?? false;
+}
+
+function wp_schedule_event( $timestamp, $recurrence, $hook, $args = array() ) {
+	$GLOBALS['mock_cron'][ $hook ] = $timestamp;
+	return true;
+}
+
+function wp_unschedule_event( $timestamp, $hook, $args = array() ) {
+	unset( $GLOBALS['mock_cron'][ $hook ] );
+	return true;
+}
 
 function wp_delete_post( $post_id, $force = true ) {
 	if ( isset( $GLOBALS['mock_posts'][ $post_id ] ) ) {
@@ -306,6 +331,8 @@ function wp_set_object_terms( $post_id, $terms, $taxonomy ) {
 // Require HWsync files
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-database.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-backup-manager.php';
+require_once HWSYNC_PLUGIN_DIR . 'includes/class-specs-sync-manager.php';
+require_once HWSYNC_PLUGIN_DIR . 'includes/class-cron.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/models/class-component.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/models/class-vendor.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/models/class-vendor-price.php';
@@ -451,6 +478,59 @@ $wipe_res = \HWsync\Backup_Manager::wipe_and_reset_all_data();
 $comp_count_after = $wpdb->get_var( "SELECT COUNT(*) FROM wp_hwsync_components" );
 $price_count_after = $wpdb->get_var( "SELECT COUNT(*) FROM wp_hwsync_vendor_prices" );
 assert_test( 'Wipe & Clean Reset Clears All Tables, Posts, and Resets AUTO_INCREMENT to 1', ( $wipe_res['success'] && $comp_count_after === 0 && $price_count_after === 0 && count( $GLOBALS['mock_posts'] ) === 0 ) );
+
+// Test 12: Manual Deep Specs Extraction
+$cpu_raw_text = 'AMD Ryzen 7 7800X3D Desktop Processor 8 Cores 16 Threads Up to 5.0 GHz AM5 Socket 96MB 3D V-Cache 120W TDP';
+$cpu_specs = \HWsync\Specs_Sync_Manager::extract_detailed_specs( 'cpu', $cpu_raw_text );
+assert_test( 'Deep Specs Extraction for CPU (Socket, Cores, Threads, Boost, Cache, TDP)', (
+	isset( $cpu_specs['socket'] ) && $cpu_specs['socket'] === 'AM5' &&
+	isset( $cpu_specs['cores'] ) && $cpu_specs['cores'] === 8 &&
+	isset( $cpu_specs['threads'] ) && $cpu_specs['threads'] === 16 &&
+	isset( $cpu_specs['boost_clock'] ) && $cpu_specs['boost_clock'] === '5.0 GHz' &&
+	isset( $cpu_specs['cache'] ) && $cpu_specs['cache'] === '96MB' &&
+	isset( $cpu_specs['tdp'] ) && $cpu_specs['tdp'] === '120W'
+) );
+
+$gpu_raw_text = 'ZOTAC Gaming GeForce RTX 4080 Super Trinity Black Edition 16GB GDDR6X 256-bit PCIe 4.0 Recommended PSU 750W 3.5 Slot';
+$gpu_specs = \HWsync\Specs_Sync_Manager::extract_detailed_specs( 'gpu', $gpu_raw_text );
+assert_test( 'Deep Specs Extraction for GPU (VRAM, Type, Chipset, Bus, PSU)', (
+	isset( $gpu_specs['vram_size'] ) && $gpu_specs['vram_size'] === '16GB' &&
+	isset( $gpu_specs['memory_type'] ) && $gpu_specs['memory_type'] === 'GDDR6X' &&
+	isset( $gpu_specs['gpu_chipset'] ) && $gpu_specs['gpu_chipset'] === 'RTX 4080 SUPER' &&
+	isset( $gpu_specs['memory_bus'] ) && $gpu_specs['memory_bus'] === '256-bit' &&
+	isset( $gpu_specs['recommended_psu'] ) && $gpu_specs['recommended_psu'] === '750W'
+) );
+
+// Test 13: Delta Sync Mode (Skip Unchanged vs Update Changed)
+$dummy_vendor = new \HWsync\Models\Vendor( array( 'id' => 1, 'vendor_slug' => 'primeabgb', 'vendor_name' => 'PrimeABGB' ) );
+$item_initial = array(
+	'title'        => 'G.Skill Ripjaws S5 32GB (16GBx2) DDR5 6000MHz CL30 Memory',
+	'url'          => 'https://example.com/gskill-32gb',
+	'price'        => 9999.00,
+	'in_stock'     => true,
+	'stock_status' => 'in_stock',
+	'category'     => 'ram',
+);
+$res_init = $sync_manager->sync_single_item( $item_initial, $dummy_vendor, false );
+assert_test( 'Initial Sync in Standard Mode Created Record', ! empty( $res_init['component_id'] ) );
+
+// Run again in delta mode with SAME price -> should be unchanged
+$res_delta_unchanged = $sync_manager->sync_single_item( $item_initial, $dummy_vendor, true );
+assert_test( 'Delta Mode Detects Unchanged Existing Record', ! empty( $res_delta_unchanged['unchanged'] ) );
+
+// Run again in delta mode with CHANGED price -> should update
+$item_price_drop = $item_initial;
+$item_price_drop['price'] = 9499.00;
+$res_delta_changed = $sync_manager->sync_single_item( $item_price_drop, $dummy_vendor, true );
+$updated_vp = \HWsync\Models\Vendor_Price::find_by_id( $res_delta_changed['vendor_price_id'] );
+assert_test( 'Delta Mode Successfully Updates Changed Price & Resets Unchanged Flag', ( empty( $res_delta_changed['unchanged'] ) && floatval( $updated_vp->price ) === 9499.00 ) );
+
+// Test 14: Scheduled Sync Configuration
+\HWsync\Cron::update_schedule( true, 'daily', '03:00' );
+$cron_enabled = get_option( 'hwsync_schedule_enabled' );
+$cron_time = get_option( 'hwsync_schedule_time' );
+$cron_scheduled = wp_next_scheduled( \HWsync\Cron::CRON_HOOK );
+assert_test( 'Cron Schedule Configuration Successfully Saved and Event Scheduled', ( $cron_enabled === 1 && $cron_time === '03:00' && ! empty( $cron_scheduled ) ) );
 
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";

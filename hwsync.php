@@ -47,6 +47,7 @@ spl_autoload_register( function ( $class ) {
 // Include core procedural files and admin if needed
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-database.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-backup-manager.php';
+require_once HWSYNC_PLUGIN_DIR . 'includes/class-specs-sync-manager.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-sync-manager.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-matching-engine.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-post-sync-processor.php';

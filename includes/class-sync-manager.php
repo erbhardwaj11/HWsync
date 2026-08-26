@@ -50,6 +50,8 @@ class Sync_Manager {
 
 		$this->emit( $logger, 'info', "Starting sync cycle across " . count( $vendors ) . " active retailers...", $report );
 
+		$delta_only = ! empty( $options['delta_only'] );
+
 		foreach ( $vendors as $vendor ) {
 			$adapter = $this->get_adapter_instance( $vendor );
 			if ( ! $adapter ) {
@@ -59,7 +61,7 @@ class Sync_Manager {
 				continue;
 			}
 
-			$this->emit( $logger, 'info', "Connecting to {$vendor->vendor_name} ({$vendor->base_url})...", $report );
+			$this->emit( $logger, 'info', "=== Connecting to {$vendor->vendor_name} (" . ( $delta_only ? "Delta / Incremental Mode" : "Full Catalog Mode" ) . ") ===", $report );
 
 			foreach ( $categories_to_sync as $cat ) {
 				try {
@@ -85,18 +87,22 @@ class Sync_Manager {
 								continue;
 							}
 
-							$sync_res = $this->sync_single_item( $item, $vendor );
+							$sync_res = $this->sync_single_item( $item, $vendor, $delta_only );
 							if ( $sync_res && ! empty( $sync_res['component_id'] ) ) {
-								$report['touched_component_ids'][ $sync_res['component_id'] ] = true;
-								$report['prices_updated']++;
-								$report['components_processed'] = count( $report['touched_component_ids'] );
+								if ( empty( $sync_res['unchanged'] ) ) {
+									$report['touched_component_ids'][ $sync_res['component_id'] ] = true;
+									$report['prices_updated']++;
+									$report['components_processed'] = count( $report['touched_component_ids'] );
 
-								$stock_label   = 'In Stock';
-								$price_val     = isset( $item['price'] ) ? floatval( $item['price'] ) : 0.0;
-								$price_display = ( $price_val > 0 ) ? '₹' . number_format( $price_val, 2 ) : 'NA';
-								$sku_display   = ! empty( $item['sku'] ) ? " [SKU: {$item['sku']}]" : '';
-								
-								$this->emit( $logger, 'match', "[{$vendor->vendor_name}] Matched & Saved: \"{$item['title']}\"{$sku_display} @ {$price_display} ({$stock_label})", $report );
+									$stock_label   = 'In Stock';
+									$price_val     = isset( $item['price'] ) ? floatval( $item['price'] ) : 0.0;
+									$price_display = ( $price_val > 0 ) ? '₹' . number_format( $price_val, 2 ) : 'NA';
+									$sku_display   = ! empty( $item['sku'] ) ? " [SKU: {$item['sku']}]" : '';
+									
+									$this->emit( $logger, 'match', "[{$vendor->vendor_name}] Matched & Saved: \"{$item['title']}\"{$sku_display} @ {$price_display} ({$stock_label})", $report );
+								} else {
+									$this->emit( $logger, 'debug', "[{$vendor->vendor_name}] Unchanged: \"{$item['title']}\"", $report );
+								}
 							}
 						}
 
@@ -124,11 +130,11 @@ class Sync_Manager {
 			$report['post_stats']   = $post_stats;
 			$this->emit( $logger, 'success', "WordPress Catalog Updated! Posts Created: {$post_stats['created']}, Updated: {$post_stats['updated']}, Unchanged: {$post_stats['skipped']}", $report );
 		} else {
-			$this->emit( $logger, 'info', "No new components to sync to WordPress posts.", $report );
+			$this->emit( $logger, 'info', "No new or modified components to sync to WordPress posts.", $report );
 		}
 
 		$report['completed_at'] = current_time( 'mysql' );
-		$this->emit( $logger, 'finish', "HWsync process finished successfully! Total scraped: {$report['total_items_fetched']}, Prices saved: {$report['prices_updated']}, Posts synced: {$report['posts_synced']}.", $report );
+		$this->emit( $logger, 'finish', "HWsync process finished successfully! Total scraped: {$report['total_items_fetched']}, Prices saved/updated: {$report['prices_updated']}, Posts synced: {$report['posts_synced']}.", $report );
 
 		return $report;
 	}
@@ -150,9 +156,10 @@ class Sync_Manager {
 	 *
 	 * @param array $item
 	 * @param Vendor $vendor
+	 * @param bool $delta_only
 	 * @return array
 	 */
-	public function sync_single_item( $item, Vendor $vendor ) {
+	public function sync_single_item( $item, Vendor $vendor, $delta_only = false ) {
 		// Skip Out of Stock items
 		if ( empty( $item['in_stock'] ) || ( isset( $item['stock_status'] ) && $item['stock_status'] === 'out_of_stock' ) ) {
 			return null;
@@ -166,14 +173,36 @@ class Sync_Manager {
 
 		// 2. Insert or Update Vendor Price Record
 		$vendor_price = Vendor_Price::find_by_component_and_vendor( $component->id, $vendor->id );
+		$is_new = empty( $vendor_price );
+		$price_changed = false;
+		$price_val = isset( $item['price'] ) && is_numeric( $item['price'] ) ? floatval( $item['price'] ) : 0.0;
+
+		if ( ! $is_new ) {
+			$old_price = floatval( $vendor_price->price );
+			$old_stock = (bool) $vendor_price->is_in_stock;
+			$new_stock = ! empty( $item['in_stock'] );
+
+			if ( abs( $old_price - $price_val ) > 0.01 || $old_stock !== $new_stock ) {
+				$price_changed = true;
+			}
+		}
+
+		if ( $delta_only && ! $is_new && ! $price_changed ) {
+			$vendor_price->last_checked_at = current_time( 'mysql' );
+			$vendor_price->save();
+			return array(
+				'component_id'    => $component->id,
+				'vendor_price_id' => $vendor_price->id,
+				'unchanged'       => true,
+			);
+		}
+
 		if ( ! $vendor_price ) {
 			$vendor_price = new Vendor_Price( array(
 				'component_id' => $component->id,
 				'vendor_id'    => $vendor->id,
 			) );
 		}
-
-		$price_val = isset( $item['price'] ) && is_numeric( $item['price'] ) ? floatval( $item['price'] ) : 0.0;
 
 		$vendor_price->vendor_product_title = isset( $item['title'] ) ? $item['title'] : '';
 		$vendor_price->product_url          = isset( $item['url'] ) ? $item['url'] : '';
@@ -197,6 +226,7 @@ class Sync_Manager {
 		return array(
 			'component_id'    => $component->id,
 			'vendor_price_id' => $vendor_price->id,
+			'unchanged'       => false,
 		);
 	}
 

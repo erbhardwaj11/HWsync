@@ -17,7 +17,9 @@ class Admin {
 		add_action( 'admin_post_hwsync_export_csv', array( __CLASS__, 'handle_export_csv' ) );
 		add_action( 'admin_post_hwsync_restore_csv', array( __CLASS__, 'handle_restore_csv' ) );
 		add_action( 'admin_post_hwsync_wipe_reset', array( __CLASS__, 'handle_wipe_reset' ) );
+		add_action( 'admin_post_hwsync_save_schedule', array( __CLASS__, 'handle_save_schedule_settings' ) );
 		add_action( 'wp_ajax_hwsync_stream_sync', array( __CLASS__, 'handle_stream_sync' ) );
+		add_action( 'wp_ajax_hwsync_stream_specs_sync', array( __CLASS__, 'handle_stream_specs_sync' ) );
 		add_action( 'wp_ajax_hwsync_process_browser_batch', array( __CLASS__, 'handle_browser_batch' ) );
 	}
 
@@ -148,10 +150,14 @@ class Admin {
 								</select>
 							</div>
 
-							<div style="display: flex; gap: 10px; align-items: center;">
+							<div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
 								<button type="button" id="btn-start-live-sync" class="button button-primary" style="background: #2563eb; border-color: #1d4ed8; padding: 6px 20px; font-weight: 600; border-radius: 6px; height: 38px; display: inline-flex; align-items: center; gap: 6px;">
 									<span class="dashicons dashicons-update" style="line-height: 1;"></span>
 									<span><?php esc_html_e( 'Start Live Sync', 'hwsync' ); ?></span>
+								</button>
+								<button type="button" id="btn-sync-specs" class="button" style="background: #0284c7; border-color: #0369a1; color: #fff; padding: 6px 16px; font-weight: 600; border-radius: 6px; height: 38px; display: inline-flex; align-items: center; gap: 6px;">
+									<span class="dashicons dashicons-admin-generic" style="line-height: 1;"></span>
+									<span><?php esc_html_e( 'Sync Specs (Detailed)', 'hwsync' ); ?></span>
 								</button>
 								<button type="button" id="btn-stop-sync" class="button" style="display: none; border-color: #ef4444; color: #ef4444; height: 38px; border-radius: 6px;">
 									<?php esc_html_e( 'Stop Sync', 'hwsync' ); ?>
@@ -204,7 +210,7 @@ class Admin {
 					<!-- Terminal Stream Area -->
 					<div id="hwsync-terminal" style="flex: 1; padding: 14px 16px; overflow-y: auto; max-height: 320px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 12px; line-height: 1.6; color: #e2e8f0; background: #0b0f19;">
 						<div class="log-line log-muted" style="color: #64748b;">
-							<span style="color: #475569;">[--:--:--]</span> HWsync Live Engine ready. Click "Start Live Sync" to begin scraping and synchronizing.
+							<span style="color: #475569;">[--:--:--]</span> HWsync Live Engine ready. Click "Start Live Sync" to scrape or "Sync Specs" to extract deep technical specifications.
 						</div>
 					</div>
 
@@ -216,6 +222,7 @@ class Admin {
 			<script>
 			document.addEventListener('DOMContentLoaded', function() {
 				var startBtn = document.getElementById('btn-start-live-sync');
+				var syncSpecsBtn = document.getElementById('btn-sync-specs');
 				var stopBtn = document.getElementById('btn-stop-sync');
 				var clearBtn = document.getElementById('btn-clear-console');
 				var terminal = document.getElementById('hwsync-terminal');
@@ -300,6 +307,76 @@ class Admin {
 					} else {
 						runStreamSync(vendor, category, nonce);
 					}
+				});
+
+				syncSpecsBtn.addEventListener('click', function() {
+					var category = document.getElementById('target_category').value;
+					var nonce = document.querySelector('input[name="hwsync_nonce"]').value;
+
+					startBtn.disabled = true;
+					syncSpecsBtn.disabled = true;
+					syncSpecsBtn.innerHTML = '<span class="dashicons dashicons-update spin" style="animation: rotation 1s infinite linear;"></span> Syncing Specs...';
+					stopBtn.style.display = 'inline-block';
+
+					statusDot.style.background = '#0284c7';
+					statusDot.style.boxShadow = '0 0 10px #0284c7';
+					statusBadge.textContent = 'SPECS SYNC';
+					statusBadge.style.background = '#0369a1';
+					statusBadge.style.color = '#fff';
+
+					appendLog('info', 'Initiating Technical Specifications extraction for category [' + category + ']...');
+
+					abortController = new AbortController();
+
+					var postData = new URLSearchParams();
+					postData.append('action', 'hwsync_stream_specs_sync');
+					postData.append('target_category', category);
+					postData.append('hwsync_nonce', nonce);
+
+					fetch(ajaxurl, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+						body: postData.toString(),
+						signal: abortController.signal
+					}).then(function(response) {
+						var reader = response.body.getReader();
+						var decoder = new TextDecoder('utf-8');
+						var buffer = '';
+
+						function readChunk() {
+							return reader.read().then(function(result) {
+								if (result.done) {
+									finishSync();
+									return;
+								}
+								buffer += decoder.decode(result.value, { stream: true });
+								var lines = buffer.split('\n\n');
+								buffer = lines.pop();
+
+								lines.forEach(function(block) {
+									var trimmed = block.trim();
+									if (trimmed.startsWith('data:')) {
+										try {
+											var jsonStr = trimmed.substring(5).trim();
+											var data = JSON.parse(jsonStr);
+											appendLog(data.level, data.message, data.timestamp);
+										} catch (e) {}
+									}
+								});
+
+								return readChunk();
+							});
+						}
+
+						return readChunk();
+					}).catch(function(err) {
+						if (err.name === 'AbortError') {
+							appendLog('warning', 'Specs sync aborted by user.');
+						} else {
+							appendLog('error', 'Specs sync error: ' + err.message);
+						}
+						finishSync();
+					});
 				});
 
 				function runStreamSync(vendor, category, nonce) {
@@ -496,6 +573,8 @@ class Admin {
 				function finishSync() {
 					startBtn.disabled = false;
 					startBtn.innerHTML = '<span class="dashicons dashicons-update"></span> <?php esc_html_e( "Start Live Sync", "hwsync" ); ?>';
+					syncSpecsBtn.disabled = false;
+					syncSpecsBtn.innerHTML = '<span class="dashicons dashicons-admin-generic"></span> <?php esc_html_e( "Sync Specs (Detailed)", "hwsync" ); ?>';
 					stopBtn.style.display = 'none';
 
 					statusDot.style.background = '#64748b';
@@ -744,10 +823,54 @@ class Admin {
 		) );
 	}
 
+	public static function handle_stream_specs_sync() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( \__( 'Unauthorized', 'hwsync' ) );
+		}
+
+		if ( function_exists( 'set_time_limit' ) ) {
+			@set_time_limit( 0 );
+		}
+
+		header( 'Content-Type: text/event-stream' );
+		header( 'Cache-Control: no-cache' );
+		header( 'Connection: keep-alive' );
+		header( 'X-Accel-Buffering: no' );
+
+		while ( ob_get_level() > 0 ) {
+			ob_end_flush();
+		}
+
+		$category = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
+
+		$stream_logger = function( $level, $message, $stats = array() ) {
+			$payload = array(
+				'level'     => $level,
+				'message'   => $message,
+				'stats'     => $stats,
+				'timestamp' => current_time( 'H:i:s' ),
+			);
+			echo "data: " . wp_json_encode( $payload ) . "\n\n";
+			flush();
+		};
+
+		$specs_manager = new Specs_Sync_Manager();
+		$report = $specs_manager->run_specs_sync( array( 'category' => $category ), $stream_logger );
+
+		exit;
+	}
+
 	public static function render_maintenance_page() {
 		$status = isset( $_GET['status'] ) ? sanitize_text_field( $_GET['status'] ) : '';
 		$count  = isset( $_GET['count'] ) ? intval( $_GET['count'] ) : 0;
 		$deleted= isset( $_GET['deleted'] ) ? intval( $_GET['deleted'] ) : 0;
+
+		$schedule_enabled = get_option( 'hwsync_schedule_enabled', 1 );
+		$schedule_freq    = get_option( 'hwsync_schedule_frequency', 'daily' );
+		$schedule_time    = get_option( 'hwsync_schedule_time', '03:00' );
+		$next_timestamp   = wp_next_scheduled( Cron::CRON_HOOK );
+		$next_run_str     = $next_timestamp ? get_date_from_gmt( date( 'Y-m-d H:i:s', $next_timestamp ), 'd-m-Y H:i:s' ) . ' (Local Time)' : \__( 'Not Scheduled', 'hwsync' );
 		?>
 		<div class="wrap">
 			<h1><span class="dashicons dashicons-admin-tools" style="font-size: 30px; width: 30px; height: 30px;"></span> <?php esc_html_e( 'HWsync - Backup, Restore & Maintenance', 'hwsync' ); ?></h1>
@@ -757,6 +880,8 @@ class Admin {
 				<div class="notice notice-success is-dismissible"><p><?php echo sprintf( esc_html__( 'CSV Restore Completed Successfully! Processed %d components and updated posts.', 'hwsync' ), $count ); ?></p></div>
 			<?php elseif ( $status === 'wipe_success' ) : ?>
 				<div class="notice notice-success is-dismissible"><p><?php echo sprintf( esc_html__( 'Database Clean Wipe Completed: Deleted %d component posts, truncated all tables, and reset AUTO_INCREMENT to 1.', 'hwsync' ), $deleted ); ?></p></div>
+			<?php elseif ( $status === 'schedule_saved' ) : ?>
+				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Automated Scheduled Sync Settings saved successfully!', 'hwsync' ); ?></p></div>
 			<?php elseif ( $status === 'err_nofile' ) : ?>
 				<div class="notice notice-error is-dismissible"><p><?php esc_html_e( 'Please select a valid CSV file to restore.', 'hwsync' ); ?></p></div>
 			<?php elseif ( $status === 'err_restore' ) : ?>
@@ -810,9 +935,62 @@ class Admin {
 					</form>
 				</div>
 
+				<!-- Card 3: Automated Scheduled Main Sync (Delta / Incremental Update) -->
+				<div style="background: #fff; padding: 22px; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; grid-column: 1 / -1;">
+					<div>
+						<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+							<h2 style="margin: 0; font-size: 18px; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+								<span class="dashicons dashicons-clock" style="color: #6366f1;"></span>
+								<?php esc_html_e( 'Automated Scheduled Main Sync (Incremental / Delta Updates)', 'hwsync' ); ?>
+							</h2>
+							<span style="background: <?php echo $schedule_enabled ? '#dcfce7; color: #15803d;' : '#f1f5f9; color: #64748b;'; ?> font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px;">
+								<?php echo $schedule_enabled ? esc_html__( 'Active', 'hwsync' ) : esc_html__( 'Disabled', 'hwsync' ); ?>
+							</span>
+						</div>
+						<p style="color: #64748b; font-size: 13px; line-height: 1.6;">
+							<?php esc_html_e( 'Schedule the main synchronization engine to run automatically at a specific time of day. Scheduled sync operates in lightweight Delta Mode: it only creates newly discovered listings and updates prices/stock for existing components without full catalog re-writes.', 'hwsync' ); ?>
+						</p>
+					</div>
+
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top: 16px; background: #f8fafc; padding: 18px; border-radius: 6px; border: 1px solid #e2e8f0;">
+						<?php wp_nonce_field( 'hwsync_save_schedule_action', 'hwsync_nonce' ); ?>
+						<input type="hidden" name="action" value="hwsync_save_schedule" />
+
+						<div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap;">
+							<label style="font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+								<input type="checkbox" name="schedule_enabled" value="1" <?php checked( $schedule_enabled, 1 ); ?> />
+								<span><?php esc_html_e( 'Enable Scheduled Background Sync', 'hwsync' ); ?></span>
+							</label>
+
+							<div style="display: flex; align-items: center; gap: 8px;">
+								<label for="schedule_time" style="font-weight: 600; font-size: 13px;"><?php esc_html_e( 'Run At Time:', 'hwsync' ); ?></label>
+								<input type="time" id="schedule_time" name="schedule_time" value="<?php echo esc_attr( $schedule_time ); ?>" style="height: 32px; border-radius: 4px; border: 1px solid #cbd5e1; padding: 0 8px;" />
+							</div>
+
+							<div style="display: flex; align-items: center; gap: 8px;">
+								<label for="schedule_frequency" style="font-weight: 600; font-size: 13px;"><?php esc_html_e( 'Frequency:', 'hwsync' ); ?></label>
+								<select id="schedule_frequency" name="schedule_frequency" style="height: 32px; border-radius: 4px; border: 1px solid #cbd5e1;">
+									<option value="daily" <?php selected( $schedule_freq, 'daily' ); ?>><?php esc_html_e( 'Daily (Once a Day)', 'hwsync' ); ?></option>
+									<option value="twicedaily" <?php selected( $schedule_freq, 'twicedaily' ); ?>><?php esc_html_e( 'Twice Daily (Every 12h)', 'hwsync' ); ?></option>
+									<option value="every_six_hours" <?php selected( $schedule_freq, 'every_six_hours' ); ?>><?php esc_html_e( 'Every 6 Hours', 'hwsync' ); ?></option>
+									<option value="hourly" <?php selected( $schedule_freq, 'hourly' ); ?>><?php esc_html_e( 'Hourly', 'hwsync' ); ?></option>
+								</select>
+							</div>
+
+							<button type="submit" class="button button-primary" style="background: #6366f1; border-color: #4f46e5; height: 34px; font-weight: 600; border-radius: 6px;">
+								<?php esc_html_e( 'Save Schedule Settings', 'hwsync' ); ?>
+							</button>
+						</div>
+
+						<div style="margin-top: 12px; font-size: 12px; color: #475569;">
+							<strong><?php esc_html_e( 'Next Scheduled Run:', 'hwsync' ); ?></strong> <?php echo esc_html( $next_run_str ); ?>
+						</div>
+					</form>
+				</div>
+
 			</div>
 
-			<!-- Card 3: Danger Zone (Wipe & Reset to 1) -->
+			<!-- Card 4: Danger Zone (Wipe & Reset to 1) -->
 			<div style="margin-top: 24px; background: #fff; padding: 24px; border: 1px solid #fecaca; border-left: 5px solid #ef4444; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
 				<h2 style="margin-top: 0; font-size: 18px; color: #b91c1c; display: flex; align-items: center; gap: 8px;">
 					<span class="dashicons dashicons-trash" style="color: #ef4444;"></span>
@@ -836,14 +1014,14 @@ class Admin {
 
 	public static function handle_export_csv() {
 		if ( ! current_user_can( 'manage_options' ) || ! check_admin_referer( 'hwsync_export_csv_action', 'hwsync_nonce' ) ) {
-			wp_die( __( 'Unauthorized request', 'hwsync' ) );
+			wp_die( \__( 'Unauthorized request', 'hwsync' ) );
 		}
 		Backup_Manager::export_csv();
 	}
 
 	public static function handle_restore_csv() {
 		if ( ! current_user_can( 'manage_options' ) || ! check_admin_referer( 'hwsync_restore_csv_action', 'hwsync_nonce' ) ) {
-			wp_die( __( 'Unauthorized request', 'hwsync' ) );
+			wp_die( \__( 'Unauthorized request', 'hwsync' ) );
 		}
 
 		if ( empty( $_FILES['csv_file']['tmp_name'] ) ) {
@@ -858,9 +1036,24 @@ class Admin {
 		exit;
 	}
 
+	public static function handle_save_schedule_settings() {
+		if ( ! current_user_can( 'manage_options' ) || ! check_admin_referer( 'hwsync_save_schedule_action', 'hwsync_nonce' ) ) {
+			wp_die( \__( 'Unauthorized request', 'hwsync' ) );
+		}
+
+		$enabled   = ! empty( $_POST['schedule_enabled'] );
+		$frequency = isset( $_POST['schedule_frequency'] ) ? sanitize_text_field( $_POST['schedule_frequency'] ) : 'daily';
+		$time_str  = isset( $_POST['schedule_time'] ) ? sanitize_text_field( $_POST['schedule_time'] ) : '03:00';
+
+		Cron::update_schedule( $enabled, $frequency, $time_str );
+
+		wp_safe_redirect( admin_url( 'admin.php?page=hwsync-maintenance&status=schedule_saved' ) );
+		exit;
+	}
+
 	public static function handle_wipe_reset() {
 		if ( ! current_user_can( 'manage_options' ) || ! check_admin_referer( 'hwsync_wipe_reset_action', 'hwsync_nonce' ) ) {
-			wp_die( __( 'Unauthorized request', 'hwsync' ) );
+			wp_die( \__( 'Unauthorized request', 'hwsync' ) );
 		}
 
 		$result = Backup_Manager::wipe_and_reset_all_data();
