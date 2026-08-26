@@ -466,98 +466,122 @@ class Admin {
 						}
 
 						var currentCat = catsToSync[currentCatIndex++];
-						var targetUrl = endpoints[currentCat] || endpoints['cpu'];
+						var baseEndpoint = endpoints[currentCat] || endpoints['cpu'];
+						var currentPage = 1;
+						var maxPages = 25;
 
-						appendLog('info', '[MDComputers] Initiating In-Browser Headless Request for category [' + currentCat + '] (' + targetUrl + ')...');
-
-						// In-browser authentic fetch with genuine browser fingerprint & CORS mode
-						fetch(targetUrl, {
-							method: 'GET',
-							credentials: 'omit',
-							signal: abortController ? abortController.signal : null
-						}).then(function(resp) {
-							return resp.text();
-						}).then(function(htmlText) {
-							var parser = new DOMParser();
-							var doc = parser.parseFromString(htmlText, 'text/html');
-							var productElements = doc.querySelectorAll('.product-grid-item, .product-item-container, .product-thumb, .product-layout');
-							
-							appendLog('info', '[MDComputers] In-browser engine detected ' + productElements.length + ' raw cards on page.');
-
-							var parsedItems = [];
-							productElements.forEach(function(el) {
-								var titleEl = el.querySelector('h3 a, h4 a, .product-entities-title a, .name a');
-								if (!titleEl) return;
-								var title = titleEl.textContent.trim();
-								var link = titleEl.getAttribute('href');
-
-								// Stock status check
-								var cardText = el.textContent.toLowerCase();
-								var isOutOfStock = cardText.indexOf('out of stock') !== -1 || cardText.indexOf('sold out') !== -1;
-								if (isOutOfStock) {
-									appendLog('debug', '[MDComputers] Skipped Out-of-Stock: "' + title + '"');
-									return; // Skip Out of Stock
-								}
-
-								// Price extraction
-								var priceEl = el.querySelector('.price-new, .price, .amount, .special-price');
-								var price = 0;
-								if (priceEl) {
-									var pMatch = priceEl.textContent.replace(/,/g, '').match(/[\d]+(?:\.\d+)?/);
-									if (pMatch) price = parseFloat(pMatch[0]);
-								}
-
-								var priceDisplay = (price > 0) ? '₹' + price.toFixed(2) : 'NA';
-
-								parsedItems.push({
-									title: title,
-									url: link,
-									price: price, // 0 means NA
-									in_stock: true,
-									stock_status: 'in_stock',
-									category: currentCat,
-									vendor_slug: 'mdcomputers',
-									raw_data: { raw_title: title, display_price: priceDisplay }
-								});
-							});
-
-							appendLog('info', '[MDComputers] Sending ' + parsedItems.length + ' in-stock items to database...');
-
-							// Send in-browser batch to WordPress
-							var batchData = new URLSearchParams();
-							batchData.append('action', 'hwsync_process_browser_batch');
-							batchData.append('vendor_slug', 'mdcomputers');
-							batchData.append('items', JSON.stringify(parsedItems));
-							batchData.append('hwsync_nonce', nonce);
-
-							return fetch(ajaxurl, {
-								method: 'POST',
-								headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-								body: batchData.toString(),
-								signal: abortController ? abortController.signal : null
-							});
-						}).then(function(res) {
-							return res.json();
-						}).then(function(json) {
-							if (json.success && json.data) {
-								var d = json.data;
-								var curScraped = parseInt(mScraped.textContent) || 0;
-								var curMatched = parseInt(mMatched.textContent) || 0;
-								var curPrices = parseInt(mPrices.textContent) || 0;
-								var curPosts = parseInt(mPosts.textContent) || 0;
-
-								mScraped.textContent = curScraped + (d.processed || 0);
-								mMatched.textContent = curMatched + (d.components || 0);
-								mPrices.textContent = curPrices + (d.prices_saved || 0);
-								mPosts.textContent = curPosts + (d.posts_synced || 0);
-
-								appendLog('match', '[MDComputers] Successfully synced ' + (d.prices_saved || 0) + ' prices into component catalog.');
+						function fetchCategoryPage(page) {
+							if (page > maxPages) {
+								processNextCategory();
+								return;
 							}
-							processNextCategory();
-						}).catch(function(err) {
-							appendLog('warning', '[MDComputers] In-browser request fallback: ' + err.message + '. Falling back to backend session warm-up transport...');
-							processNextCategory();
-						});
+
+							var pageUrl = baseEndpoint + (baseEndpoint.indexOf('?') !== -1 ? '&' : '?') + 'page=' + page;
+							appendLog('info', '[MDComputers] In-Browser Headless Request [' + currentCat + '] Page ' + page + ' (' + pageUrl + ')...');
+
+							fetch(pageUrl, {
+								method: 'GET',
+								credentials: 'omit',
+								signal: abortController ? abortController.signal : null
+							}).then(function(resp) {
+								return resp.text();
+							}).then(function(htmlText) {
+								var parser = new DOMParser();
+								var doc = parser.parseFromString(htmlText, 'text/html');
+								var productElements = doc.querySelectorAll('.product-grid-item, .product-item-container, .product-thumb, .product-layout');
+
+								if (!productElements || productElements.length === 0) {
+									appendLog('debug', '[MDComputers] No more items found on Page ' + page + ' for [' + currentCat + '].');
+									processNextCategory();
+									return;
+								}
+
+								appendLog('info', '[MDComputers] Detected ' + productElements.length + ' raw cards on Page ' + page + '.');
+
+								var parsedItems = [];
+								productElements.forEach(function(el) {
+									var titleEl = el.querySelector('h3 a, h4 a, .product-entities-title a, .name a');
+									if (!titleEl) return;
+									var title = titleEl.textContent.trim();
+									var link = titleEl.getAttribute('href');
+
+									// Stock status check
+									var cardText = el.textContent.toLowerCase();
+									var isOutOfStock = cardText.indexOf('out of stock') !== -1 || cardText.indexOf('sold out') !== -1;
+									if (isOutOfStock) {
+										appendLog('debug', '[MDComputers] Skipped Out-of-Stock: "' + title + '"');
+										return;
+									}
+
+									// Price extraction
+									var priceEl = el.querySelector('.price-new, .price, .amount, .special-price');
+									var price = 0;
+									if (priceEl) {
+										var pMatch = priceEl.textContent.replace(/,/g, '').match(/[\d]+(?:\.\d+)?/);
+										if (pMatch) price = parseFloat(pMatch[0]);
+									}
+
+									var priceDisplay = (price > 0) ? '₹' + price.toFixed(2) : 'NA';
+
+									parsedItems.push({
+										title: title,
+										url: link,
+										price: price,
+										in_stock: true,
+										stock_status: 'in_stock',
+										category: currentCat,
+										vendor_slug: 'mdcomputers',
+										raw_data: { raw_title: title, display_price: priceDisplay }
+									});
+								});
+
+								if (parsedItems.length === 0) {
+									fetchCategoryPage(page + 1);
+									return;
+								}
+
+								appendLog('info', '[MDComputers] Sending ' + parsedItems.length + ' in-stock items (Page ' + page + ') to database...');
+
+								var batchData = new URLSearchParams();
+								batchData.append('action', 'hwsync_process_browser_batch');
+								batchData.append('vendor_slug', 'mdcomputers');
+								batchData.append('items', JSON.stringify(parsedItems));
+								batchData.append('hwsync_nonce', nonce);
+
+								fetch(ajaxurl, {
+									method: 'POST',
+									headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+									body: batchData.toString(),
+									signal: abortController ? abortController.signal : null
+								}).then(function(res) {
+									return res.json();
+								}).then(function(json) {
+									if (json.success && json.data) {
+										var d = json.data;
+										var curScraped = parseInt(mScraped.textContent) || 0;
+										var curMatched = parseInt(mMatched.textContent) || 0;
+										var curPrices = parseInt(mPrices.textContent) || 0;
+										var curPosts = parseInt(mPosts.textContent) || 0;
+
+										mScraped.textContent = curScraped + (d.processed || 0);
+										mMatched.textContent = curMatched + (d.components || 0);
+										mPrices.textContent = curPrices + (d.prices_saved || 0);
+										mPosts.textContent = curPosts + (d.posts_synced || 0);
+
+										appendLog('match', '[MDComputers] Page ' + page + ': Synced ' + (d.prices_saved || 0) + ' prices into component catalog.');
+									}
+									fetchCategoryPage(page + 1);
+								}).catch(function(err) {
+									appendLog('warning', '[MDComputers] Batch save warning: ' + err.message);
+									fetchCategoryPage(page + 1);
+								});
+							}).catch(function(err) {
+								appendLog('warning', '[MDComputers] In-browser request ended on Page ' + page + ': ' + err.message);
+								processNextCategory();
+							});
+						}
+
+						fetchCategoryPage(1);
 					}
 
 					processNextCategory();

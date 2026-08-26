@@ -66,7 +66,8 @@ class Sync_Manager {
 			foreach ( $categories_to_sync as $cat ) {
 				try {
 					$page = 1;
-					$max_pages = 2; // Limit per category per batch
+					$max_pages = 50; // Comprehensive pagination across all vendor catalog pages
+					$seen_page_hashes = array();
 
 					while ( $page <= $max_pages ) {
 						$this->emit( $logger, 'debug', "Scraping {$vendor->vendor_name} » category: " . strtoupper( $cat ) . " (Page {$page})...", $report );
@@ -77,8 +78,17 @@ class Sync_Manager {
 							break;
 						}
 
+						// Detect page loop repetition
+						$page_urls = array_map( function( $it ) { return $it['url'] ?? ( $it['title'] ?? '' ); }, $raw_items );
+						$page_hash = md5( implode( '|', $page_urls ) );
+						if ( isset( $seen_page_hashes[ $page_hash ] ) ) {
+							$this->emit( $logger, 'debug', "Duplicate page detected at Page {$page}. End of catalog reached for {$vendor->vendor_name} [{$cat}].", $report );
+							break;
+						}
+						$seen_page_hashes[ $page_hash ] = true;
+
 						$report['total_items_fetched'] += count( $raw_items );
-						$this->emit( $logger, 'info', "Fetched " . count( $raw_items ) . " product listings from {$vendor->vendor_name} [{$cat}]. Processing matches & prices...", $report );
+						$this->emit( $logger, 'info', "Fetched " . count( $raw_items ) . " product listings from {$vendor->vendor_name} [{$cat}] (Page {$page}). Processing matches & prices...", $report );
 
 						foreach ( $raw_items as $item ) {
 							// Skip Out of Stock items

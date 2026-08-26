@@ -13,6 +13,8 @@ class Specs_Sync_Manager {
 
 	/**
 	 * Run manual specs synchronization for existing canonical components in DB.
+	 * Visits product pages on vendor websites, extracts the specifications section,
+	 * updates database records, and updates WordPress component posts.
 	 *
 	 * @param array $options Options array: 'category', 'component_id', 'limit'.
 	 * @param callable|null $logger Progress callback logger.
@@ -20,7 +22,7 @@ class Specs_Sync_Manager {
 	 */
 	public function run_specs_sync( $options = array(), $logger = null ) {
 		global $wpdb;
-		$comp_table = Database::get_table_name( 'components' );
+		$comp_table   = Database::get_table_name( 'components' );
 		$prices_table = Database::get_table_name( 'vendor_prices' );
 
 		$category     = isset( $options['category'] ) ? sanitize_text_field( $options['category'] ) : 'all';
@@ -51,39 +53,67 @@ class Specs_Sync_Manager {
 			'errors'           => array(),
 		);
 
-		$this->emit( $logger, 'info', "Found " . count( $components_raw ) . " canonical components in DB. Extracting detailed specifications..." );
+		$this->emit( $logger, 'info', "Found " . count( $components_raw ) . " canonical components in DB. Visiting retailer product pages..." );
 
 		foreach ( $components_raw as $c_row ) {
 			$component = new Component( $c_row );
-			$this->emit( $logger, 'debug', "Inspecting Component #{$component->id}: [{$component->brand} {$component->model_name}] ({$component->category})..." );
+			$this->emit( $logger, 'info', "Syncing specs for Component #{$component->id}: [{$component->brand} {$component->model_name}] ({$component->category})..." );
 
 			// 1. Gather all linked vendor price records for this component
 			$prices = $component->get_prices();
-			$collected_text = $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
+			if ( empty( $prices ) ) {
+				$this->emit( $logger, 'debug', "Component #{$component->id} has no linked vendor price listings. Skipping." );
+				continue;
+			}
 
+			$merged_raw_specs = is_array( $component->specs_json ) && isset( $component->specs_json['raw_specs_table'] )
+				? (array) $component->specs_json['raw_specs_table']
+				: array();
+
+			$collected_text = $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
+			$successful_vendor = '';
+
+			// 2. Visit linked vendor product pages to locate and extract specs section
 			foreach ( $prices as $p ) {
-				$collected_text .= ' ' . $p->vendor_product_title;
-				if ( ! empty( $p->raw_data_json['description'] ) ) {
-					$collected_text .= ' ' . $p->raw_data_json['description'];
+				if ( empty( $p->product_url ) ) {
+					continue;
 				}
-				if ( ! empty( $p->raw_data_json['specs'] ) && is_array( $p->raw_data_json['specs'] ) ) {
-					$collected_text .= ' ' . json_encode( $p->raw_data_json['specs'] );
+
+				$vendor_slug = ! empty( $p->vendor_slug ) ? $p->vendor_slug : '';
+				$this->emit( $logger, 'debug', "Visiting product page on " . ucfirst( $vendor_slug ) . ": {$p->product_url}..." );
+
+				$page_specs = $this->fetch_specs_from_product_url( $p->product_url, $vendor_slug, $component->category );
+
+				if ( ! empty( $page_specs ) ) {
+					$merged_raw_specs = array_merge( $merged_raw_specs, $page_specs );
+					$successful_vendor = ucfirst( $vendor_slug );
+					$this->emit( $logger, 'match', "Extracted " . count( $page_specs ) . " specs attributes from {$successful_vendor} product specs section." );
+
+					// Aggregate text for domain regex extraction
+					foreach ( $page_specs as $sk => $sv ) {
+						$collected_text .= " {$sk}: {$sv}";
+					}
+					break; // Found high-fidelity specs from a primary retailer
 				}
 			}
 
-			// 2. Extract deep technical specifications using domain regex patterns
-			$extracted_specs = self::extract_detailed_specs( $component->category, $collected_text, $component->specs_json ?: array() );
+			// 3. Extract deep structured technical specifications using domain regex patterns
+			$structured_specs = self::extract_detailed_specs( $component->category, $collected_text, $component->specs_json ?: array() );
 
-			// 3. Save updated specs if new data found
-			if ( ! empty( $extracted_specs ) ) {
-				$component->specs_json = $extracted_specs;
+			if ( ! empty( $merged_raw_specs ) ) {
+				$structured_specs['raw_specs_table'] = $merged_raw_specs;
+			}
+
+			// 4. Save updated specs
+			if ( ! empty( $structured_specs ) ) {
+				$component->specs_json = $structured_specs;
 				$component->save();
 				$report['specs_updated']++;
 
-				$spec_summary = self::format_specs_summary( $extracted_specs );
-				$this->emit( $logger, 'match', "Specs Updated for #{$component->id} [{$component->model_name}]: {$spec_summary}" );
+				$spec_summary = self::format_specs_summary( $structured_specs );
+				$this->emit( $logger, 'success', "Specs Saved for #{$component->id} [{$component->model_name}]: {$spec_summary}" );
 
-				// 4. Update linked WordPress post content & meta
+				// 5. Update linked WordPress post content & meta
 				if ( ! empty( $component->wp_post_id ) ) {
 					Post_Sync_Processor::sync_component_to_post( $component->id );
 					$report['posts_refreshed']++;
@@ -96,6 +126,118 @@ class Specs_Sync_Manager {
 		$this->emit( $logger, 'finish', "Specifications Sync Completed! Updated {$report['specs_updated']} components and refreshed {$report['posts_refreshed']} WordPress posts." );
 
 		return $report;
+	}
+
+	/**
+	 * Fetch and extract specifications section from a vendor's product page URL.
+	 *
+	 * @param string $url
+	 * @param string $vendor_slug
+	 * @param string $category
+	 * @return array Key-value dictionary of specs.
+	 */
+	public function fetch_specs_from_product_url( $url, $vendor_slug, $category = '' ) {
+		$specs = array();
+		if ( empty( $url ) ) {
+			return $specs;
+		}
+
+		// Handle Shopify stores (EliteHubs) via product JSON or body_html
+		if ( $vendor_slug === 'elitehubs' || strpos( $url, 'elitehubs.com' ) !== false ) {
+			$path = parse_url( $url, PHP_URL_PATH );
+			if ( preg_match( '#/products/([^/?]+)#', $path, $m ) ) {
+				$json_url = 'https://elitehubs.com/products/' . $m[1] . '.json';
+				$json_res = $this->make_http_request( $json_url, array( 'Accept' => 'application/json' ) );
+				if ( ! empty( $json_res['body'] ) ) {
+					$data = json_decode( $json_res['body'], true );
+					if ( isset( $data['product']['body_html'] ) ) {
+						$specs = self::parse_html_specs_section( $data['product']['body_html'] );
+						if ( ! empty( $specs ) ) {
+							return $specs;
+						}
+					}
+				}
+			}
+		}
+
+		// Standard cURL fetch for WooCommerce / OpenCart product pages
+		$res = $this->make_http_request( $url );
+		if ( empty( $res['body'] ) ) {
+			return $specs;
+		}
+
+		$html = $res['body'];
+
+		// Locate the specifications section in the product DOM
+		$specs_html = '';
+
+		// Pattern 1: Specification / Additional Information tab panel
+		if ( preg_match( '/<(?:div|section|table)[^>]*(?:id="tab-specification"|id="tab-specs"|class="[^"]*(?:woocommerce-Tabs-panel--specification|shop_attributes|product-info-table|specification)[^"]*"|id="tab-additional_information")[^>]*>[\s\S]*?<\/(?:div|section|table)>/i', $html, $sm ) ) {
+			$specs_html = $sm[0];
+		}
+		// Pattern 2: Tables inside description tab
+		elseif ( preg_match( '/<div[^>]*id="tab-description"[^>]*>[\s\S]*?<\/div>/i', $html, $sm ) ) {
+			$specs_html = $sm[0];
+		}
+		// Pattern 3: Full page fallback
+		else {
+			$specs_html = $html;
+		}
+
+		return self::parse_html_specs_section( $specs_html );
+	}
+
+	/**
+	 * Parse HTML snippet (tables, lists, definition lists) into clean key-value specs dictionary.
+	 *
+	 * @param string $html_snippet
+	 * @return array
+	 */
+	public static function parse_html_specs_section( $html_snippet ) {
+		$specs = array();
+		if ( empty( $html_snippet ) ) {
+			return $specs;
+		}
+
+		// 1. Table rows: <tr><th>Key</th><td>Val</td></tr> or <tr><td>Key</td><td>Val</td></tr>
+		if ( preg_match_all( '/<tr[^>]*>[\s\S]*?<\/tr>/i', $html_snippet, $rows ) ) {
+			foreach ( $rows[0] as $r ) {
+				if ( preg_match_all( '/<(?:th|td)[^>]*>([\s\S]*?)<\/(?:th|td)>/i', $r, $cells ) ) {
+					if ( count( $cells[1] ) >= 2 ) {
+						$k = trim( strip_tags( $cells[1][0] ) );
+						$v = trim( strip_tags( $cells[1][1] ) );
+						$k = html_entity_decode( str_replace( ':', '', $k ), ENT_QUOTES, 'UTF-8' );
+						$v = html_entity_decode( $v, ENT_QUOTES, 'UTF-8' );
+						$k = trim( preg_replace( '/\s+/', ' ', $k ) );
+						$v = trim( preg_replace( '/\s+/', ' ', $v ) );
+
+						if ( ! empty( $k ) && ! empty( $v ) && strlen( $k ) < 80 && strlen( $v ) < 300 && strcasecmp( $k, $v ) !== 0 ) {
+							$specs[ $k ] = $v;
+						}
+					}
+				}
+			}
+		}
+
+		// 2. List items: <li><strong>Key:</strong> Val</li>
+		if ( preg_match_all( '/<li[^>]*>[\s\S]*?<\/li>/i', $html_snippet, $lis ) ) {
+			foreach ( $lis[0] as $li ) {
+				if ( preg_match( '/<(?:strong|b|span)[^>]*>([^<:]+)[:]?<\/(?:strong|b|span)>[\s:]*([^<]+)/i', $li, $m ) ) {
+					$k = html_entity_decode( trim( strip_tags( $m[1] ) ), ENT_QUOTES, 'UTF-8' );
+					$v = html_entity_decode( trim( strip_tags( $m[2] ) ), ENT_QUOTES, 'UTF-8' );
+					$k = trim( preg_replace( '/\s+/', ' ', $k ) );
+					$v = trim( preg_replace( '/\s+/', ' ', $v ) );
+
+					if ( ! empty( $k ) && ! empty( $v ) && strlen( $k ) < 80 && strlen( $v ) < 300 ) {
+						if ( ! isset( $specs[ $k ] ) ) {
+							$specs[ $k ] = $v;
+						}
+					}
+				}
+			}
+		}
+
+		return $specs;
 	}
 
 	/**
@@ -112,7 +254,7 @@ class Specs_Sync_Manager {
 		switch ( strtolower( $category ) ) {
 			case 'cpu':
 				// Socket
-				if ( preg_match( '/\b(AM5|AM4|LGA1700|LGA1200|LGA1151|sTR5|SP5)\b/i', $text, $m ) ) {
+				if ( preg_match( '/\b(AM5|AM4|LGA1700|LGA1851|LGA1200|LGA1151|sTR5|SP5)\b/i', $text, $m ) ) {
 					$specs['socket'] = strtoupper( $m[1] );
 				}
 				// Cores & Threads
@@ -301,7 +443,7 @@ class Specs_Sync_Manager {
 					$specs['cooler_type'] = 'Air Cooler (' . $m[1] . ')';
 				}
 				// Fan Lighting
-				if ( preg_match( '/\b(ARGB|RGB|Auto\s*RGB)\b/i', $text, $m ) ) {
+				if ( preg_match( '/\b(ARGB|RGB|Auto\s*RGB)\b/i', $text ) ) {
 					$specs['lighting'] = strtoupper( $m[1] );
 				}
 				break;
@@ -327,12 +469,72 @@ class Specs_Sync_Manager {
 		}
 		$parts = array();
 		foreach ( $specs as $k => $v ) {
+			if ( $k === 'raw_specs_table' ) {
+				continue;
+			}
 			if ( is_scalar( $v ) ) {
 				$label = ucwords( str_replace( '_', ' ', $k ) );
 				$parts[] = "{$label}: {$v}";
 			}
 		}
-		return implode( ' | ', array_slice( $parts, 0, 5 ) );
+		return ! empty( $parts ) ? implode( ' | ', array_slice( $parts, 0, 5 ) ) : 'Specs recorded';
+	}
+
+	protected function make_http_request( $url, $headers = array() ) {
+		if ( function_exists( 'curl_init' ) ) {
+			$ch = curl_init();
+			$default_headers = array(
+				'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+				'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+				'Accept-Language: en-US,en;q=0.9',
+			);
+
+			foreach ( $headers as $k => $v ) {
+				$default_headers[] = "{$k}: {$v}";
+			}
+
+			curl_setopt_array( $ch, array(
+				CURLOPT_URL            => $url,
+				CURLOPT_RETURNTRANSFER => true,
+				CURLOPT_FOLLOWLOCATION => true,
+				CURLOPT_MAXREDIRS      => 5,
+				CURLOPT_TIMEOUT        => 20,
+				CURLOPT_SSL_VERIFYPEER => false,
+				CURLOPT_SSL_VERIFYHOST => 0,
+				CURLOPT_ENCODING       => '',
+				CURLOPT_HTTPHEADER     => $default_headers,
+			) );
+
+			$body = curl_exec( $ch );
+			$code = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+			curl_close( $ch );
+
+			return array(
+				'success' => ( $code >= 200 && $code < 400 ),
+				'code'    => $code,
+				'body'    => $body,
+			);
+		}
+
+		$response = \wp_remote_get( $url, array(
+			'timeout' => 20,
+			'headers' => array_merge( array(
+				'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+			), $headers ),
+		) );
+
+		if ( \is_wp_error( $response ) ) {
+			return array( 'success' => false, 'code' => 500, 'body' => '' );
+		}
+
+		$code = \wp_remote_retrieve_response_code( $response );
+		$body = \wp_remote_retrieve_body( $response );
+
+		return array(
+			'success' => ( $code >= 200 && $code < 400 ),
+			'code'    => $code,
+			'body'    => $body,
+		);
 	}
 
 	protected function emit( $logger, $level, $message ) {

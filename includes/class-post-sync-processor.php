@@ -204,11 +204,23 @@ class Post_Sync_Processor {
 		$content .= '<p class="hwsync-summary">Compare live prices for <strong>' . esc_html( $component->brand . ' ' . $component->model_name ) . '</strong> across verified Indian computer hardware retailers. Best price starting at <strong>' . esc_html( $price_formatted ) . '</strong> across ' . intval( $vendor_count ) . ' stores.</p>';
 
 		if ( ! empty( $specs ) && is_array( $specs ) ) {
-			$content .= '<h3>Key Specifications</h3>';
-			$content .= '<table class="hwsync-specs-table"><tbody>';
+			$content .= '<h3>Technical Specifications</h3>';
+			$content .= '<table class="hwsync-specs-table" style="width:100%; border-collapse: collapse; margin-bottom: 24px; border: 1px solid #e2e8f0;"><tbody>';
+			
 			foreach ( $specs as $spec_k => $spec_v ) {
+				if ( $spec_k === 'raw_specs_table' || is_array( $spec_v ) ) {
+					continue;
+				}
 				$label = ucwords( str_replace( '_', ' ', $spec_k ) );
-				$content .= '<tr><th>' . esc_html( $label ) . '</th><td>' . esc_html( $spec_v ) . '</td></tr>';
+				$content .= '<tr style="border-bottom: 1px solid #e2e8f0;"><th style="text-align:left; padding: 8px 12px; background:#f8fafc; width:35%; font-weight:600; color:#334155;">' . esc_html( $label ) . '</th><td style="padding: 8px 12px; color:#0f172a;">' . esc_html( (string) $spec_v ) . '</td></tr>';
+			}
+
+			if ( ! empty( $specs['raw_specs_table'] ) && is_array( $specs['raw_specs_table'] ) ) {
+				foreach ( $specs['raw_specs_table'] as $rk => $rv ) {
+					if ( is_scalar( $rv ) && ! empty( $rv ) ) {
+						$content .= '<tr style="border-bottom: 1px solid #e2e8f0;"><th style="text-align:left; padding: 8px 12px; background:#f8fafc; width:35%; font-weight:600; color:#334155;">' . esc_html( $rk ) . '</th><td style="padding: 8px 12px; color:#0f172a;">' . esc_html( (string) $rv ) . '</td></tr>';
+					}
+				}
 			}
 			$content .= '</tbody></table>';
 		}
