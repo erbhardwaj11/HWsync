@@ -285,6 +285,7 @@ function wp_set_object_terms( $post_id, $terms, $taxonomy ) {
 
 // Require HWsync files
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-database.php';
+require_once HWSYNC_PLUGIN_DIR . 'includes/class-backup-manager.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/models/class-component.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/models/class-vendor.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/models/class-vendor-price.php';
@@ -293,6 +294,7 @@ require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/abstract-vendor-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-mdcomputers-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-vedant-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-primeabgb-adapter.php';
+require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-elitehubs-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-post-sync-processor.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-sync-manager.php';
 
