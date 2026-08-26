@@ -18,6 +18,8 @@ class Admin {
 		add_action( 'admin_post_hwsync_restore_csv', array( __CLASS__, 'handle_restore_csv' ) );
 		add_action( 'admin_post_hwsync_wipe_reset', array( __CLASS__, 'handle_wipe_reset' ) );
 		add_action( 'admin_post_hwsync_save_schedule', array( __CLASS__, 'handle_save_schedule_settings' ) );
+		add_action( 'wp_ajax_hwsync_sync_batch', array( __CLASS__, 'handle_sync_batch' ) );
+		add_action( 'wp_ajax_hwsync_sync_specs_chunk', array( __CLASS__, 'handle_sync_specs_chunk' ) );
 		add_action( 'wp_ajax_hwsync_stream_sync', array( __CLASS__, 'handle_stream_sync' ) );
 		add_action( 'wp_ajax_hwsync_stream_specs_sync', array( __CLASS__, 'handle_stream_specs_sync' ) );
 		add_action( 'wp_ajax_hwsync_process_browser_batch', array( __CLASS__, 'handle_browser_batch' ) );
@@ -283,6 +285,7 @@ class Admin {
 					var nonce = document.querySelector('input[name="hwsync_nonce"]').value;
 
 					startBtn.disabled = true;
+					syncSpecsBtn.disabled = true;
 					startBtn.innerHTML = '<span class="dashicons dashicons-update spin" style="animation: rotation 1s infinite linear;"></span> Syncing...';
 					stopBtn.style.display = 'inline-block';
 
@@ -292,21 +295,11 @@ class Admin {
 					statusBadge.style.background = '#15803d';
 					statusBadge.style.color = '#fff';
 
-					appendLog('info', 'Starting live sync for Vendor: [' + vendor + '], Category: [' + category + ']...');
+					appendLog('info', 'Starting rock-solid live sync for Vendor: [' + vendor + '], Category: [' + category + ']...');
 
 					abortController = new AbortController();
 
-					if (vendor === 'mdcomputers') {
-						runBrowserHeadlessSync('mdcomputers', category, nonce);
-					} else if (vendor === 'all') {
-						appendLog('info', 'Phase 1: Running in-browser headless sync for MDComputers...');
-						runBrowserHeadlessSync('mdcomputers', category, nonce, function() {
-							appendLog('info', 'Phase 2: Running streaming cURL sync for remaining Indian retailers...');
-							runStreamSync('all', category, nonce);
-						});
-					} else {
-						runStreamSync(vendor, category, nonce);
-					}
+					runChunkedMainSync(vendor, category, nonce);
 				});
 
 				syncSpecsBtn.addEventListener('click', function() {
@@ -328,115 +321,197 @@ class Admin {
 
 					abortController = new AbortController();
 
-					var postData = new URLSearchParams();
-					postData.append('action', 'hwsync_stream_specs_sync');
-					postData.append('target_category', category);
-					postData.append('hwsync_nonce', nonce);
-
-					fetch(ajaxurl, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-						body: postData.toString(),
-						signal: abortController.signal
-					}).then(function(response) {
-						var reader = response.body.getReader();
-						var decoder = new TextDecoder('utf-8');
-						var buffer = '';
-
-						function readChunk() {
-							return reader.read().then(function(result) {
-								if (result.done) {
-									finishSync();
-									return;
-								}
-								buffer += decoder.decode(result.value, { stream: true });
-								var lines = buffer.split('\n\n');
-								buffer = lines.pop();
-
-								lines.forEach(function(block) {
-									var trimmed = block.trim();
-									if (trimmed.startsWith('data:')) {
-										try {
-											var jsonStr = trimmed.substring(5).trim();
-											var data = JSON.parse(jsonStr);
-											appendLog(data.level, data.message, data.timestamp);
-										} catch (e) {}
-									}
-								});
-
-								return readChunk();
-							});
-						}
-
-						return readChunk();
-					}).catch(function(err) {
-						if (err.name === 'AbortError') {
-							appendLog('warning', 'Specs sync aborted by user.');
-						} else {
-							appendLog('error', 'Specs sync error: ' + err.message);
-						}
-						finishSync();
-					});
+					runChunkedSpecsSync(category, nonce);
 				});
 
-				function runStreamSync(vendor, category, nonce) {
-					var postData = new URLSearchParams();
-					postData.append('action', 'hwsync_stream_sync');
-					postData.append('target_vendor', vendor);
-					postData.append('target_category', category);
-					postData.append('hwsync_nonce', nonce);
+				function runChunkedMainSync(vendorChoice, categoryChoice, nonce) {
+					var allVendors = (vendorChoice === 'all') 
+						? ['primeabgb', 'pcstudio', 'elitehubs'] 
+						: (vendorChoice === 'mdcomputers' ? [] : [vendorChoice]);
+					
+					var allCategories = (categoryChoice === 'all') 
+						? ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet'] 
+						: [categoryChoice];
 
-					fetch(ajaxurl, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-						body: postData.toString(),
-						signal: abortController.signal
-					}).then(function(response) {
-						var reader = response.body.getReader();
-						var decoder = new TextDecoder('utf-8');
-						var buffer = '';
+					var currentVendorIdx = 0;
 
-						function readChunk() {
-							return reader.read().then(function(result) {
-								if (result.done) {
+					function processNextVendor() {
+						if (abortController && abortController.signal.aborted) {
+							appendLog('warning', 'Live Sync aborted by user.');
+							finishSync();
+							return;
+						}
+
+						if (currentVendorIdx >= allVendors.length) {
+							if (vendorChoice === 'all' || vendorChoice === 'mdcomputers') {
+								appendLog('info', '=== Running In-Browser Headless Scraper for MDComputers ===');
+								runBrowserHeadlessSync('mdcomputers', categoryChoice, nonce, function() {
+									appendLog('success', 'Full sync cycle completed across all retailers!');
+									finishSync();
+								});
+							} else {
+								appendLog('success', 'Full sync cycle completed successfully!');
+								finishSync();
+							}
+							return;
+						}
+
+						var curVendor = allVendors[currentVendorIdx++];
+						var curCatIdx = 0;
+						appendLog('info', '=== Connecting to ' + curVendor.toUpperCase() + ' ===');
+
+						function processNextCategory() {
+							if (abortController && abortController.signal.aborted) {
+								appendLog('warning', 'Live Sync aborted by user.');
+								finishSync();
+								return;
+							}
+
+							if (curCatIdx >= allCategories.length) {
+								processNextVendor();
+								return;
+							}
+
+							var curCat = allCategories[curCatIdx++];
+							var curPage = 1;
+							var retryCount = 0;
+
+							function fetchPageStep() {
+								if (abortController && abortController.signal.aborted) {
 									finishSync();
 									return;
 								}
-								buffer += decoder.decode(result.value, { stream: true });
-								var lines = buffer.split('\n\n');
-								buffer = lines.pop();
 
-								lines.forEach(function(block) {
-									var trimmed = block.trim();
-									if (trimmed.startsWith('data:')) {
-										try {
-											var jsonStr = trimmed.substring(5).trim();
-											var data = JSON.parse(jsonStr);
-											appendLog(data.level, data.message, data.timestamp);
+								var postData = new URLSearchParams();
+								postData.append('action', 'hwsync_sync_batch');
+								postData.append('target_vendor', curVendor);
+								postData.append('target_category', curCat);
+								postData.append('page', curPage);
+								postData.append('hwsync_nonce', nonce);
 
-											if (data.stats) {
-												if (data.stats.total_items !== undefined) mScraped.textContent = data.stats.total_items;
-												if (data.stats.components !== undefined) mMatched.textContent = data.stats.components;
-												if (data.stats.prices !== undefined) mPrices.textContent = data.stats.prices;
-												if (data.stats.posts !== undefined) mPosts.textContent = data.stats.posts;
-											}
-										} catch (e) {}
+								fetch(ajaxurl, {
+									method: 'POST',
+									headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+									body: postData.toString(),
+									signal: abortController ? abortController.signal : null
+								}).then(function(res) {
+									return res.json();
+								}).then(function(json) {
+									if (json.success && json.data) {
+										var d = json.data;
+										if (d.logs && Array.isArray(d.logs)) {
+											d.logs.forEach(function(l) {
+												appendLog(l.level, l.message);
+											});
+										}
+
+										var curScraped = parseInt(mScraped.textContent) || 0;
+										var curMatched = parseInt(mMatched.textContent) || 0;
+										var curPrices = parseInt(mPrices.textContent) || 0;
+										var curPosts = parseInt(mPosts.textContent) || 0;
+
+										mScraped.textContent = curScraped + (d.items_count || 0);
+										mMatched.textContent = curMatched + (d.components || 0);
+										mPrices.textContent = curPrices + (d.prices_saved || 0);
+										mPosts.textContent = curPosts + (d.posts_synced || 0);
+
+										if (d.has_more && curPage < 50) {
+											curPage++;
+											retryCount = 0;
+											fetchPageStep();
+										} else {
+											processNextCategory();
+										}
+									} else {
+										appendLog('warning', '[' + curVendor + '] Category ' + curCat + ' ended on Page ' + curPage);
+										processNextCategory();
+									}
+								}).catch(function(err) {
+									if (err.name === 'AbortError') {
+										appendLog('warning', 'Sync aborted.');
+										finishSync();
+									} else if (retryCount < 2) {
+										retryCount++;
+										appendLog('warning', '[' + curVendor + ' - ' + curCat + ' Page ' + curPage + '] Network hiccup (' + err.message + '). Retrying step (' + retryCount + '/2)...');
+										setTimeout(fetchPageStep, 1500);
+									} else {
+										appendLog('error', '[' + curVendor + ' - ' + curCat + '] Error after retries: ' + err.message + '. Moving to next category.');
+										processNextCategory();
 									}
 								});
+							}
 
-								return readChunk();
-							});
+							fetchPageStep();
 						}
 
-						return readChunk();
-					}).catch(function(err) {
-						if (err.name === 'AbortError') {
-							appendLog('warning', 'Sync aborted by user.');
-						} else {
-							appendLog('error', 'Sync stream error: ' + err.message);
+						processNextCategory();
+					}
+
+					processNextVendor();
+				}
+
+				function runChunkedSpecsSync(targetCategory, nonce) {
+					var currentOffset = 0;
+					var retryCount = 0;
+
+					function fetchSpecsStep() {
+						if (abortController && abortController.signal.aborted) {
+							appendLog('warning', 'Specs Sync aborted by user.');
+							finishSync();
+							return;
 						}
-						finishSync();
-					});
+
+						var postData = new URLSearchParams();
+						postData.append('action', 'hwsync_sync_specs_chunk');
+						postData.append('target_category', targetCategory);
+						postData.append('offset', currentOffset);
+						postData.append('limit', 5);
+						postData.append('hwsync_nonce', nonce);
+
+						fetch(ajaxurl, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+							body: postData.toString(),
+							signal: abortController ? abortController.signal : null
+						}).then(function(res) {
+							return res.json();
+						}).then(function(json) {
+							if (json.success && json.data) {
+								var d = json.data;
+								if (d.logs && Array.isArray(d.logs)) {
+									d.logs.forEach(function(l) {
+										appendLog(l.level, l.message);
+									});
+								}
+
+								if (d.has_more && d.next_offset) {
+									currentOffset = d.next_offset;
+									retryCount = 0;
+									fetchSpecsStep();
+								} else {
+									appendLog('finish', 'Technical Specifications Sync completed for all components in database!');
+									finishSync();
+								}
+							} else {
+								appendLog('finish', 'Specs sync completed.');
+								finishSync();
+							}
+						}).catch(function(err) {
+							if (err.name === 'AbortError') {
+								appendLog('warning', 'Specs sync aborted.');
+								finishSync();
+							} else if (retryCount < 2) {
+								retryCount++;
+								appendLog('warning', 'Specs sync transient error (' + err.message + '). Retrying batch in 2s (' + retryCount + '/2)...');
+								setTimeout(fetchSpecsStep, 2000);
+							} else {
+								appendLog('error', 'Specs sync error: ' + err.message);
+								finishSync();
+							}
+						});
+					}
+
+					fetchSpecsStep();
 				}
 
 				function runBrowserHeadlessSync(vendorSlug, category, nonce, nextCallback) {
@@ -753,6 +828,43 @@ class Admin {
 
 		wp_safe_redirect( admin_url( 'admin.php?page=hwsync-vendors' ) );
 		exit;
+	}
+
+	public static function handle_sync_batch() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => \__( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$vendor_slug = isset( $_POST['target_vendor'] ) ? sanitize_text_field( $_POST['target_vendor'] ) : 'primeabgb';
+		$category    = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'cpu';
+		$page        = isset( $_POST['page'] ) ? intval( $_POST['page'] ) : 1;
+		$delta_only  = ! empty( $_POST['delta_only'] );
+
+		$manager = new Sync_Manager();
+		$result  = $manager->sync_page( $vendor_slug, $category, $page, $delta_only );
+
+		wp_send_json_success( $result );
+	}
+
+	public static function handle_sync_specs_chunk() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => \__( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$category = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
+		$offset   = isset( $_POST['offset'] ) ? intval( $_POST['offset'] ) : 0;
+		$limit    = isset( $_POST['limit'] ) ? intval( $_POST['limit'] ) : 5;
+
+		$specs_manager = new Specs_Sync_Manager();
+		$result = $specs_manager->sync_specs_chunk( array(
+			'category' => $category,
+			'offset'   => $offset,
+			'limit'    => $limit,
+		) );
+
+		wp_send_json_success( $result );
 	}
 
 	public static function handle_stream_sync() {

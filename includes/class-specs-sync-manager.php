@@ -129,6 +129,109 @@ class Specs_Sync_Manager {
 	}
 
 	/**
+	 * Synchronize specifications for a small batch/chunk of components.
+	 * Designed for ultra-fast, timeout-immune AJAX requests from the Live Console.
+	 *
+	 * @param array $options Options array: 'category', 'offset', 'limit'.
+	 * @return array Chunk sync report including logs.
+	 */
+	public function sync_specs_chunk( $options = array() ) {
+		global $wpdb;
+		$comp_table   = Database::get_table_name( 'components' );
+		$category     = isset( $options['category'] ) ? sanitize_text_field( $options['category'] ) : 'all';
+		$offset       = isset( $options['offset'] ) ? intval( $options['offset'] ) : 0;
+		$limit        = isset( $options['limit'] ) ? intval( $options['limit'] ) : 5;
+
+		$where_clauses = array( "1=1" );
+		if ( $category !== 'all' && ! empty( $category ) ) {
+			$where_clauses[] = $wpdb->prepare( "category = %s", $category );
+		}
+
+		$where_sql = implode( ' AND ', $where_clauses );
+		$total_count = intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$comp_table} WHERE {$where_sql}" ) );
+		$components_raw = $wpdb->get_results( "SELECT * FROM {$comp_table} WHERE {$where_sql} ORDER BY id ASC LIMIT {$offset}, {$limit}", \ARRAY_A );
+
+		$logs = array();
+		$updated = 0;
+		$posts_refreshed = 0;
+
+		if ( empty( $components_raw ) ) {
+			return array(
+				'success'          => true,
+				'has_more'         => false,
+				'processed'        => 0,
+				'total_components' => $total_count,
+				'next_offset'      => $offset,
+				'logs'             => array( array( 'level' => 'info', 'message' => "All components in DB have been analyzed." ) ),
+			);
+		}
+
+		foreach ( $components_raw as $c_row ) {
+			$component = new Component( $c_row );
+			$prices = $component->get_prices();
+
+			if ( empty( $prices ) ) {
+				$logs[] = array( 'level' => 'debug', 'message' => "Component #{$component->id} has no linked price listings. Skipping." );
+				continue;
+			}
+
+			$merged_raw_specs = is_array( $component->specs_json ) && isset( $component->specs_json['raw_specs_table'] )
+				? (array) $component->specs_json['raw_specs_table']
+				: array();
+
+			$collected_text = $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
+
+			foreach ( $prices as $p ) {
+				if ( empty( $p->product_url ) ) continue;
+				$vendor_slug = ! empty( $p->vendor_slug ) ? $p->vendor_slug : '';
+				$page_specs = $this->fetch_specs_from_product_url( $p->product_url, $vendor_slug, $component->category );
+
+				if ( ! empty( $page_specs ) ) {
+					$merged_raw_specs = array_merge( $merged_raw_specs, $page_specs );
+					$logs[] = array( 'level' => 'match', 'message' => "[{$component->model_name}] Extracted " . count( $page_specs ) . " specs attributes from " . ucfirst( $vendor_slug ) . " product page." );
+					foreach ( $page_specs as $sk => $sv ) {
+						$collected_text .= " {$sk}: {$sv}";
+					}
+					break;
+				}
+			}
+
+			$structured_specs = self::extract_detailed_specs( $component->category, $collected_text, $component->specs_json ?: array() );
+			if ( ! empty( $merged_raw_specs ) ) {
+				$structured_specs['raw_specs_table'] = $merged_raw_specs;
+			}
+
+			if ( ! empty( $structured_specs ) ) {
+				$component->specs_json = $structured_specs;
+				$component->save();
+				$updated++;
+
+				$summary = self::format_specs_summary( $structured_specs );
+				$logs[] = array( 'level' => 'success', 'message' => "Specs Saved for #{$component->id} [{$component->model_name}]: {$summary}" );
+
+				if ( ! empty( $component->wp_post_id ) ) {
+					Post_Sync_Processor::sync_component_to_post( $component->id );
+					$posts_refreshed++;
+				}
+			}
+		}
+
+		$next_offset = $offset + count( $components_raw );
+		$has_more = ( $next_offset < $total_count );
+
+		return array(
+			'success'          => true,
+			'has_more'         => $has_more,
+			'processed'        => count( $components_raw ),
+			'updated'          => $updated,
+			'posts_refreshed'  => $posts_refreshed,
+			'total_components' => $total_count,
+			'next_offset'      => $next_offset,
+			'logs'             => $logs,
+		);
+	}
+
+	/**
 	 * Fetch and extract specifications section from a vendor's product page URL.
 	 *
 	 * @param string $url

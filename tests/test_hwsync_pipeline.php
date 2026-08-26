@@ -547,6 +547,10 @@ $cron_time = get_option( 'hwsync_schedule_time' );
 $cron_scheduled = wp_next_scheduled( \HWsync\Cron::CRON_HOOK );
 assert_test( 'Cron Schedule Configuration Successfully Saved and Event Scheduled', ( $cron_enabled === 1 && $cron_time === '03:00' && ! empty( $cron_scheduled ) ) );
 
+// Test 15: Fast Chunked Page Sync (Single Step)
+$page_sync_res = $sync_manager->sync_page( 'mdcomputers', 'cpu', 1, false );
+assert_test( 'Chunked Page Sync (Single Step) executes without error and returns logs', ( $page_sync_res['success'] && isset( $page_sync_res['logs'] ) && is_array( $page_sync_res['logs'] ) ) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";
