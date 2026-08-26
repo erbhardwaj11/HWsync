@@ -156,24 +156,11 @@ class Admin {
 								</select>
 							</div>
 
-							<?php 
-							$saved_pt = Post_Sync_Processor::get_target_post_type(); 
-							?>
-							<div style="margin-bottom: 20px;">
-								<label for="target_post_type" style="display: block; font-weight: 600; margin-bottom: 6px; color: #334155;">
-									<?php esc_html_e( 'Target Theme Post Type', 'hwsync' ); ?>
-								</label>
-								<select name="target_post_type" id="target_post_type" style="width: 100%; max-width: 100%; height: 38px; border-radius: 6px; border: 1px solid #cbd5e1;">
-									<option value="hwsync_component" <?php selected( $saved_pt, 'hwsync_component' ); ?>>hwsync_component (HWsync Catalog)</option>
-									<?php if ( post_type_exists( 'pcspecs_component' ) ) : ?>
-										<option value="pcspecs_component" <?php selected( $saved_pt, 'pcspecs_component' ); ?>>pcspecs_component (pcspecs Theme)</option>
-									<?php endif; ?>
-									<option value="post" <?php selected( $saved_pt, 'post' ); ?>>post (Standard WordPress Posts)</option>
-									<?php if ( post_type_exists( 'product' ) ) : ?>
-										<option value="product" <?php selected( $saved_pt, 'product' ); ?>>product (WooCommerce Products)</option>
-									<?php endif; ?>
-								</select>
-								<p style="margin: 4px 0 0; font-size: 11px; color: #64748b;"><?php esc_html_e( 'Syncs multi-vendor prices into single deduplicated posts matching this post type.', 'hwsync' ); ?></p>
+							<div style="margin-bottom: 20px; padding: 12px 14px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
+								<p style="margin: 0; font-size: 12px; color: #475569; line-height: 1.5;">
+									<strong style="color: #1e293b;">⚡ <?php esc_html_e( 'Direct PC Part-Picker Sync:', 'hwsync' ); ?></strong>
+									<?php esc_html_e( 'Syncs canonical components, technical specifications, and multi-vendor prices directly into the pcspecs Theme engine without cluttering your WordPress Posts.', 'hwsync' ); ?>
+								</p>
 							</div>
 
 							<div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
@@ -197,7 +184,7 @@ class Admin {
 					</div>
 
 					<div style="margin-top: 20px; padding-top: 14px; border-top: 1px solid #f1f5f9; color: #94a3b8; font-size: 12px;">
-						<?php esc_html_e( 'Theme Sync ensures 1 canonical component contains all participating store prices with zero duplicates.', 'hwsync' ); ?>
+						<?php esc_html_e( 'Theme Sync populates the native pcspecs database with multi-vendor price comparisons.', 'hwsync' ); ?>
 					</div>
 				</div>
 
@@ -363,7 +350,6 @@ class Admin {
 				if (syncThemeBtn) {
 					syncThemeBtn.addEventListener('click', function() {
 						var category = document.getElementById('target_category').value;
-						var postType = document.getElementById('target_post_type') ? document.getElementById('target_post_type').value : 'hwsync_component';
 						var nonce = document.querySelector('input[name="hwsync_nonce"]').value;
 
 						startBtn.disabled = true;
@@ -378,15 +364,15 @@ class Admin {
 						statusBadge.style.background = '#6d28d9';
 						statusBadge.style.color = '#fff';
 
-						appendLog('info', 'Publishing catalog to pcspecs Theme post type [' + postType + '] for category [' + category + ']...');
+						appendLog('info', 'Synchronizing hardware database to pcspecs Theme Part-Picker Engine for category [' + category + ']...');
 
 						abortController = new AbortController();
 
-						runChunkedThemeSync(category, postType, nonce);
+						runChunkedThemeSync(category, nonce);
 					});
 				}
 
-				function runChunkedThemeSync(categoryChoice, postTypeChoice, nonce) {
+				function runChunkedThemeSync(categoryChoice, nonce) {
 					var currentOffset = 0;
 					var batchSize = 10;
 					var totalCreated = 0;
@@ -403,7 +389,6 @@ class Admin {
 						var postData = new URLSearchParams();
 						postData.append('action', 'hwsync_sync_theme_chunk');
 						postData.append('target_category', categoryChoice);
-						postData.append('target_post_type', postTypeChoice);
 						postData.append('offset', currentOffset);
 						postData.append('limit', batchSize);
 						postData.append('hwsync_nonce', nonce);
@@ -1779,20 +1764,14 @@ class Admin {
 		}
 
 		try {
-			$category  = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
-			$offset    = isset( $_POST['offset'] ) ? intval( $_POST['offset'] ) : 0;
-			$limit     = isset( $_POST['limit'] ) ? intval( $_POST['limit'] ) : 10;
-			$post_type = isset( $_POST['target_post_type'] ) ? sanitize_text_field( $_POST['target_post_type'] ) : '';
-
-			if ( ! empty( $post_type ) ) {
-				update_option( 'hwsync_target_post_type', $post_type );
-			}
+			$category = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
+			$offset   = isset( $_POST['offset'] ) ? intval( $_POST['offset'] ) : 0;
+			$limit    = isset( $_POST['limit'] ) ? intval( $_POST['limit'] ) : 10;
 
 			$result = Post_Sync_Processor::sync_theme_chunk( array(
-				'category'  => $category,
-				'offset'    => $offset,
-				'limit'     => $limit,
-				'post_type' => $post_type,
+				'category' => $category,
+				'offset'   => $offset,
+				'limit'    => $limit,
 			) );
 
 			wp_send_json_success( $result );

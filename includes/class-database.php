@@ -108,10 +108,56 @@ class Database {
 			KEY recorded_at (recorded_at)
 		) {$charset_collate};";
 
+		// 5. PCSpecs Theme Native Components Table (pc-builder / REST API)
+		$pc_comp_table = $wpdb->prefix . 'pc_components';
+		$sql_pc_components = "CREATE TABLE {$pc_comp_table} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			post_id bigint(20) unsigned DEFAULT NULL,
+			category_id bigint(20) unsigned DEFAULT NULL,
+			name varchar(255) NOT NULL,
+			slug varchar(255) NOT NULL,
+			brand varchar(128) DEFAULT NULL,
+			category varchar(64) NOT NULL,
+			mpn varchar(128) DEFAULT NULL,
+			normalized_sku varchar(128) DEFAULT NULL,
+			image_url text DEFAULT NULL,
+			specs longtext DEFAULT NULL,
+			created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			PRIMARY KEY  (id),
+			KEY category (category),
+			KEY brand (brand),
+			KEY slug (slug),
+			KEY mpn (mpn)
+		) {$charset_collate};";
+
+		// 6. PCSpecs Theme Native Vendor Prices Table
+		$pc_prices_table = $wpdb->prefix . 'pc_vendor_prices';
+		$sql_pc_vendor_prices = "CREATE TABLE {$pc_prices_table} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			component_id bigint(20) unsigned NOT NULL,
+			vendor_name varchar(128) NOT NULL,
+			current_price decimal(10,2) NOT NULL DEFAULT 0.00,
+			regular_price decimal(10,2) DEFAULT NULL,
+			sale_price decimal(10,2) DEFAULT NULL,
+			stock_status varchar(32) NOT NULL DEFAULT 'instock',
+			product_url text NOT NULL,
+			vendor_sku varchar(128) DEFAULT NULL,
+			last_checked datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			price_history longtext DEFAULT NULL,
+			PRIMARY KEY  (id),
+			KEY component_id (component_id),
+			KEY vendor_name (vendor_name),
+			KEY current_price (current_price),
+			UNIQUE KEY comp_vendor_uniq (component_id, vendor_name)
+		) {$charset_collate};";
+
 		dbDelta( $sql_vendors );
 		dbDelta( $sql_components );
 		dbDelta( $sql_prices );
 		dbDelta( $sql_history );
+		dbDelta( $sql_pc_components );
+		dbDelta( $sql_pc_vendor_prices );
 
 		// Ensure columns exist on existing databases
 		$existing_cols = $wpdb->get_col( "DESC {$vendors_table}" );

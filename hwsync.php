@@ -97,7 +97,6 @@ class HWsync_Plugin {
 		\HWsync\Database::create_tables();
 		\HWsync\Database::seed_default_vendors();
 		\HWsync\Cron::schedule_events();
-		\HWsync\Post_Sync_Processor::register_post_type();
 		flush_rewrite_rules();
 	}
 
@@ -108,9 +107,6 @@ class HWsync_Plugin {
 
 	public function init() {
 		load_plugin_textdomain( 'hwsync', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
-
-		// Register custom post type & taxonomies on init
-		\HWsync\Post_Sync_Processor::register_post_type();
 
 		// Init public shortcodes & styles
 		\HWsync\Public_Handler::init();
