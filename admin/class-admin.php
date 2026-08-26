@@ -414,30 +414,42 @@ class Admin {
 							body: postData.toString(),
 							signal: abortController ? abortController.signal : null
 						}).then(function(res) {
-							return res.json();
-						}).then(function(json) {
-							if (json.success && json.data) {
-								var d = json.data;
-								totalCreated += (d.created || 0);
-								totalUpdated += (d.updated || 0);
+							return res.text();
+						}).then(function(responseText) {
+							try {
+								var json = JSON.parse(responseText);
+								if (json.success && json.data) {
+									var d = json.data;
+									totalCreated += (d.created || 0);
+									totalUpdated += (d.updated || 0);
 
-								if (d.logs && Array.isArray(d.logs)) {
-									d.logs.forEach(function(msg) {
-										appendLog('match', msg);
-									});
-								}
+									if (d.logs && Array.isArray(d.logs)) {
+										d.logs.forEach(function(msg) {
+											appendLog('match', msg);
+										});
+									}
 
-								if (!d.is_done && d.offset < d.total) {
-									currentOffset = d.offset;
-									retryCount = 0;
-									fetchThemeStep();
+									if (!d.is_done && d.offset < d.total) {
+										currentOffset = d.offset;
+										retryCount = 0;
+										fetchThemeStep();
+									} else {
+										appendLog('finish', '✓ Theme Catalog Sync Completed! Total Created: ' + totalCreated + ', Updated: ' + totalUpdated + ' posts with multi-vendor pricing.');
+										finishSync();
+									}
 								} else {
-									appendLog('finish', '✓ Theme Catalog Sync Completed! Total Created: ' + totalCreated + ', Updated: ' + totalUpdated + ' posts with multi-vendor pricing.');
+									var errMsg = (json.data && json.data.message) ? json.data.message : 'Theme sync chunk returned no data.';
+									appendLog('warning', errMsg);
 									finishSync();
 								}
-							} else {
-								appendLog('warning', 'Theme sync chunk returned no data.');
-								finishSync();
+							} catch (e) {
+								appendLog('warning', 'Server response: ' + responseText.substring(0, 150));
+								if (retryCount < 2) {
+									retryCount++;
+									setTimeout(fetchThemeStep, 2000);
+								} else {
+									finishSync();
+								}
 							}
 						}).catch(function(err) {
 							if (err.name === 'AbortError') {
@@ -1758,28 +1770,35 @@ class Admin {
 	}
 
 	public static function handle_sync_theme_chunk() {
-		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce', false ) ) {
+			wp_send_json_error( array( 'message' => \__( 'Security check failed. Please refresh the page.', 'hwsync' ) ) );
+		}
+
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_send_json_error( array( 'message' => \__( 'Unauthorized', 'hwsync' ) ) );
 		}
 
-		$category  = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
-		$offset    = isset( $_POST['offset'] ) ? intval( $_POST['offset'] ) : 0;
-		$limit     = isset( $_POST['limit'] ) ? intval( $_POST['limit'] ) : 10;
-		$post_type = isset( $_POST['target_post_type'] ) ? sanitize_text_field( $_POST['target_post_type'] ) : '';
+		try {
+			$category  = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
+			$offset    = isset( $_POST['offset'] ) ? intval( $_POST['offset'] ) : 0;
+			$limit     = isset( $_POST['limit'] ) ? intval( $_POST['limit'] ) : 10;
+			$post_type = isset( $_POST['target_post_type'] ) ? sanitize_text_field( $_POST['target_post_type'] ) : '';
 
-		if ( ! empty( $post_type ) ) {
-			update_option( 'hwsync_target_post_type', $post_type );
+			if ( ! empty( $post_type ) ) {
+				update_option( 'hwsync_target_post_type', $post_type );
+			}
+
+			$result = Post_Sync_Processor::sync_theme_chunk( array(
+				'category'  => $category,
+				'offset'    => $offset,
+				'limit'     => $limit,
+				'post_type' => $post_type,
+			) );
+
+			wp_send_json_success( $result );
+		} catch ( \Throwable $e ) {
+			wp_send_json_error( array( 'message' => $e->getMessage() ) );
 		}
-
-		$result = Post_Sync_Processor::sync_theme_chunk( array(
-			'category'  => $category,
-			'offset'    => $offset,
-			'limit'     => $limit,
-			'post_type' => $post_type,
-		) );
-
-		wp_send_json_success( $result );
 	}
 
 	public static function handle_manual_sync() {

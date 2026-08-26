@@ -99,6 +99,18 @@ class Component {
 		return $components;
 	}
 
+	public static function count( $args = array() ) {
+		global $wpdb;
+		$table = Database::get_table_name( 'components' );
+		$category = isset( $args['category'] ) ? $args['category'] : '';
+
+		if ( ! empty( $category ) && $category !== 'all' ) {
+			return intval( $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE category = %s", $category ) ) );
+		}
+
+		return intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" ) );
+	}
+
 	public function save() {
 		global $wpdb;
 		$table = Database::get_table_name( 'components' );
