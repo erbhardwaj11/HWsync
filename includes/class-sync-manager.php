@@ -327,7 +327,7 @@ class Sync_Manager {
 		);
 	}
 
-	protected function get_adapter_instance( Vendor $vendor ) {
+	public function get_adapter_instance( Vendor $vendor ) {
 		$class = ! empty( $vendor->adapter_class ) && class_exists( $vendor->adapter_class )
 			? $vendor->adapter_class
 			: ( isset( $this->adapter_map[ $vendor->vendor_slug ] ) ? $this->adapter_map[ $vendor->vendor_slug ] : null );
@@ -335,6 +335,17 @@ class Sync_Manager {
 		if ( $class && class_exists( $class ) ) {
 			return new $class();
 		}
-		return null;
+
+		// Fallback to dynamic Configurable_Vendor_Adapter
+		$cfg = $vendor->get_config();
+		$endpoints = isset( $cfg['endpoints'] ) ? $cfg['endpoints'] : array();
+
+		return new \HWsync\Vendors\Configurable_Vendor_Adapter(
+			$vendor->vendor_slug,
+			$vendor->vendor_name,
+			$vendor->base_url,
+			$vendor->sync_method ?: 'curl_html',
+			$endpoints
+		);
 	}
 }

@@ -570,6 +570,56 @@ $c_4070 = \HWsync\Matching_Engine::match_or_create_component( $item_4070 );
 
 assert_test( 'Different GPU Chipsets (RTX 5050 vs RTX 4070) produce distinct canonical component IDs', ( $c_5050 && $c_4070 && $c_5050->id !== $c_4070->id ) );
 
+// Test 17: Dynamic Custom Vendor Creation & Endpoint Configuration
+$custom_vendor = new \HWsync\Models\Vendor( array(
+	'vendor_name' => 'Clarion Computers',
+	'vendor_slug' => 'clarioncomputers',
+	'base_url'    => 'https://www.clarioncomputers.in',
+	'sync_method' => 'curl_html',
+	'is_active'   => 1,
+) );
+$custom_vendor->set_config( array(
+	'endpoints' => array(
+		'cpu' => '/product-category/processor/',
+		'gpu' => '/product-category/graphics-card/',
+	)
+) );
+$custom_vendor_id = $custom_vendor->save();
+$fetched_custom = \HWsync\Models\Vendor::find_by_id( $custom_vendor_id );
+$fetched_cfg = $fetched_custom ? $fetched_custom->get_config() : array();
+
+assert_test( 'Custom Vendor Saved with Dynamic Endpoints & Sync Method', (
+	$fetched_custom &&
+	$fetched_custom->vendor_slug === 'clarioncomputers' &&
+	$fetched_custom->sync_method === 'curl_html' &&
+	isset( $fetched_cfg['endpoints']['cpu'] ) &&
+	$fetched_cfg['endpoints']['cpu'] === '/product-category/processor/'
+) );
+
+// Test 18: Configurable Vendor Adapter Generic HTML Parser (1 Sample Extraction)
+$sample_html = '<li class="product type-product post-101 status-publish instock">
+	<a href="https://example.com/product/intel-core-i5-14600k" class="woocommerce-LoopProduct-link">
+		<h2 class="woocommerce-loop-product__title">Intel Core i5-14600K 14-Core Processor</h2>
+	</a>
+	<span class="price"><del><bdi>₹34,000.00</bdi></del> <ins><bdi>₹27,499.00</bdi></ins></span>
+</li>';
+
+$configurable_adapter = new \HWsync\Vendors\Configurable_Vendor_Adapter(
+	'clarioncomputers',
+	'Clarion Computers',
+	'https://www.clarioncomputers.in',
+	'curl_html',
+	array( 'cpu' => '/product-category/processor/' )
+);
+$parsed_samples = $configurable_adapter->parse_generic_html( $sample_html, 'cpu' );
+
+assert_test( 'Configurable Vendor Adapter parsed 1 Sample component with accurate sale price', (
+	! empty( $parsed_samples ) &&
+	count( $parsed_samples ) === 1 &&
+	$parsed_samples[0]['title'] === 'Intel Core i5-14600K 14-Core Processor' &&
+	floatval( $parsed_samples[0]['price'] ) === 27499.00
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

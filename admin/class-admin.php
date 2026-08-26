@@ -23,6 +23,9 @@ class Admin {
 		add_action( 'wp_ajax_hwsync_stream_sync', array( __CLASS__, 'handle_stream_sync' ) );
 		add_action( 'wp_ajax_hwsync_stream_specs_sync', array( __CLASS__, 'handle_stream_specs_sync' ) );
 		add_action( 'wp_ajax_hwsync_process_browser_batch', array( __CLASS__, 'handle_browser_batch' ) );
+		add_action( 'wp_ajax_hwsync_save_vendor', array( __CLASS__, 'handle_save_vendor' ) );
+		add_action( 'wp_ajax_hwsync_delete_vendor', array( __CLASS__, 'handle_delete_vendor' ) );
+		add_action( 'wp_ajax_hwsync_test_vendor_sync', array( __CLASS__, 'handle_test_vendor_sync' ) );
 	}
 
 	public static function register_admin_menu() {
@@ -733,35 +736,691 @@ class Admin {
 
 	public static function render_vendors_page() {
 		$vendors = Vendor::get_all();
+		$nonce   = wp_create_nonce( 'hwsync_manual_sync_action' );
 		?>
-		<div class="wrap">
-			<h1><?php esc_html_e( 'Registered Indian PC Hardware Retailers', 'hwsync' ); ?></h1>
-			<table class="wp-list-table widefat fixed striped">
-				<thead>
-					<tr>
-						<th><?php esc_html_e( 'Vendor Name', 'hwsync' ); ?></th>
-						<th><?php esc_html_e( 'Slug', 'hwsync' ); ?></th>
-						<th><?php esc_html_e( 'Base Store URL', 'hwsync' ); ?></th>
-						<th><?php esc_html_e( 'Status', 'hwsync' ); ?></th>
-						<th><?php esc_html_e( 'Last Sync', 'hwsync' ); ?></th>
-					</tr>
-				</thead>
-				<tbody>
-					<?php foreach ( $vendors as $vendor ) : ?>
-						<tr>
-							<td><strong><?php echo esc_html( $vendor->vendor_name ); ?></strong></td>
-							<td><code><?php echo esc_html( $vendor->vendor_slug ); ?></code></td>
-							<td><a href="<?php echo esc_url( $vendor->base_url ); ?>" target="_blank"><?php echo esc_html( $vendor->base_url ); ?></a></td>
-							<td>
-								<span style="color: <?php echo $vendor->is_active ? '#16a34a' : '#94a3b8'; ?>; font-weight: bold;">
-									<?php echo $vendor->is_active ? esc_html__( 'Active', 'hwsync' ) : esc_html__( 'Disabled', 'hwsync' ); ?>
-								</span>
-							</td>
-							<td><?php echo esc_html( $vendor->last_sync_at ?: __( 'Never', 'hwsync' ) ); ?></td>
+		<div class="wrap hwsync-vendors-wrap">
+			<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+				<div>
+					<h1 style="margin: 0 0 4px 0; font-size: 24px; font-weight: 700; color: #0f172a;"><?php esc_html_e( 'Registered PC Hardware Retailers', 'hwsync' ); ?></h1>
+					<p style="margin: 0; color: #64748b; font-size: 13px;"><?php esc_html_e( 'Manage multi-vendor scrapers, add custom retailers, and test 1-component sample extraction across all hardware categories.', 'hwsync' ); ?></p>
+				</div>
+				<div>
+					<button type="button" id="btn-open-add-vendor" class="button button-primary" style="height: 38px; padding: 0 16px; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; background: #2563eb; border-color: #1d4ed8;">
+						<span class="dashicons dashicons-plus-alt2" style="margin-top: 1px;"></span> <?php esc_html_e( 'Add New Retailer', 'hwsync' ); ?>
+					</button>
+				</div>
+			</div>
+
+			<!-- Retailers Table -->
+			<div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+				<table class="wp-list-table widefat fixed striped" style="border: none;">
+					<thead>
+						<tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+							<th style="padding: 12px 16px; font-weight: 600; color: #475569;"><?php esc_html_e( 'Retailer Name', 'hwsync' ); ?></th>
+							<th style="padding: 12px 16px; font-weight: 600; color: #475569; width: 140px;"><?php esc_html_e( 'Slug', 'hwsync' ); ?></th>
+							<th style="padding: 12px 16px; font-weight: 600; color: #475569;"><?php esc_html_e( 'Base Store URL', 'hwsync' ); ?></th>
+							<th style="padding: 12px 16px; font-weight: 600; color: #475569; width: 160px;"><?php esc_html_e( 'Sync Method', 'hwsync' ); ?></th>
+							<th style="padding: 12px 16px; font-weight: 600; color: #475569; width: 90px; text-align: center;"><?php esc_html_e( 'Status', 'hwsync' ); ?></th>
+							<th style="padding: 12px 16px; font-weight: 600; color: #475569; width: 150px;"><?php esc_html_e( 'Last Sync', 'hwsync' ); ?></th>
+							<th style="padding: 12px 16px; font-weight: 600; color: #475569; width: 230px; text-align: right;"><?php esc_html_e( 'Actions', 'hwsync' ); ?></th>
 						</tr>
-					<?php endforeach; ?>
-				</tbody>
-			</table>
+					</thead>
+					<tbody>
+						<?php if ( empty( $vendors ) ) : ?>
+							<tr><td colspan="7" style="padding: 24px; text-align: center; color: #64748b;"><?php esc_html_e( 'No vendors found. Click "Add New Retailer" to register one.', 'hwsync' ); ?></td></tr>
+						<?php else : ?>
+							<?php foreach ( $vendors as $vendor ) : 
+								$cfg = $vendor->get_config();
+								$endpoints_json = esc_attr( wp_json_encode( $cfg['endpoints'] ?? array() ) );
+								$method_label = $vendor->get_sync_method_label();
+								$method_badge_bg = '#f1f5f9';
+								$method_badge_fg = '#475569';
+								if ( $vendor->sync_method === 'shopify_json' ) {
+									$method_badge_bg = '#f0fdf4';
+									$method_badge_fg = '#16a34a';
+								} elseif ( $vendor->sync_method === 'browser_headless' ) {
+									$method_badge_bg = '#f5f3ff';
+									$method_badge_fg = '#7c3aed';
+								}
+							?>
+								<tr id="vendor-row-<?php echo esc_attr( $vendor->id ); ?>">
+									<td style="padding: 12px 16px; vertical-align: middle;">
+										<strong style="font-size: 14px; color: #0f172a;"><?php echo esc_html( $vendor->vendor_name ); ?></strong>
+										<?php if ( ! empty( $vendor->adapter_class ) ) : ?>
+											<span style="font-size: 10px; background: #e0f2fe; color: #0284c7; padding: 2px 6px; border-radius: 4px; font-weight: 600; margin-left: 6px;">BUILTIN</span>
+										<?php else : ?>
+											<span style="font-size: 10px; background: #fef3c7; color: #d97706; padding: 2px 6px; border-radius: 4px; font-weight: 600; margin-left: 6px;">CUSTOM</span>
+										<?php endif; ?>
+									</td>
+									<td style="padding: 12px 16px; vertical-align: middle;">
+										<code style="font-size: 12px; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; color: #334155;"><?php echo esc_html( $vendor->vendor_slug ); ?></code>
+									</td>
+									<td style="padding: 12px 16px; vertical-align: middle;">
+										<a href="<?php echo esc_url( $vendor->base_url ); ?>" target="_blank" style="color: #2563eb; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+											<?php echo esc_html( $vendor->base_url ); ?> <span class="dashicons dashicons-external" style="font-size: 14px; width: 14px; height: 14px;"></span>
+										</a>
+									</td>
+									<td style="padding: 12px 16px; vertical-align: middle;">
+										<span style="font-size: 11px; font-weight: 600; background: <?php echo esc_attr( $method_badge_bg ); ?>; color: <?php echo esc_attr( $method_badge_fg ); ?>; padding: 3px 8px; border-radius: 12px; display: inline-block;">
+											<?php echo esc_html( $method_label ); ?>
+										</span>
+									</td>
+									<td style="padding: 12px 16px; vertical-align: middle; text-align: center;">
+										<a href="<?php echo esc_url( admin_url( 'admin-post.php?action=hwsync_toggle_vendor&vendor_id=' . $vendor->id ) ); ?>" style="text-decoration: none;">
+											<span style="display: inline-block; padding: 3px 8px; font-size: 11px; font-weight: 700; border-radius: 12px; background: <?php echo $vendor->is_active ? '#dcfce7' : '#f1f5f9'; ?>; color: <?php echo $vendor->is_active ? '#15803d' : '#64748b'; ?>;">
+												<?php echo $vendor->is_active ? esc_html__( 'Active', 'hwsync' ) : esc_html__( 'Disabled', 'hwsync' ); ?>
+											</span>
+										</a>
+									</td>
+									<td style="padding: 12px 16px; vertical-align: middle; color: #64748b; font-size: 12px;">
+										<?php echo esc_html( $vendor->last_sync_at ?: __( 'Never', 'hwsync' ) ); ?>
+									</td>
+									<td style="padding: 12px 16px; vertical-align: middle; text-align: right;">
+										<button type="button" class="button btn-test-vendor" 
+											data-id="<?php echo esc_attr( $vendor->id ); ?>"
+											data-name="<?php echo esc_attr( $vendor->vendor_name ); ?>"
+											data-slug="<?php echo esc_attr( $vendor->vendor_slug ); ?>"
+											data-url="<?php echo esc_attr( $vendor->base_url ); ?>"
+											data-method="<?php echo esc_attr( $vendor->sync_method ?: 'curl_html' ); ?>"
+											data-endpoints="<?php echo $endpoints_json; ?>"
+											style="background: #f0fdf4; border-color: #bbf7d0; color: #16a34a; font-weight: 600; font-size: 12px; margin-right: 4px;">
+											<span class="dashicons dashicons-dashboard" style="margin-top: 2px; font-size: 15px; width: 15px; height: 15px;"></span> <?php esc_html_e( 'Test Sync', 'hwsync' ); ?>
+										</button>
+										<button type="button" class="button btn-edit-vendor"
+											data-id="<?php echo esc_attr( $vendor->id ); ?>"
+											data-name="<?php echo esc_attr( $vendor->vendor_name ); ?>"
+											data-slug="<?php echo esc_attr( $vendor->vendor_slug ); ?>"
+											data-url="<?php echo esc_attr( $vendor->base_url ); ?>"
+											data-method="<?php echo esc_attr( $vendor->sync_method ?: 'curl_html' ); ?>"
+											data-active="<?php echo esc_attr( $vendor->is_active ); ?>"
+											data-endpoints="<?php echo $endpoints_json; ?>"
+											style="font-size: 12px; margin-right: 4px;">
+											<?php esc_html_e( 'Edit', 'hwsync' ); ?>
+										</button>
+										<?php if ( empty( $vendor->adapter_class ) ) : ?>
+											<button type="button" class="button btn-delete-vendor" data-id="<?php echo esc_attr( $vendor->id ); ?>" data-name="<?php echo esc_attr( $vendor->vendor_name ); ?>" style="color: #dc2626; border-color: #fecaca; font-size: 12px;">
+												<?php esc_html_e( 'Delete', 'hwsync' ); ?>
+											</button>
+										<?php endif; ?>
+									</td>
+								</tr>
+							<?php endforeach; ?>
+						<?php endif; ?>
+					</tbody>
+				</table>
+			</div>
+
+			<!-- Add / Edit Vendor Modal -->
+			<div id="modal-vendor-form" style="display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.6); z-index: 100000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+				<div style="background: #fff; width: 680px; max-width: 95%; max-height: 90vh; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1); overflow-y: auto; display: flex; flex-direction: column;">
+					<div style="padding: 16px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc;">
+						<h2 id="modal-vendor-title" style="margin: 0; font-size: 18px; font-weight: 700; color: #0f172a;"><?php esc_html_e( 'Add New Hardware Retailer', 'hwsync' ); ?></h2>
+						<button type="button" id="btn-close-vendor-modal" style="background: none; border: none; font-size: 20px; color: #64748b; cursor: pointer;">&times;</button>
+					</div>
+					<form id="form-vendor-save" style="padding: 24px; flex: 1;">
+						<input type="hidden" id="v-id" name="vendor_id" value="0" />
+						<input type="hidden" name="action" value="hwsync_save_vendor" />
+						<input type="hidden" name="hwsync_nonce" value="<?php echo esc_attr( $nonce ); ?>" />
+
+						<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+							<div>
+								<label style="display: block; font-weight: 600; font-size: 12px; color: #334155; margin-bottom: 4px;"><?php esc_html_e( 'Retailer Name *', 'hwsync' ); ?></label>
+								<input type="text" id="v-name" name="vendor_name" placeholder="e.g. Vedant Computers" class="regular-text" style="width: 100%;" required />
+							</div>
+							<div>
+								<label style="display: block; font-weight: 600; font-size: 12px; color: #334155; margin-bottom: 4px;"><?php esc_html_e( 'Slug (Identifier) *', 'hwsync' ); ?></label>
+								<input type="text" id="v-slug" name="vendor_slug" placeholder="e.g. vedantcomputers" class="regular-text" style="width: 100%;" required />
+							</div>
+						</div>
+
+						<div style="margin-bottom: 16px;">
+							<label style="display: block; font-weight: 600; font-size: 12px; color: #334155; margin-bottom: 4px;"><?php esc_html_e( 'Base Store URL *', 'hwsync' ); ?></label>
+							<input type="url" id="v-url" name="base_url" placeholder="https://www.vedantcomputers.com" class="regular-text" style="width: 100%;" required />
+						</div>
+
+						<div style="margin-bottom: 20px;">
+							<label style="display: block; font-weight: 600; font-size: 12px; color: #334155; margin-bottom: 4px;"><?php esc_html_e( 'Sync Scraper Method *', 'hwsync' ); ?></label>
+							<select id="v-method" name="sync_method" style="width: 100%; height: 36px;">
+								<option value="curl_html"><?php esc_html_e( 'cURL HTML (Standard / WooCommerce / OpenCart / HTML Scraper)', 'hwsync' ); ?></option>
+								<option value="shopify_json"><?php esc_html_e( 'cURL Shopify REST JSON (/collections/{slug}/products.json)', 'hwsync' ); ?></option>
+								<option value="browser_headless"><?php esc_html_e( 'In-Browser Headless (Client-Side DOM Fetch & Parser)', 'hwsync' ); ?></option>
+							</select>
+							<p style="margin: 4px 0 0; font-size: 11px; color: #64748b;"><?php esc_html_e( 'Choose how this retailer will be scraped: Native server-side cURL HTML, Shopify REST API endpoint, or In-Browser Headless browser request.', 'hwsync' ); ?></p>
+						</div>
+
+						<!-- Category Endpoints / Paths -->
+						<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+							<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+								<strong style="font-size: 13px; color: #0f172a;"><?php esc_html_e( 'Category URL Paths & Endpoints', 'hwsync' ); ?></strong>
+								<div style="display: flex; gap: 6px;">
+									<button type="button" class="button button-small btn-preset" data-preset="woo"><?php esc_html_e( 'WooCommerce Preset', 'hwsync' ); ?></button>
+									<button type="button" class="button button-small btn-preset" data-preset="shopify"><?php esc_html_e( 'Shopify Preset', 'hwsync' ); ?></button>
+									<button type="button" class="button button-small btn-preset" data-preset="opencart"><?php esc_html_e( 'OpenCart Preset', 'hwsync' ); ?></button>
+								</div>
+							</div>
+							<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+								<div>
+									<label style="font-size: 11px; font-weight: 600; color: #475569;">CPU (Processor):</label>
+									<input type="text" id="ep-cpu" name="endpoints[cpu]" placeholder="/product-category/processor/" style="width: 100%; font-size: 12px;" />
+								</div>
+								<div>
+									<label style="font-size: 11px; font-weight: 600; color: #475569;">GPU (Graphics Card):</label>
+									<input type="text" id="ep-gpu" name="endpoints[gpu]" placeholder="/product-category/graphics-card/" style="width: 100%; font-size: 12px;" />
+								</div>
+								<div>
+									<label style="font-size: 11px; font-weight: 600; color: #475569;">Motherboard:</label>
+									<input type="text" id="ep-motherboard" name="endpoints[motherboard]" placeholder="/product-category/motherboard/" style="width: 100%; font-size: 12px;" />
+								</div>
+								<div>
+									<label style="font-size: 11px; font-weight: 600; color: #475569;">RAM (Memory):</label>
+									<input type="text" id="ep-ram" name="endpoints[ram]" placeholder="/product-category/ram/" style="width: 100%; font-size: 12px;" />
+								</div>
+								<div>
+									<label style="font-size: 11px; font-weight: 600; color: #475569;">Storage (SSD / HDD):</label>
+									<input type="text" id="ep-storage" name="endpoints[storage]" placeholder="/product-category/ssd/" style="width: 100%; font-size: 12px;" />
+								</div>
+								<div>
+									<label style="font-size: 11px; font-weight: 600; color: #475569;">PSU (Power Supply):</label>
+									<input type="text" id="ep-psu" name="endpoints[psu]" placeholder="/product-category/smps/" style="width: 100%; font-size: 12px;" />
+								</div>
+								<div>
+									<label style="font-size: 11px; font-weight: 600; color: #475569;">Cooler (AIO / Air):</label>
+									<input type="text" id="ep-cooler" name="endpoints[cooler]" placeholder="/product-category/cpu-cooler/" style="width: 100%; font-size: 12px;" />
+								</div>
+								<div>
+									<label style="font-size: 11px; font-weight: 600; color: #475569;">Cabinet (Chassis):</label>
+									<input type="text" id="ep-cabinet" name="endpoints[cabinet]" placeholder="/product-category/cabinet/" style="width: 100%; font-size: 12px;" />
+								</div>
+							</div>
+						</div>
+
+						<div style="margin-bottom: 24px;">
+							<label style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: #334155; font-size: 13px; cursor: pointer;">
+								<input type="checkbox" id="v-active" name="is_active" value="1" checked /> <?php esc_html_e( 'Enable Retailer for Catalog Sync', 'hwsync' ); ?>
+							</label>
+						</div>
+
+						<div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+							<button type="button" id="btn-cancel-vendor" class="button"><?php esc_html_e( 'Cancel', 'hwsync' ); ?></button>
+							<button type="submit" id="btn-save-vendor" class="button button-primary" style="background: #2563eb; border-color: #1d4ed8; padding: 0 20px; font-weight: 600;">
+								<?php esc_html_e( 'Save Retailer', 'hwsync' ); ?>
+							</button>
+						</div>
+					</form>
+				</div>
+			</div>
+
+			<!-- Live Scraper & Test Sync Modal -->
+			<div id="modal-test-sync" style="display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.7); z-index: 100000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+				<div style="background: #fff; width: 880px; max-width: 95%; max-height: 90vh; border-radius: 12px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); overflow-y: auto; display: flex; flex-direction: column;">
+					
+					<div style="padding: 16px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #0f172a; color: #fff;">
+						<div style="display: flex; align-items: center; gap: 10px;">
+							<span class="dashicons dashicons-dashboard" style="color: #38bdf8; font-size: 22px; width: 22px; height: 22px;"></span>
+							<div>
+								<h2 style="margin: 0; font-size: 16px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 8px;">
+									<?php esc_html_e( 'Live Scraper & Sync Test', 'hwsync' ); ?>
+									<span id="test-vendor-badge" style="font-size: 12px; background: #1e293b; color: #38bdf8; padding: 2px 8px; border-radius: 10px; font-weight: normal;">Vendor</span>
+								</h2>
+								<div id="test-vendor-sub" style="font-size: 11px; color: #94a3b8;">https://...</div>
+							</div>
+						</div>
+						<button type="button" id="btn-close-test-modal" style="background: none; border: none; font-size: 24px; color: #94a3b8; cursor: pointer;">&times;</button>
+					</div>
+
+					<div style="padding: 20px 24px; flex: 1;">
+						
+						<!-- Controls bar -->
+						<div style="display: flex; justify-content: space-between; align-items: center; background: #f8fafc; padding: 12px 16px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+							<div style="display: flex; align-items: center; gap: 12px;">
+								<div>
+									<label style="font-size: 11px; font-weight: 600; color: #475569; display: block; margin-bottom: 2px;"><?php esc_html_e( 'Testing Sync Method:', 'hwsync' ); ?></label>
+									<select id="test-select-method" style="font-size: 12px; height: 32px;">
+										<option value="curl_html"><?php esc_html_e( 'cURL (Standard HTML / WooCommerce / OpenCart)', 'hwsync' ); ?></option>
+										<option value="shopify_json"><?php esc_html_e( 'cURL (Shopify REST JSON)', 'hwsync' ); ?></option>
+										<option value="browser_headless"><?php esc_html_e( 'In-Browser Headless (Client-Side DOM)', 'hwsync' ); ?></option>
+									</select>
+								</div>
+								<div>
+									<label style="font-size: 11px; font-weight: 600; color: #475569; display: block; margin-bottom: 2px;"><?php esc_html_e( 'Scope:', 'hwsync' ); ?></label>
+									<select id="test-select-scope" style="font-size: 12px; height: 32px;">
+										<option value="all"><?php esc_html_e( 'All 8 Hardware Categories (1 sample each)', 'hwsync' ); ?></option>
+										<option value="cpu"><?php esc_html_e( 'CPU only', 'hwsync' ); ?></option>
+										<option value="gpu"><?php esc_html_e( 'GPU only', 'hwsync' ); ?></option>
+										<option value="motherboard"><?php esc_html_e( 'Motherboard only', 'hwsync' ); ?></option>
+										<option value="ram"><?php esc_html_e( 'RAM only', 'hwsync' ); ?></option>
+										<option value="storage"><?php esc_html_e( 'Storage only', 'hwsync' ); ?></option>
+										<option value="psu"><?php esc_html_e( 'PSU only', 'hwsync' ); ?></option>
+										<option value="cooler"><?php esc_html_e( 'Cooler only', 'hwsync' ); ?></option>
+										<option value="cabinet"><?php esc_html_e( 'Cabinet only', 'hwsync' ); ?></option>
+									</select>
+								</div>
+							</div>
+							<div>
+								<button type="button" id="btn-run-live-test" class="button button-primary" style="height: 36px; padding: 0 18px; font-weight: 600; font-size: 13px; background: #16a34a; border-color: #15803d; display: inline-flex; align-items: center; gap: 6px;">
+									<span class="dashicons dashicons-controls-play" style="margin-top: 1px;"></span> <?php esc_html_e( 'Run Test Sync', 'hwsync' ); ?>
+								</button>
+							</div>
+						</div>
+
+						<!-- Test Output Table -->
+						<div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+							<table class="wp-list-table widefat fixed striped" style="margin: 0; border: none;">
+								<thead>
+									<tr style="background: #f1f5f9;">
+										<th style="width: 120px; font-weight: 600; color: #475569;"><?php esc_html_e( 'Category', 'hwsync' ); ?></th>
+										<th style="width: 100px; font-weight: 600; color: #475569;"><?php esc_html_e( 'Status', 'hwsync' ); ?></th>
+										<th style="font-weight: 600; color: #475569;"><?php esc_html_e( 'Sample Extracted Component', 'hwsync' ); ?></th>
+										<th style="width: 120px; font-weight: 600; color: #475569;"><?php esc_html_e( 'Offer Price', 'hwsync' ); ?></th>
+										<th style="width: 100px; font-weight: 600; color: #475569;"><?php esc_html_e( 'Stock / SKU', 'hwsync' ); ?></th>
+										<th style="width: 80px; font-weight: 600; color: #475569; text-align: right;"><?php esc_html_e( 'Time', 'hwsync' ); ?></th>
+									</tr>
+								</thead>
+								<tbody id="test-results-body">
+									<?php 
+									$cats = array(
+										'cpu' => 'CPU (Processor)',
+										'gpu' => 'GPU (Graphics Card)',
+										'motherboard' => 'Motherboard',
+										'ram' => 'RAM (Memory)',
+										'storage' => 'Storage (SSD/HDD)',
+										'psu' => 'PSU (Power Supply)',
+										'cooler' => 'CPU Cooler',
+										'cabinet' => 'Cabinet Chassis',
+									);
+									foreach ( $cats as $ckey => $clabel ) : ?>
+										<tr id="test-row-<?php echo esc_attr( $ckey ); ?>">
+											<td><strong><?php echo esc_html( $clabel ); ?></strong></td>
+											<td class="col-status"><span style="color: #94a3b8; font-size: 11px;">READY</span></td>
+											<td class="col-title" style="color: #64748b;">-</td>
+											<td class="col-price" style="color: #64748b;">-</td>
+											<td class="col-stock" style="color: #64748b;">-</td>
+											<td class="col-time" style="color: #94a3b8; text-align: right;">-</td>
+										</tr>
+									<?php endforeach; ?>
+								</tbody>
+							</table>
+						</div>
+
+					</div>
+				</div>
+			</div>
+
+			<!-- Scripts for Vendor Management and Testing -->
+			<script>
+			document.addEventListener('DOMContentLoaded', function() {
+				var nonce = '<?php echo esc_js( $nonce ); ?>';
+				var modalVendor = document.getElementById('modal-vendor-form');
+				var modalTest = document.getElementById('modal-test-sync');
+				var formVendor = document.getElementById('form-vendor-save');
+
+				// Preset endpoints map
+				var presets = {
+					woo: {
+						cpu: '/product-category/processor/',
+						gpu: '/product-category/graphics-card/',
+						motherboard: '/product-category/motherboard/',
+						ram: '/product-category/ram/',
+						storage: '/product-category/ssd/',
+						psu: '/product-category/smps/',
+						cooler: '/product-category/cpu-cooler/',
+						cabinet: '/product-category/cabinet/'
+					},
+					shopify: {
+						cpu: 'processor',
+						gpu: 'graphic-cards',
+						motherboard: 'motherboard',
+						ram: 'ram',
+						storage: 'solid-state-drives',
+						psu: 'power-supply',
+						cooler: 'pc-coolers',
+						cabinet: 'pc-cabinet'
+					},
+					opencart: {
+						cpu: '/catalog/processor',
+						gpu: '/catalog/graphics-card',
+						motherboard: '/catalog/motherboard',
+						ram: '/catalog/ram/desktop-ram',
+						storage: '/catalog/storage',
+						psu: '/catalog/smps',
+						cooler: '/cooling-system.html',
+						cabinet: '/catalog/cabinet'
+					}
+				};
+
+				// Presets click
+				document.querySelectorAll('.btn-preset').forEach(function(btn) {
+					btn.addEventListener('click', function() {
+						var type = this.getAttribute('data-preset');
+						var p = presets[type];
+						if (p) {
+							Object.keys(p).forEach(function(cat) {
+								var inp = document.getElementById('ep-' + cat);
+								if (inp) inp.value = p[cat];
+							});
+						}
+					});
+				});
+
+				// Auto-slugify on name typing
+				document.getElementById('v-name').addEventListener('input', function() {
+					if (!document.getElementById('v-id').value || document.getElementById('v-id').value === '0') {
+						document.getElementById('v-slug').value = this.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+					}
+				});
+
+				// Open Add Modal
+				document.getElementById('btn-open-add-vendor').addEventListener('click', function() {
+					document.getElementById('modal-vendor-title').textContent = '<?php esc_html_e( "Add New Hardware Retailer", "hwsync" ); ?>';
+					document.getElementById('v-id').value = '0';
+					document.getElementById('v-name').value = '';
+					document.getElementById('v-slug').value = '';
+					document.getElementById('v-url').value = '';
+					document.getElementById('v-method').value = 'curl_html';
+					document.getElementById('v-active').checked = true;
+
+					var defaultEndpoints = presets.woo;
+					Object.keys(defaultEndpoints).forEach(function(cat) {
+						var inp = document.getElementById('ep-' + cat);
+						if (inp) inp.value = defaultEndpoints[cat];
+					});
+
+					modalVendor.style.display = 'flex';
+				});
+
+				// Close Vendor Modal
+				document.getElementById('btn-close-vendor-modal').addEventListener('click', function() {
+					modalVendor.style.display = 'none';
+				});
+				document.getElementById('btn-cancel-vendor').addEventListener('click', function() {
+					modalVendor.style.display = 'none';
+				});
+
+				// Edit Vendor click
+				document.querySelectorAll('.btn-edit-vendor').forEach(function(btn) {
+					btn.addEventListener('click', function() {
+						document.getElementById('modal-vendor-title').textContent = '<?php esc_html_e( "Edit Retailer Settings", "hwsync" ); ?>';
+						document.getElementById('v-id').value = this.getAttribute('data-id');
+						document.getElementById('v-name').value = this.getAttribute('data-name');
+						document.getElementById('v-slug').value = this.getAttribute('data-slug');
+						document.getElementById('v-url').value = this.getAttribute('data-url');
+						document.getElementById('v-method').value = this.getAttribute('data-method') || 'curl_html';
+						document.getElementById('v-active').checked = (this.getAttribute('data-active') === '1');
+
+						var eps = {};
+						try {
+							eps = JSON.parse(this.getAttribute('data-endpoints') || '{}');
+						} catch (e) {}
+
+						var cats = ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet'];
+						cats.forEach(function(cat) {
+							var inp = document.getElementById('ep-' + cat);
+							if (inp) inp.value = eps[cat] || '';
+						});
+
+						modalVendor.style.display = 'flex';
+					});
+				});
+
+				// Save Vendor Form Submit
+				formVendor.addEventListener('submit', function(e) {
+					e.preventDefault();
+					var saveBtn = document.getElementById('btn-save-vendor');
+					saveBtn.disabled = true;
+					saveBtn.textContent = 'Saving...';
+
+					var formData = new FormData(formVendor);
+
+					fetch(ajaxurl, {
+						method: 'POST',
+						body: new URLSearchParams(formData)
+					}).then(function(res) {
+						return res.json();
+					}).then(function(json) {
+						saveBtn.disabled = false;
+						saveBtn.textContent = '<?php esc_html_e( "Save Retailer", "hwsync" ); ?>';
+						if (json.success) {
+							window.location.reload();
+						} else {
+							alert(json.data && json.data.message ? json.data.message : 'Error saving vendor.');
+						}
+					}).catch(function(err) {
+						saveBtn.disabled = false;
+						saveBtn.textContent = '<?php esc_html_e( "Save Retailer", "hwsync" ); ?>';
+						alert('Save error: ' + err.message);
+					});
+				});
+
+				// Delete Vendor
+				document.querySelectorAll('.btn-delete-vendor').forEach(function(btn) {
+					btn.addEventListener('click', function() {
+						var id = this.getAttribute('data-id');
+						var name = this.getAttribute('data-name');
+						if (confirm('Are you sure you want to delete retailer "' + name + '" and all its linked price listings?')) {
+							var postData = new URLSearchParams();
+							postData.append('action', 'hwsync_delete_vendor');
+							postData.append('vendor_id', id);
+							postData.append('hwsync_nonce', nonce);
+
+							fetch(ajaxurl, {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+								body: postData.toString()
+							}).then(function(res) {
+								return res.json();
+							}).then(function(json) {
+								if (json.success) {
+									var row = document.getElementById('vendor-row-' + id);
+									if (row) row.remove();
+								} else {
+									alert(json.data && json.data.message ? json.data.message : 'Error deleting vendor.');
+								}
+							});
+						}
+					});
+				});
+
+				// Test Sync Modal Variables
+				var currentTestVendor = null;
+
+				document.querySelectorAll('.btn-test-vendor').forEach(function(btn) {
+					btn.addEventListener('click', function() {
+						var eps = {};
+						try {
+							eps = JSON.parse(this.getAttribute('data-endpoints') || '{}');
+						} catch (e) {}
+
+						currentTestVendor = {
+							id: this.getAttribute('data-id'),
+							name: this.getAttribute('data-name'),
+							slug: this.getAttribute('data-slug'),
+							url: this.getAttribute('data-url'),
+							method: this.getAttribute('data-method') || 'curl_html',
+							endpoints: eps
+						};
+
+						document.getElementById('test-vendor-badge').textContent = currentTestVendor.name;
+						document.getElementById('test-vendor-sub').textContent = currentTestVendor.url + ' (' + currentTestVendor.slug + ')';
+						document.getElementById('test-select-method').value = currentTestVendor.method;
+
+						// Reset table rows
+						resetTestResultsTable();
+
+						modalTest.style.display = 'flex';
+					});
+				});
+
+				document.getElementById('btn-close-test-modal').addEventListener('click', function() {
+					modalTest.style.display = 'none';
+				});
+
+				function resetTestResultsTable() {
+					var cats = ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet'];
+					cats.forEach(function(cat) {
+						var row = document.getElementById('test-row-' + cat);
+						if (row) {
+							row.querySelector('.col-status').innerHTML = '<span style="color: #94a3b8; font-size: 11px;">READY</span>';
+							row.querySelector('.col-title').textContent = '-';
+							row.querySelector('.col-price').textContent = '-';
+							row.querySelector('.col-stock').textContent = '-';
+							row.querySelector('.col-time').textContent = '-';
+						}
+					});
+				}
+
+				// Run Live Test
+				document.getElementById('btn-run-live-test').addEventListener('click', function() {
+					if (!currentTestVendor) return;
+
+					var method = document.getElementById('test-select-method').value;
+					var scope = document.getElementById('test-select-scope').value;
+					var testBtn = document.getElementById('btn-run-live-test');
+
+					testBtn.disabled = true;
+					testBtn.innerHTML = '<span class="dashicons dashicons-update spin" style="animation: rotation 1s infinite linear;"></span> Testing...';
+
+					var catsToTest = (scope === 'all') 
+						? ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet'] 
+						: [scope];
+
+					resetTestResultsTable();
+
+					var catIndex = 0;
+
+					function runNextCategoryTest() {
+						if (catIndex >= catsToTest.length) {
+							testBtn.disabled = false;
+							testBtn.innerHTML = '<span class="dashicons dashicons-controls-play"></span> <?php esc_html_e( "Run Test Sync", "hwsync" ); ?>';
+							return;
+						}
+
+						var currentCat = catsToTest[catIndex++];
+						var row = document.getElementById('test-row-' + currentCat);
+						if (!row) {
+							runNextCategoryTest();
+							return;
+						}
+
+						row.querySelector('.col-status').innerHTML = '<span style="color: #0284c7; font-size: 11px; font-weight: bold;"><span class="dashicons dashicons-update spin" style="font-size: 14px; width: 14px; height: 14px; animation: rotation 1s infinite linear;"></span> TESTING</span>';
+
+						if (method === 'browser_headless') {
+							// Client-Side In-Browser Headless Test
+							var endpointPath = (currentTestVendor.endpoints && currentTestVendor.endpoints[currentCat]) 
+								? currentTestVendor.endpoints[currentCat] 
+								: (presets.opencart[currentCat] || '/');
+							
+							var targetUrl = currentTestVendor.url + (endpointPath.startsWith('/') ? '' : '/') + endpointPath;
+							var startTime = performance.now();
+
+							fetch(targetUrl, { method: 'GET', credentials: 'omit' })
+								.then(function(resp) { return resp.text(); })
+								.then(function(html) {
+									var duration = Math.round(performance.now() - startTime);
+									var parser = new DOMParser();
+									var doc = parser.parseFromString(html, 'text/html');
+									var cards = doc.querySelectorAll('.product-grid-item, .product-item-container, .product-thumb, .product-layout, .product-small, li.product');
+
+									if (cards && cards.length > 0) {
+										var card = cards[0];
+										var titleEl = card.querySelector('h3 a, h4 a, h2 a, .product-entities-title a, .name a, a.woocommerce-LoopProduct-link');
+										var title = titleEl ? titleEl.textContent.trim() : 'Sample Product';
+										var link = titleEl ? titleEl.getAttribute('href') : targetUrl;
+										if (link && !link.startsWith('http')) link = currentTestVendor.url + '/' + link.replace(/^\//, '');
+
+										var priceNew = card.querySelector('.price-new, .special-price, ins .amount');
+										var price = 0;
+										if (priceNew) {
+											var m = priceNew.textContent.replace(/,/g, '').match(/[\d]+(?:\.\d+)?/);
+											if (m) price = parseFloat(m[0]);
+										} else {
+											var pEl = card.querySelector('.price, .amount');
+											if (pEl) {
+												var cl = pEl.cloneNode(true);
+												cl.querySelectorAll('.price-old, del, .price-tax').forEach(function(e) { e.remove(); });
+												var m = cl.textContent.replace(/,/g, '').match(/[\d]+(?:\.\d+)?/);
+												if (m) price = parseFloat(m[0]);
+											}
+										}
+
+										row.querySelector('.col-status').innerHTML = '<span style="color: #16a34a; font-size: 11px; font-weight: bold; background: #dcfce7; padding: 2px 6px; border-radius: 4px;">✓ SUCCESS</span>';
+										row.querySelector('.col-title').innerHTML = '<a href="' + link + '" target="_blank" style="color: #0f172a; text-decoration: none; font-weight: 600;">' + escapeHtml(title) + '</a>';
+										row.querySelector('.col-price').innerHTML = '<strong style="color: #16a34a;">' + (price > 0 ? '₹' + price.toLocaleString('en-IN', {minimumFractionDigits: 2}) : 'NA') + '</strong>';
+										row.querySelector('.col-stock').innerHTML = '<span style="color: #16a34a; font-size: 11px;">In Stock</span>';
+										row.querySelector('.col-time').textContent = duration + 'ms';
+									} else {
+										row.querySelector('.col-status').innerHTML = '<span style="color: #d97706; font-size: 11px; font-weight: bold; background: #fef3c7; padding: 2px 6px; border-radius: 4px;">NO ITEMS</span>';
+										row.querySelector('.col-title').textContent = 'No product cards detected on endpoint (' + targetUrl + ')';
+										row.querySelector('.col-time').textContent = duration + 'ms';
+									}
+									runNextCategoryTest();
+								}).catch(function(err) {
+									var duration = Math.round(performance.now() - startTime);
+									row.querySelector('.col-status').innerHTML = '<span style="color: #dc2626; font-size: 11px; font-weight: bold; background: #fee2e2; padding: 2px 6px; border-radius: 4px;">ERROR</span>';
+									row.querySelector('.col-title').textContent = err.message;
+									row.querySelector('.col-time').textContent = duration + 'ms';
+									runNextCategoryTest();
+								});
+						} else {
+							// Server-Side cURL / Shopify Test
+							var postData = new URLSearchParams();
+							postData.append('action', 'hwsync_test_vendor_sync');
+							postData.append('vendor_slug', currentTestVendor.slug);
+							postData.append('sync_method', method);
+							postData.append('category', currentCat);
+							postData.append('base_url', currentTestVendor.url);
+							postData.append('endpoint', (currentTestVendor.endpoints && currentTestVendor.endpoints[currentCat]) ? currentTestVendor.endpoints[currentCat] : '');
+							postData.append('hwsync_nonce', nonce);
+
+							fetch(ajaxurl, {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+								body: postData.toString()
+							}).then(function(res) {
+								return res.json();
+							}).then(function(json) {
+								if (json.success && json.data) {
+									var d = json.data;
+									if (d.success && d.sample_item) {
+										var it = d.sample_item;
+										row.querySelector('.col-status').innerHTML = '<span style="color: #16a34a; font-size: 11px; font-weight: bold; background: #dcfce7; padding: 2px 6px; border-radius: 4px;">✓ SUCCESS</span>';
+										row.querySelector('.col-title').innerHTML = '<a href="' + it.url + '" target="_blank" style="color: #0f172a; text-decoration: none; font-weight: 600;">' + escapeHtml(it.title) + '</a>';
+										row.querySelector('.col-price').innerHTML = '<strong style="color: #16a34a;">' + it.display_price + '</strong>';
+										row.querySelector('.col-stock').innerHTML = '<span style="color: ' + (it.in_stock ? '#16a34a' : '#dc2626') + '; font-size: 11px;">' + (it.in_stock ? 'In Stock' : 'Out of Stock') + (it.sku ? '<br/>' + it.sku : '') + '</span>';
+										row.querySelector('.col-time').textContent = (d.duration_ms || 0) + 'ms';
+									} else {
+										row.querySelector('.col-status').innerHTML = '<span style="color: #d97706; font-size: 11px; font-weight: bold; background: #fef3c7; padding: 2px 6px; border-radius: 4px;">NO ITEMS</span>';
+										row.querySelector('.col-title').textContent = d.message || 'No products returned by adapter.';
+										row.querySelector('.col-time').textContent = (d.duration_ms || 0) + 'ms';
+									}
+								} else {
+									row.querySelector('.col-status').innerHTML = '<span style="color: #dc2626; font-size: 11px; font-weight: bold; background: #fee2e2; padding: 2px 6px; border-radius: 4px;">ERROR</span>';
+									row.querySelector('.col-title').textContent = (json.data && json.data.message) ? json.data.message : 'Server test error';
+								}
+								runNextCategoryTest();
+							}).catch(function(err) {
+								row.querySelector('.col-status').innerHTML = '<span style="color: #dc2626; font-size: 11px; font-weight: bold; background: #fee2e2; padding: 2px 6px; border-radius: 4px;">ERROR</span>';
+								row.querySelector('.col-title').textContent = err.message;
+								runNextCategoryTest();
+							});
+						}
+					}
+
+					runNextCategoryTest();
+				});
+
+				function escapeHtml(text) {
+					if (typeof text !== 'string') return text;
+					var map = {
+						'&': '&amp;',
+						'<': '&lt;',
+						'>': '&gt;',
+						'"': '&quot;',
+						"'": '&#039;'
+					};
+					return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+				}
+			});
+			</script>
 		</div>
 		<?php
 	}
@@ -818,6 +1477,155 @@ class Admin {
 			</table>
 		</div>
 		<?php
+	}
+
+	public static function handle_save_vendor() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => \__( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$id          = isset( $_POST['vendor_id'] ) ? intval( $_POST['vendor_id'] ) : 0;
+		$vendor_name = isset( $_POST['vendor_name'] ) ? sanitize_text_field( $_POST['vendor_name'] ) : '';
+		$vendor_slug = isset( $_POST['vendor_slug'] ) ? sanitize_title( $_POST['vendor_slug'] ) : '';
+		$base_url    = isset( $_POST['base_url'] ) ? esc_url_raw( $_POST['base_url'] ) : '';
+		$sync_method = isset( $_POST['sync_method'] ) ? sanitize_text_field( $_POST['sync_method'] ) : 'curl_html';
+		$is_active   = ! empty( $_POST['is_active'] ) ? 1 : 0;
+		$endpoints   = isset( $_POST['endpoints'] ) ? (array) $_POST['endpoints'] : array();
+
+		if ( empty( $vendor_name ) || empty( $base_url ) ) {
+			wp_send_json_error( array( 'message' => \__( 'Retailer name and store URL are required.', 'hwsync' ) ) );
+		}
+
+		if ( empty( $vendor_slug ) ) {
+			$vendor_slug = sanitize_title( $vendor_name );
+		}
+
+		$clean_endpoints = array();
+		foreach ( array( 'cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet' ) as $cat ) {
+			if ( isset( $endpoints[ $cat ] ) ) {
+				$clean_endpoints[ $cat ] = sanitize_text_field( $endpoints[ $cat ] );
+			}
+		}
+
+		$vendor = $id ? Vendor::find_by_id( $id ) : new Vendor();
+		if ( ! $vendor ) {
+			$vendor = new Vendor();
+		}
+
+		$vendor->vendor_name = $vendor_name;
+		$vendor->vendor_slug = $vendor_slug;
+		$vendor->base_url    = rtrim( $base_url, '/' );
+		$vendor->sync_method = $sync_method;
+		$vendor->is_active   = $is_active;
+		$vendor->set_config( array( 'endpoints' => $clean_endpoints ) );
+
+		$vendor_id = $vendor->save();
+
+		wp_send_json_success( array(
+			'vendor_id' => $vendor_id,
+			'message'   => \__( 'Retailer configuration saved successfully!', 'hwsync' ),
+		) );
+	}
+
+	public static function handle_delete_vendor() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => \__( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$id = isset( $_POST['vendor_id'] ) ? intval( $_POST['vendor_id'] ) : 0;
+		$vendor = Vendor::find_by_id( $id );
+		if ( ! $vendor ) {
+			wp_send_json_error( array( 'message' => \__( 'Retailer not found.', 'hwsync' ) ) );
+		}
+
+		$vendor->delete();
+		wp_send_json_success( array( 'message' => \__( 'Retailer deleted successfully.', 'hwsync' ) ) );
+	}
+
+	public static function handle_test_vendor_sync() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => \__( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$vendor_slug = isset( $_POST['vendor_slug'] ) ? sanitize_text_field( $_POST['vendor_slug'] ) : '';
+		$sync_method = isset( $_POST['sync_method'] ) ? sanitize_text_field( $_POST['sync_method'] ) : 'curl_html';
+		$category    = isset( $_POST['category'] ) ? sanitize_text_field( $_POST['category'] ) : 'cpu';
+		$base_url    = isset( $_POST['base_url'] ) ? esc_url_raw( $_POST['base_url'] ) : '';
+		$endpoint    = isset( $_POST['endpoint'] ) ? sanitize_text_field( $_POST['endpoint'] ) : '';
+
+		$vendor = ! empty( $vendor_slug ) ? Vendor::find_by_slug( $vendor_slug ) : null;
+		if ( $vendor ) {
+			if ( empty( $base_url ) ) $base_url = $vendor->base_url;
+			if ( empty( $sync_method ) ) $sync_method = $vendor->sync_method;
+		}
+
+		$start_time = microtime( true );
+
+		// Instantiate adapter for test
+		if ( $vendor && ! empty( $vendor->adapter_class ) && class_exists( $vendor->adapter_class ) ) {
+			$adapter = new $vendor->adapter_class();
+		} else {
+			$endpoints = array( $category => $endpoint );
+			if ( $vendor ) {
+				$cfg = $vendor->get_config();
+				if ( ! empty( $cfg['endpoints'] ) ) {
+					$endpoints = wp_parse_args( $endpoints, $cfg['endpoints'] );
+				}
+			}
+			$adapter = new \HWsync\Vendors\Configurable_Vendor_Adapter(
+				$vendor_slug ?: 'test_vendor',
+				$vendor ? $vendor->vendor_name : 'Test Retailer',
+				$base_url,
+				$sync_method,
+				$endpoints
+			);
+		}
+
+		try {
+			$items = $adapter->fetch_products( $category, 1 );
+			$duration = round( ( microtime( true ) - $start_time ) * 1000 );
+
+			if ( ! empty( $items ) && is_array( $items ) ) {
+				$sample = $items[0];
+				wp_send_json_success( array(
+					'category'      => $category,
+					'sync_method'   => $sync_method,
+					'success'       => true,
+					'duration_ms'   => $duration,
+					'items_found'   => count( $items ),
+					'sample_item'   => array(
+						'title'          => $sample['title'] ?? 'N/A',
+						'price'          => isset( $sample['price'] ) ? floatval( $sample['price'] ) : 0.0,
+						'display_price'  => isset( $sample['price'] ) && $sample['price'] > 0 ? '₹' . number_format( $sample['price'], 2 ) : 'NA',
+						'url'            => $sample['url'] ?? '',
+						'sku'            => $sample['sku'] ?? '',
+						'stock_status'   => $sample['stock_status'] ?? 'in_stock',
+						'in_stock'       => ! empty( $sample['in_stock'] ),
+					),
+					'message'       => sprintf( \__( 'Found %d items in %dms. Sample extracted.', 'hwsync' ), count( $items ), $duration ),
+				) );
+			} else {
+				wp_send_json_success( array(
+					'category'      => $category,
+					'sync_method'   => $sync_method,
+					'success'       => false,
+					'duration_ms'   => $duration,
+					'items_found'   => 0,
+					'sample_item'   => null,
+					'message'       => \__( 'No products found on category endpoint.', 'hwsync' ),
+				) );
+			}
+		} catch ( \Throwable $e ) {
+			$duration = round( ( microtime( true ) - $start_time ) * 1000 );
+			wp_send_json_error( array(
+				'category'    => $category,
+				'duration_ms' => $duration,
+				'message'     => $e->getMessage(),
+			) );
+		}
 	}
 
 	public static function handle_manual_sync() {

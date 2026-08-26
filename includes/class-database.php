@@ -36,7 +36,9 @@ class Database {
 			vendor_slug varchar(64) NOT NULL,
 			vendor_name varchar(128) NOT NULL,
 			base_url varchar(255) NOT NULL,
-			adapter_class varchar(128) NOT NULL,
+			adapter_class varchar(128) DEFAULT NULL,
+			sync_method varchar(64) NOT NULL DEFAULT 'curl_html',
+			config_json longtext DEFAULT NULL,
 			is_active tinyint(1) NOT NULL DEFAULT 1,
 			last_sync_at datetime DEFAULT NULL,
 			created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -111,6 +113,17 @@ class Database {
 		dbDelta( $sql_prices );
 		dbDelta( $sql_history );
 
+		// Ensure columns exist on existing databases
+		$existing_cols = $wpdb->get_col( "DESC {$vendors_table}" );
+		if ( ! empty( $existing_cols ) ) {
+			if ( ! in_array( 'sync_method', $existing_cols ) ) {
+				$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN sync_method varchar(64) NOT NULL DEFAULT 'curl_html' AFTER adapter_class" );
+			}
+			if ( ! in_array( 'config_json', $existing_cols ) ) {
+				$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN config_json longtext DEFAULT NULL AFTER sync_method" );
+			}
+		}
+
 		update_option( 'hwsync_db_version', self::DB_VERSION );
 	}
 
@@ -124,6 +137,7 @@ class Database {
 				'vendor_name'   => 'MDComputers',
 				'base_url'      => 'https://mdcomputers.in',
 				'adapter_class' => 'HWsync\\Vendors\\MDComputers_Adapter',
+				'sync_method'   => 'browser_headless',
 				'is_active'     => 1,
 			),
 			array(
@@ -131,6 +145,7 @@ class Database {
 				'vendor_name'   => 'Vedant Computers',
 				'base_url'      => 'https://www.vedantcomputers.com',
 				'adapter_class' => 'HWsync\\Vendors\\Vedant_Adapter',
+				'sync_method'   => 'curl_html',
 				'is_active'     => 1,
 			),
 			array(
@@ -138,6 +153,7 @@ class Database {
 				'vendor_name'   => 'PrimeABGB',
 				'base_url'      => 'https://www.primeabgb.com',
 				'adapter_class' => 'HWsync\\Vendors\\PrimeABGB_Adapter',
+				'sync_method'   => 'curl_html',
 				'is_active'     => 1,
 			),
 			array(
@@ -145,6 +161,7 @@ class Database {
 				'vendor_name'   => 'EliteHubs',
 				'base_url'      => 'https://elitehubs.com',
 				'adapter_class' => 'HWsync\\Vendors\\EliteHubs_Adapter',
+				'sync_method'   => 'shopify_json',
 				'is_active'     => 1,
 			),
 			array(
@@ -152,6 +169,7 @@ class Database {
 				'vendor_name'   => 'PCStudio (Ankit Infotech)',
 				'base_url'      => 'https://www.pcstudio.in',
 				'adapter_class' => 'HWsync\\Vendors\\PCStudio_Adapter',
+				'sync_method'   => 'curl_html',
 				'is_active'     => 1,
 			),
 		);
