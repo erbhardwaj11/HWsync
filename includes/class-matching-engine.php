@@ -273,4 +273,251 @@ class Matching_Engine {
 
 		return $specs;
 	}
+
+	/**
+	 * Strictly evaluates if two Component models represent the exact same hardware product.
+	 *
+	 * @param Component $a
+	 * @param Component $b
+	 * @return bool
+	 */
+	public static function is_same_hardware_component( Component $a, Component $b ) {
+		// 1. Category must match strictly
+		if ( empty( $a->category ) || empty( $b->category ) || $a->category !== $b->category ) {
+			return false;
+		}
+
+		// 2. MPN Match (Manufacturer Part Number)
+		if ( ! empty( $a->mpn ) && ! empty( $b->mpn ) && strcasecmp( $a->mpn, $b->mpn ) === 0 ) {
+			return true;
+		}
+
+		// 3. Normalized SKU Match
+		if ( ! empty( $a->sku ) && ! empty( $b->sku ) && strcasecmp( $a->sku, $b->sku ) === 0 ) {
+			return true;
+		}
+
+		// 4. Brand must match (case-insensitive)
+		if ( ! empty( $a->brand ) && ! empty( $b->brand ) && strcasecmp( $a->brand, $b->brand ) !== 0 ) {
+			return false;
+		}
+
+		// 5. Core Hardware ID Check
+		$core_a = self::extract_core_hardware_id( $a->model_name, $a->category );
+		$core_b = self::extract_core_hardware_id( $b->model_name, $b->category );
+
+		if ( ! empty( $core_a ) && ! empty( $core_b ) ) {
+			if ( strcasecmp( $core_a, $core_b ) !== 0 ) {
+				// Different hardware chipsets (e.g. RTX 5050 vs RTX 4070) -> CANNOT MERGE!
+				return false;
+			}
+			return true;
+		}
+
+		// 6. Check critical hardware specs: Socket / RAM Capacity / SSD Capacity / PSU Wattage
+		$specs_a = $a->get_specs() ?: array();
+		$specs_b = $b->get_specs() ?: array();
+
+		// CPU Socket
+		if ( ! empty( $specs_a['socket'] ) && ! empty( $specs_b['socket'] ) && strcasecmp( $specs_a['socket'], $specs_b['socket'] ) !== 0 ) {
+			return false;
+		}
+
+		// RAM Capacity
+		if ( ! empty( $specs_a['capacity_or_vram'] ) && ! empty( $specs_b['capacity_or_vram'] ) && strcasecmp( $specs_a['capacity_or_vram'], $specs_b['capacity_or_vram'] ) !== 0 ) {
+			return false;
+		}
+
+		// Storage Capacity
+		if ( ! empty( $specs_a['storage_capacity'] ) && ! empty( $specs_b['storage_capacity'] ) && strcasecmp( $specs_a['storage_capacity'], $specs_b['storage_capacity'] ) !== 0 ) {
+			return false;
+		}
+
+		// PSU Wattage
+		if ( ! empty( $specs_a['wattage'] ) && ! empty( $specs_b['wattage'] ) && strcasecmp( $specs_a['wattage'], $specs_b['wattage'] ) !== 0 ) {
+			return false;
+		}
+
+		// 7. Normalized Name Similarity
+		$norm_a = self::normalize_model_name( $a->model_name, $a->brand, $a->category );
+		$norm_b = self::normalize_model_name( $b->model_name, $b->brand, $b->category );
+
+		if ( strcasecmp( $norm_a, $norm_b ) === 0 ) {
+			return true;
+		}
+
+		similar_text( strtolower( $norm_a ), strtolower( $norm_b ), $percent );
+		if ( $percent >= 85.0 ) {
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Scans and merges duplicate component records representing the same hardware product.
+	 * Enforces strict category isolation and strict same-component matching.
+	 *
+	 * @param string $target_category Specific category or 'all'
+	 * @param callable|null $logger Optional callback for live console logging: fn(string $level, string $message)
+	 * @return array Merge report with counts and logs
+	 */
+	public static function merge_duplicate_components( $target_category = 'all', $logger = null ) {
+		global $wpdb;
+		$comp_table   = Database::get_table_name( 'components' );
+		$prices_table = Database::get_table_name( 'vendor_prices' );
+
+		$all_cats = array( 'cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet' );
+		$categories = ( ! empty( $target_category ) && $target_category !== 'all' ) ? array( $target_category ) : $all_cats;
+
+		$total_merged_records = 0;
+		$logs = array();
+
+		$emit = function( $level, $message ) use ( $logger, &$logs ) {
+			$logs[] = array( 'level' => $level, 'message' => $message );
+			if ( is_callable( $logger ) ) {
+				call_user_func( $logger, $level, $message );
+			}
+		};
+
+		$emit( 'info', "Starting Multi-Vendor Component Deduplication & Price Merging..." );
+
+		foreach ( $categories as $cat ) {
+			$cat_components = Component::get_all( array( 'category' => $cat, 'limit' => 2000 ) );
+			if ( empty( $cat_components ) ) {
+				continue;
+			}
+
+			$merged_in_cat = 0;
+			$handled_ids = array();
+
+			for ( $i = 0; $i < count( $cat_components ); $i++ ) {
+				$primary = $cat_components[ $i ];
+				if ( isset( $handled_ids[ $primary->id ] ) ) {
+					continue;
+				}
+
+				$duplicates_to_merge = array();
+
+				for ( $j = $i + 1; $j < count( $cat_components ); $j++ ) {
+					$candidate = $cat_components[ $j ];
+					if ( isset( $handled_ids[ $candidate->id ] ) ) {
+						continue;
+					}
+
+					// Strict Category check: NEVER merge across different categories
+					if ( $primary->category !== $candidate->category ) {
+						continue;
+					}
+
+					// Check if $primary and $candidate represent the EXACT same component
+					if ( self::is_same_hardware_component( $primary, $candidate ) ) {
+						$duplicates_to_merge[] = $candidate;
+						$handled_ids[ $candidate->id ] = true;
+					}
+				}
+
+				if ( ! empty( $duplicates_to_merge ) ) {
+					$handled_ids[ $primary->id ] = true;
+
+					// Reassign all vendor prices from duplicate components to the primary component
+					$merged_vendor_names = array();
+					$primary_prices = $primary->get_prices();
+					$existing_vendors = array();
+					foreach ( $primary_prices as $pp ) {
+						$existing_vendors[ $pp->vendor_id ] = $pp;
+						if ( ! empty( $pp->vendor_name ) ) {
+							$merged_vendor_names[] = $pp->vendor_name;
+						}
+					}
+
+					foreach ( $duplicates_to_merge as $dup ) {
+						$dup_prices = $dup->get_prices();
+						foreach ( $dup_prices as $dp ) {
+							if ( isset( $existing_vendors[ $dp->vendor_id ] ) ) {
+								$existing_vp = $existing_vendors[ $dp->vendor_id ];
+								// If dup price is lower, update the primary's price record
+								if ( floatval( $dp->price ) > 0 && ( floatval( $existing_vp->price ) <= 0 || floatval( $dp->price ) < floatval( $existing_vp->price ) ) ) {
+									$existing_vp->price = $dp->price;
+									$existing_vp->original_price = $dp->original_price ?: $existing_vp->original_price;
+									$existing_vp->product_url = $dp->product_url ?: $existing_vp->product_url;
+									$existing_vp->is_in_stock = $dp->is_in_stock;
+									$existing_vp->save();
+								}
+								// Delete redundant duplicate vendor price record
+								$wpdb->query( $wpdb->prepare( "DELETE FROM {$prices_table} WHERE id = %d", $dp->id ) );
+							} else {
+								// Move vendor price to primary component
+								$dp->component_id = $primary->id;
+								$dp->save();
+								$existing_vendors[ $dp->vendor_id ] = $dp;
+								if ( ! empty( $dp->vendor_name ) ) {
+									$merged_vendor_names[] = $dp->vendor_name;
+								}
+							}
+						}
+
+						// Merge specs if primary is missing any
+						$primary_specs = $primary->get_specs() ?: array();
+						$dup_specs     = $dup->get_specs() ?: array();
+						if ( ! empty( $dup_specs ) ) {
+							$merged_specs = array_merge( $dup_specs, $primary_specs );
+							$primary->specs_json = $merged_specs;
+						}
+
+						// Copy MPN / SKU if primary was missing it
+						if ( empty( $primary->mpn ) && ! empty( $dup->mpn ) ) {
+							$primary->mpn = $dup->mpn;
+						}
+						if ( empty( $primary->sku ) && ! empty( $dup->sku ) ) {
+							$primary->sku = $dup->sku;
+						}
+
+						// Delete duplicate component record from components table
+						$wpdb->query( $wpdb->prepare( "DELETE FROM {$comp_table} WHERE id = %d", $dup->id ) );
+
+						$merged_in_cat++;
+						$total_merged_records++;
+					}
+
+					$primary->save();
+
+					// Fetch updated lowest price across all retailers
+					$updated_prices = $primary->get_prices();
+					$lowest_price = 0.0;
+					$vendor_labels = array();
+					foreach ( $updated_prices as $up ) {
+						$p_val = floatval( $up->price );
+						$is_stk = (bool) $up->is_in_stock;
+						if ( $is_stk && $p_val > 0 && ( $lowest_price === 0.0 || $p_val < $lowest_price ) ) {
+							$lowest_price = $p_val;
+						}
+						if ( ! empty( $up->vendor_name ) ) {
+							$vendor_labels[] = $up->vendor_name;
+						}
+					}
+					$vendor_str = implode( ', ', array_unique( $vendor_labels ) );
+					$lowest_fmt = ( $lowest_price > 0 ) ? '₹' . number_format( $lowest_price, 2 ) : 'NA';
+
+					$comp_name = trim( $primary->brand . ' ' . $primary->model_name );
+					$emit( 'match', "[Category: " . strtoupper( $cat ) . "] Merged " . ( count( $duplicates_to_merge ) + 1 ) . " listings for \"{$comp_name}\" across [{$vendor_str}] -> Live Lowest: {$lowest_fmt}" );
+				}
+			}
+
+			if ( $merged_in_cat > 0 ) {
+				$emit( 'success', "Category [" . strtoupper( $cat ) . "]: Eliminated {$merged_in_cat} duplicate records." );
+			}
+		}
+
+		$total_canonical_count = intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$comp_table}" ) );
+
+		$emit( 'finish', "Multi-Vendor Merge Completed! Consolidated {$total_merged_records} duplicate records. Active canonical hardware components: {$total_canonical_count}." );
+
+		return array(
+			'success'          => true,
+			'total_merged'     => $total_merged_records,
+			'canonical_total'  => $total_canonical_count,
+			'logs'             => $logs,
+		);
+	}
 }

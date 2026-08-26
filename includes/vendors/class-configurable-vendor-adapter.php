@@ -163,20 +163,10 @@ class Configurable_Vendor_Adapter extends Abstract_Vendor_Adapter {
 					$title = html_entity_decode( trim( strip_tags( $title ) ), ENT_QUOTES, 'UTF-8' );
 				}
 
-				// Price extraction - prioritize discounted sale price (<ins>, .price-new, .special-price)
-				$price = 0.0;
-				if ( preg_match( '/<ins[^>]*>[\s\S]*?<bdi>[\s\S]*?([\d,]+(?:\.\d+)?)<\/bdi>/i', $p, $pm ) ||
-				     preg_match( '/<ins[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $p, $pm ) ||
-				     preg_match( '/(?:price-new|special-price)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $p, $pm ) ) {
-					$price = self::clean_price( $pm[1] );
-				} else {
-					// Strip old prices and taxes before extracting
-					$clean_block = preg_replace( '/<(?:span|div|del)[^>]*class="[^"]*(?:price-old|del|price-tax)[^"]*"[\s\S]*?<\/(?:span|div|del)>/i', '', $p );
-					if ( preg_match( '/<bdi>[\s\S]*?([\d,]+(?:\.\d+)?)<\/bdi>/i', $clean_block, $pm ) ||
-					     preg_match( '/(?:price|amount)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $clean_block, $pm ) ) {
-						$price = self::clean_price( $pm[1] );
-					}
-				}
+				// Price extraction - prioritize discounted sale price
+				$price_data = self::extract_clean_prices( $p );
+				$price      = $price_data['price'];
+				$orig_price = $price_data['original_price'];
 
 				// SKU
 				$sku = '';
@@ -191,7 +181,7 @@ class Configurable_Vendor_Adapter extends Abstract_Vendor_Adapter {
 						'title'          => $title,
 						'url'            => $url,
 						'price'          => $price,
-						'original_price' => null,
+						'original_price' => $orig_price,
 						'sku'            => $sku,
 						'in_stock'       => $in_stock,
 						'stock_status'   => $in_stock ? 'in_stock' : 'out_of_stock',

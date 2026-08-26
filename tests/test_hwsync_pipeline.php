@@ -765,6 +765,80 @@ assert_test( 'Multi-Vendor Engine aggregates 3 store prices and accurately detec
 	$lowest_3 === 35899.00
 ) );
 
+// Test 21: Current Sale/Offer Price Prioritization over MRP
+$sample_html_with_mrp = '<div class="product-price"><span class="offer-price">Offer Price</span> <span class="price-new">₹360,000</span> <span class="price-old">(28% off ) ₹499,999</span></div>';
+$extracted_prices = \HWsync\Vendors\Abstract_Vendor_Adapter::extract_clean_prices( $sample_html_with_mrp );
+
+assert_test( 'Price Extractor accurately extracts Current Offer Price (360000.00) instead of MRP (499999.00)', (
+	$extracted_prices['price'] === 360000.00 &&
+	$extracted_prices['original_price'] === 499999.00
+) );
+
+// Test 22: Component Deduplication & Merge Engine
+// Create 2 separate component records for Cooler Master Shark X from 2 vendors
+$comp_shark_1 = new \HWsync\Models\Component( array(
+	'brand'      => 'Cooler Master',
+	'model_name' => 'Shark X Mini ITX Case with Cooler Master Fan',
+	'category'   => 'cabinet',
+) );
+$comp_shark_1->save();
+
+$vp_shark_1 = new \HWsync\Models\Vendor_Price( array(
+	'component_id'         => $comp_shark_1->id,
+	'vendor_id'            => 1,
+	'vendor_product_title' => 'Cooler Master Shark X Mini ITX Case',
+	'price'                => 365000.00,
+	'product_url'          => 'https://example.com/shark-x-1',
+	'is_in_stock'          => 1,
+) );
+$vp_shark_1->save();
+
+$comp_shark_2 = new \HWsync\Models\Component( array(
+	'brand'      => 'Cooler Master',
+	'model_name' => 'Shark X Mini ITX Gaming Cabinet',
+	'category'   => 'cabinet',
+) );
+$comp_shark_2->save();
+
+$vp_shark_2 = new \HWsync\Models\Vendor_Price( array(
+	'component_id'         => $comp_shark_2->id,
+	'vendor_id'            => 2,
+	'vendor_product_title' => 'Cooler Master Shark X Mini ITX Case (Offer Price)',
+	'price'                => 360000.00,
+	'product_url'          => 'https://example.com/shark-x-2',
+	'is_in_stock'          => 1,
+) );
+$vp_shark_2->save();
+
+// Run component merge for cabinets
+$merge_res = \HWsync\Matching_Engine::merge_duplicate_components( 'cabinet' );
+$shark_merged_prices = hwsync_get_vendor_prices( $comp_shark_1->id );
+$shark_lowest = hwsync_get_lowest_price( $comp_shark_1->id );
+
+assert_test( 'Merge Engine consolidates duplicate component listings and sets lowest price (₹360,000.00)', (
+	$merge_res['total_merged'] >= 1 &&
+	count( $shark_merged_prices ) === 2 &&
+	$shark_lowest === 360000.00
+) );
+
+// Test 23: Category Isolation during Component Merge
+$comp_cpu_dummy = new \HWsync\Models\Component( array(
+	'brand'      => 'AMD',
+	'model_name' => 'Shark X Custom AMD CPU',
+	'category'   => 'cpu',
+) );
+$comp_cpu_dummy->save();
+
+$comp_mobo_dummy = new \HWsync\Models\Component( array(
+	'brand'      => 'AMD',
+	'model_name' => 'Shark X Custom AMD Motherboard',
+	'category'   => 'motherboard',
+) );
+$comp_mobo_dummy->save();
+
+$is_same_cat = \HWsync\Matching_Engine::is_same_hardware_component( $comp_cpu_dummy, $comp_mobo_dummy );
+assert_test( 'Category Isolation prevents different hardware categories from ever merging', $is_same_cat === false );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

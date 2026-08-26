@@ -155,12 +155,10 @@ class MDComputers_Adapter extends Abstract_Vendor_Adapter {
 
 					if ( $pos !== false ) {
 						$snippet = substr( $html, max( 0, $pos - 200 ), 1600 );
-						if ( preg_match( '/(?:price-new|price|amount)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $snippet, $pm ) ) {
-							$price = self::clean_price( $pm[1] );
-						}
-						if ( preg_match( '/(?:price-old|del)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $snippet, $rpm ) ) {
-							$reg_price = self::clean_price( $rpm[1] );
-						}
+						$price_data = self::extract_clean_prices( $snippet );
+						$price = $price_data['price'];
+						$reg_price = $price_data['original_price'];
+
 						if ( stripos( $snippet, 'out of stock' ) !== false || stripos( $snippet, 'sold out' ) !== false ) {
 							$in_stock = false;
 						}
@@ -199,23 +197,9 @@ class MDComputers_Adapter extends Abstract_Vendor_Adapter {
 			return null;
 		}
 
-		$price = 0.0;
-		$orig_price = null;
-
-		// Prioritize active discounted price-new first
-		if ( preg_match( '/(?:price-new|special-price)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $card_html, $pm ) ) {
-			$price = self::clean_price( $pm[1] );
-		} else {
-			// Strip old price and tax to prevent false match
-			$clean_card = preg_replace( '/<(?:span|div)[^>]*class="[^"]*(?:price-old|del|price-tax)[^"]*"[\s\S]*?<\/(?:span|div)>/i', '', $card_html );
-			if ( preg_match( '/(?:price|amount)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $clean_card, $pm ) ) {
-				$price = self::clean_price( $pm[1] );
-			}
-		}
-
-		if ( preg_match( '/(?:price-old|del)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $card_html, $rpm ) ) {
-			$orig_price = self::clean_price( $rpm[1] );
-		}
+		$price_data = self::extract_clean_prices( $card_html );
+		$price      = $price_data['price'];
+		$orig_price = $price_data['original_price'];
 
 		$in_stock = ( stripos( $card_html, 'out of stock' ) === false && stripos( $card_html, 'sold out' ) === false );
 

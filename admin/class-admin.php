@@ -26,6 +26,7 @@ class Admin {
 		add_action( 'wp_ajax_hwsync_save_vendor', array( __CLASS__, 'handle_save_vendor' ) );
 		add_action( 'wp_ajax_hwsync_delete_vendor', array( __CLASS__, 'handle_delete_vendor' ) );
 		add_action( 'wp_ajax_hwsync_test_vendor_sync', array( __CLASS__, 'handle_test_vendor_sync' ) );
+		add_action( 'wp_ajax_hwsync_merge_components', array( __CLASS__, 'handle_merge_components' ) );
 	}
 
 	public static function register_admin_menu() {
@@ -164,6 +165,10 @@ class Admin {
 									<span class="dashicons dashicons-admin-generic" style="line-height: 1;"></span>
 									<span><?php esc_html_e( 'Sync Specs', 'hwsync' ); ?></span>
 								</button>
+								<button type="button" id="btn-merge-components" class="button" style="background: #f59e0b; border-color: #d97706; color: #fff; padding: 6px 14px; font-weight: 600; border-radius: 6px; height: 38px; display: inline-flex; align-items: center; gap: 6px;">
+									<span class="dashicons dashicons-randomize" style="line-height: 1;"></span>
+									<span><?php esc_html_e( 'Merge & Deduplicate', 'hwsync' ); ?></span>
+								</button>
 								<button type="button" id="btn-stop-sync" class="button" style="display: none; border-color: #ef4444; color: #ef4444; height: 38px; border-radius: 6px;">
 									<?php esc_html_e( 'Stop Sync', 'hwsync' ); ?>
 								</button>
@@ -224,6 +229,7 @@ class Admin {
 			document.addEventListener('DOMContentLoaded', function() {
 				var startBtn = document.getElementById('btn-start-live-sync');
 				var syncSpecsBtn = document.getElementById('btn-sync-specs');
+				var mergeBtn = document.getElementById('btn-merge-components');
 				var stopBtn = document.getElementById('btn-stop-sync');
 				var clearBtn = document.getElementById('btn-clear-console');
 				var terminal = document.getElementById('hwsync-terminal');
@@ -290,6 +296,7 @@ class Admin {
 
 					startBtn.disabled = true;
 					syncSpecsBtn.disabled = true;
+					if (mergeBtn) mergeBtn.disabled = true;
 					startBtn.innerHTML = '<span class="dashicons dashicons-update spin" style="animation: rotation 1s infinite linear;"></span> Syncing...';
 					stopBtn.style.display = 'inline-block';
 
@@ -299,7 +306,7 @@ class Admin {
 					statusBadge.style.background = '#15803d';
 					statusBadge.style.color = '#fff';
 
-					appendLog('info', 'Starting rock-solid live sync for Vendor: [' + vendor + '], Category: [' + category + ']...');
+					appendLog('info', 'Starting live scrape sync for Vendor: [' + vendor + '], Category: [' + category + ']...');
 
 					abortController = new AbortController();
 
@@ -312,6 +319,7 @@ class Admin {
 
 					startBtn.disabled = true;
 					syncSpecsBtn.disabled = true;
+					if (mergeBtn) mergeBtn.disabled = true;
 					syncSpecsBtn.innerHTML = '<span class="dashicons dashicons-update spin" style="animation: rotation 1s infinite linear;"></span> Syncing Specs...';
 					stopBtn.style.display = 'inline-block';
 
@@ -327,6 +335,25 @@ class Admin {
 
 					runChunkedSpecsSync(category, nonce);
 				});
+
+				if (mergeBtn) {
+					mergeBtn.addEventListener('click', function() {
+						var category = document.getElementById('target_category').value;
+						var nonce = document.querySelector('input[name="hwsync_nonce"]').value;
+
+						startBtn.disabled = true;
+						syncSpecsBtn.disabled = true;
+						mergeBtn.disabled = true;
+						mergeBtn.innerHTML = '<span class="dashicons dashicons-update spin" style="animation: rotation 1s infinite linear;"></span> Merging...';
+						stopBtn.style.display = 'inline-block';
+
+						abortController = new AbortController();
+
+						runChunkedMerge(category, nonce, function() {
+							finishSync();
+						});
+					});
+				}
 
 				function runChunkedMainSync(vendorChoice, categoryChoice, nonce) {
 					var allVendors = (vendorChoice === 'all') 
@@ -347,15 +374,21 @@ class Admin {
 						}
 
 						if (currentVendorIdx >= allVendors.length) {
+							var onScrapeFinished = function() {
+								appendLog('info', '=== Automatically Running Multi-Vendor Deduplication & Merge Phase ===');
+								runChunkedMerge(categoryChoice, nonce, function() {
+									appendLog('success', 'Full sync & multi-vendor merge completed successfully!');
+									finishSync();
+								});
+							};
+
 							if (vendorChoice === 'all' || vendorChoice === 'mdcomputers') {
 								appendLog('info', '=== Running In-Browser Headless Scraper for MDComputers ===');
 								runBrowserHeadlessSync('mdcomputers', categoryChoice, nonce, function() {
-									appendLog('success', 'Full sync cycle completed across all retailers!');
-									finishSync();
+									onScrapeFinished();
 								});
 							} else {
-								appendLog('success', 'Full sync cycle completed successfully!');
-								finishSync();
+								onScrapeFinished();
 							}
 							return;
 						}
@@ -606,7 +639,16 @@ class Admin {
 
 									// Price extraction: prioritize discounted price-new first
 									var price = 0;
-									var priceNewEl = el.querySelector('.price-new, .special-price, ins .amount');
+									var origPrice = null;
+
+									var priceNewEl = el.querySelector('.price-new, .special-price, .offer-price, .sales-price, .sale-price, ins .amount, ins');
+									var priceOldEl = el.querySelector('.price-old, .old-price, .regular-price, del .amount, del');
+
+									if (priceOldEl) {
+										var opMatch = priceOldEl.textContent.replace(/,/g, '').match(/[\d]+(?:\.\d+)?/);
+										if (opMatch) origPrice = parseFloat(opMatch[0]);
+									}
+
 									if (priceNewEl) {
 										var pMatch = priceNewEl.textContent.replace(/,/g, '').match(/[\d]+(?:\.\d+)?/);
 										if (pMatch) price = parseFloat(pMatch[0]);
@@ -614,11 +656,17 @@ class Admin {
 										var priceEl = el.querySelector('.price, .amount');
 										if (priceEl) {
 											var clone = priceEl.cloneNode(true);
-											var oldEls = clone.querySelectorAll('.price-old, del, .price-tax');
+											var oldEls = clone.querySelectorAll('.price-old, .old-price, .regular-price, del, .price-tax');
 											oldEls.forEach(function(o) { o.remove(); });
 											var pMatch = clone.textContent.replace(/,/g, '').match(/[\d]+(?:\.\d+)?/);
 											if (pMatch) price = parseFloat(pMatch[0]);
 										}
+									}
+
+									if (price > 0 && origPrice && price > origPrice) {
+										var temp = price;
+										price = origPrice;
+										origPrice = temp;
 									}
 
 									var priceDisplay = (price > 0) ? '₹' + price.toFixed(2) : 'NA';
@@ -627,6 +675,7 @@ class Admin {
 										title: title,
 										url: link,
 										price: price,
+										original_price: origPrice,
 										in_stock: true,
 										stock_status: 'in_stock',
 										category: currentCat,
@@ -685,6 +734,54 @@ class Admin {
 					processNextCategory();
 				}
 
+				function runChunkedMerge(categoryChoice, nonce, onDone) {
+					statusDot.style.background = '#f59e0b';
+					statusDot.style.boxShadow = '0 0 10px #f59e0b';
+					statusBadge.textContent = 'MERGING';
+					statusBadge.style.background = '#d97706';
+					statusBadge.style.color = '#fff';
+
+					appendLog('info', 'Initiating Component Merge & Deduplication for category: [' + categoryChoice + ']...');
+
+					var postData = new URLSearchParams();
+					postData.append('action', 'hwsync_merge_components');
+					postData.append('target_category', categoryChoice);
+					postData.append('hwsync_nonce', nonce);
+
+					fetch(ajaxurl, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+						body: postData.toString(),
+						signal: abortController ? abortController.signal : null
+					}).then(function(res) {
+						return res.json();
+					}).then(function(json) {
+						if (json.success && json.data) {
+							var d = json.data;
+							if (d.logs && Array.isArray(d.logs)) {
+								d.logs.forEach(function(l) {
+									appendLog(l.level, l.message);
+								});
+							}
+							if (d.total_merged > 0) {
+								appendLog('success', 'Consolidated ' + d.total_merged + ' duplicate records! Active canonical hardware components: ' + d.canonical_total);
+							} else {
+								appendLog('info', 'All records already fully canonical. Active components: ' + d.canonical_total);
+							}
+						} else {
+							appendLog('warning', 'Merge step returned no changes or encountered an error.');
+						}
+						if (typeof onDone === 'function') {
+							onDone();
+						}
+					}).catch(function(err) {
+						appendLog('error', 'Merge error: ' + err.message);
+						if (typeof onDone === 'function') {
+							onDone();
+						}
+					});
+				}
+
 				stopBtn.addEventListener('click', function() {
 					if (abortController) {
 						abortController.abort();
@@ -694,9 +791,13 @@ class Admin {
 
 				function finishSync() {
 					startBtn.disabled = false;
-					startBtn.innerHTML = '<span class="dashicons dashicons-update"></span> <?php esc_html_e( "Start Live Sync", "hwsync" ); ?>';
+					startBtn.innerHTML = '<span class="dashicons dashicons-update"></span> <?php esc_html_e( "Live Scrape Sync", "hwsync" ); ?>';
 					syncSpecsBtn.disabled = false;
 					syncSpecsBtn.innerHTML = '<span class="dashicons dashicons-admin-generic"></span> <?php esc_html_e( "Sync Specs", "hwsync" ); ?>';
+					if (mergeBtn) {
+						mergeBtn.disabled = false;
+						mergeBtn.innerHTML = '<span class="dashicons dashicons-randomize"></span> <?php esc_html_e( "Merge & Deduplicate", "hwsync" ); ?>';
+					}
 					stopBtn.style.display = 'none';
 
 					statusDot.style.background = '#64748b';
@@ -1780,6 +1881,19 @@ class Admin {
 			'components'   => count( $touched_ids ),
 			'posts_synced' => 0,
 		) );
+	}
+
+	public static function handle_merge_components() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$category = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
+
+		$result = Matching_Engine::merge_duplicate_components( $category );
+
+		wp_send_json_success( $result );
 	}
 
 	public static function handle_stream_specs_sync() {

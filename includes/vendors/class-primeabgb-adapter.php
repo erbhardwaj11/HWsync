@@ -80,21 +80,21 @@ class PrimeABGB_Adapter extends Abstract_Vendor_Adapter {
 		if ( preg_match_all( '/<div[^>]*class="[^"]*product-item[^"]*"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/i', $html_content, $cards ) ) {
 			foreach ( $cards[0] as $card_html ) {
 				$title_m = preg_match( '/<h3[^>]*class="product-title"[^>]*>\s*<a\s+href="([^"]+)"[^>]*>([^<]+)<\/a>/i', $card_html, $tm );
-				$price_m = preg_match( '/<ins[^>]*>[\s\S]*?<bdi>[\s\S]*?([\d,]+(?:\.\d+)?)<\/bdi>/i', $card_html, $pm ) ||
-				           preg_match( '/<bdi>[\s\S]*?([\d,]+(?:\.\d+)?)<\/bdi>/i', $card_html, $pm );
+				$price_data = self::extract_clean_prices( $card_html );
+				$price = $price_data['price'];
+				$orig_price = $price_data['original_price'];
 
-				if ( $title_m && $price_m ) {
+				if ( $title_m && $price > 0 ) {
 					$title = html_entity_decode( trim( $tm[2] ) );
 					$url = $tm[1];
-					$price = self::clean_price( $pm[1] );
 					$in_stock = ( stripos( $card_html, 'out-of-stock' ) === false );
 
-					if ( $price > 0 && ! empty( $title ) ) {
+					if ( ! empty( $title ) ) {
 						$items[] = array(
 							'title'          => $title,
 							'url'            => $url,
 							'price'          => $price,
-							'original_price' => null,
+							'original_price' => $orig_price,
 							'sku'            => '',
 							'in_stock'       => $in_stock,
 							'stock_status'   => $in_stock ? 'in_stock' : 'out_of_stock',

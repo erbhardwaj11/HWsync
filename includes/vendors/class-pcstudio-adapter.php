@@ -71,14 +71,10 @@ class PCStudio_Adapter extends Abstract_Vendor_Adapter {
 					$title = html_entity_decode( trim( strip_tags( $title ) ), ENT_QUOTES, 'UTF-8' );
 				}
 
-				// Price: Must check <ins> (sale price) first, then fallback to <bdi> or amount
-				$price = 0.0;
-				if ( preg_match( '/<ins[^>]*>[\s\S]*?<bdi>[\s\S]*?([\d,]+(?:\.\d+)?)<\/bdi>/i', $p, $pm ) ||
-				     preg_match( '/<ins[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $p, $pm ) ||
-				     preg_match( '/<bdi>[\s\S]*?([\d,]+(?:\.\d+)?)<\/bdi>/i', $p, $pm ) ||
-				     preg_match( '/(?:price-new|amount)[^>]*>[\s\S]*?(?:&#8377;|₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i', $p, $pm ) ) {
-					$price = self::clean_price( $pm[1] );
-				}
+				// Price: Must prioritize sale price over MRP
+				$price_data = self::extract_clean_prices( $p );
+				$price      = $price_data['price'];
+				$orig_price = $price_data['original_price'];
 
 				// SKU
 				$sku = '';
@@ -93,7 +89,7 @@ class PCStudio_Adapter extends Abstract_Vendor_Adapter {
 						'title'          => $title,
 						'url'            => $url,
 						'price'          => $price,
-						'original_price' => null,
+						'original_price' => $orig_price,
 						'sku'            => $sku,
 						'in_stock'       => $in_stock,
 						'stock_status'   => $in_stock ? 'in_stock' : 'out_of_stock',

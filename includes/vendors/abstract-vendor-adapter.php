@@ -172,4 +172,96 @@ abstract class Abstract_Vendor_Adapter {
 
 		return 0.0;
 	}
+
+	/**
+	 * Accurately extracts the current (sale/offer) price and original (MRP/regular) price from HTML snippets.
+	 * Guarantees that current sale price is prioritized over strikethrough MRP prices.
+	 *
+	 * @param string $html HTML snippet or product card.
+	 * @return array array( 'price' => float, 'original_price' => float|null )
+	 */
+	public static function extract_clean_prices( $html ) {
+		if ( empty( $html ) ) {
+			return array( 'price' => 0.0, 'original_price' => null );
+		}
+
+		$current_price  = 0.0;
+		$original_price = null;
+
+		// 1. Look for explicit sale / offer / discounted price tags FIRST
+		$sale_patterns = array(
+			// WooCommerce <ins> tag (contains sale price)
+			'/<ins[^>]*>[\s\S]*?<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
+			'/<ins[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/ins>/i',
+			// OpenCart / Journal / Custom sale price classes
+			'/<(?:span|div|p|ins)[^>]*class="[^"]*(?:price-new|special-price|offer-price|sales-price|sale-price|current-price|price-normal)[^"]*"[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)/i',
+			'/<(?:span|div|p|ins)[^>]*class="[^"]*(?:price-new|special-price|offer-price|sales-price|sale-price|current-price)[^"]*"[^>]*>[\s\S]*?<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
+		);
+
+		foreach ( $sale_patterns as $pattern ) {
+			if ( preg_match( $pattern, $html, $m ) ) {
+				$val = self::clean_price( $m[1] );
+				if ( $val > 0 ) {
+					$current_price = $val;
+					break;
+				}
+			}
+		}
+
+		// 2. Look for explicit regular / MRP / old price tags
+		$old_patterns = array(
+			// WooCommerce <del> tag (contains regular MRP price)
+			'/<del[^>]*>[\s\S]*?<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
+			'/<del[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/del>/i',
+			// OpenCart / Custom old price classes
+			'/<(?:span|div|p|del)[^>]*class="[^"]*(?:price-old|old-price|regular-price|mrp|strike)[^"]*"[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)/i',
+			'/<(?:span|div|p|del)[^>]*class="[^"]*(?:price-old|old-price|regular-price|mrp|strike)[^"]*"[^>]*>[\s\S]*?<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
+		);
+
+		foreach ( $old_patterns as $pattern ) {
+			if ( preg_match( $pattern, $html, $m ) ) {
+				$val = self::clean_price( $m[1] );
+				if ( $val > 0 ) {
+					$original_price = $val;
+					break;
+				}
+			}
+		}
+
+		// 3. Fallback: If no explicit sale price was detected, strip old prices/del/taxes first, then extract standard price
+		if ( $current_price <= 0 ) {
+			$clean_html = preg_replace( '/<(?:del|span|div|p)[^>]*class="[^"]*(?:price-old|old-price|regular-price|mrp|strike|price-tax)[^"]*"[\s\S]*?<\/(?:del|span|div|p)>/i', '', $html );
+			$clean_html = preg_replace( '/<del[^>]*>[\s\S]*?<\/del>/i', '', $clean_html );
+
+			$fallback_patterns = array(
+				'/<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
+				'/<bdi>[\s\S]*?([\d,]+(?:\.\d+)?)<\/bdi>/i',
+				'/(?:price|amount)[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)/i',
+				'/(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)/i',
+			);
+			foreach ( $fallback_patterns as $fpat ) {
+				if ( preg_match( $fpat, $clean_html, $fm ) ) {
+					$cval = self::clean_price( $fm[1] );
+					if ( $cval > 0 ) {
+						$current_price = $cval;
+						break;
+					}
+				}
+			}
+		}
+
+		// 4. Sanity check: Ensure current_price is the lowest (discounted offer price)
+		if ( $current_price > 0 && $original_price !== null && $original_price > 0 ) {
+			if ( $current_price > $original_price ) {
+				$temp           = $current_price;
+				$current_price  = $original_price;
+				$original_price = $temp;
+			}
+		}
+
+		return array(
+			'price'          => $current_price,
+			'original_price' => $original_price,
+		);
+	}
 }

@@ -60,15 +60,39 @@ class CLI_Command extends WP_CLI_Command {
 	}
 
 	/**
-	 * Sync components and vendor prices.
+	 * Run Multi-Vendor Component Deduplication and Price Merging.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--category=<category>]
+	 * : Component category to merge (e.g. cpu, gpu, motherboard, ram, storage, psu, cooler, cabinet, or all).
+	 * ---
+	 * default: all
+	 * ---
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     wp hwsync sync_posts
+	 *     wp hwsync merge
+	 *     wp hwsync merge --category=cpu
 	 */
-	public function sync_posts( $args, $assoc_args ) {
-		WP_CLI::line( "HWsync sync is direct to hardware tables." );
-		WP_CLI::success( "Sync completed!" );
+	public function merge( $args, $assoc_args ) {
+		$category = isset( $assoc_args['category'] ) ? $assoc_args['category'] : 'all';
+		WP_CLI::line( "Starting Multi-Vendor Component Deduplication & Merge for category: [{$category}]..." );
+
+		$logger = function( $level, $message ) {
+			if ( $level === 'error' ) {
+				WP_CLI::error( $message, false );
+			} elseif ( $level === 'warning' ) {
+				WP_CLI::warning( $message );
+			} elseif ( $level === 'success' || $level === 'finish' ) {
+				WP_CLI::success( $message );
+			} else {
+				WP_CLI::line( $message );
+			}
+		};
+
+		$res = Matching_Engine::merge_duplicate_components( $category, $logger );
+		WP_CLI::success( "Consolidated {$res['total_merged']} duplicate records! Active canonical hardware components: {$res['canonical_total']}." );
 	}
 
 	/**
