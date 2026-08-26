@@ -159,8 +159,27 @@ class Post_Sync_Processor {
 	}
 
 	/**
+	 * Map canonical category slug to theme category table name
+	 */
+	public static function get_category_table( $cat_slug ) {
+		global $wpdb;
+		$cat = self::normalize_pcspecs_category( $cat_slug );
+		$map = array(
+			'cpu'         => $wpdb->prefix . 'pcha_processors',
+			'gpu'         => $wpdb->prefix . 'pcha_graphics_cards',
+			'motherboard' => $wpdb->prefix . 'pcha_motherboards',
+			'memory'      => $wpdb->prefix . 'pcha_rams',
+			'storage'     => $wpdb->prefix . 'pcha_storages',
+			'psu'         => $wpdb->prefix . 'pcha_power_supplies',
+			'cooler'      => $wpdb->prefix . 'pcha_cpu_coolers',
+			'case'        => $wpdb->prefix . 'pcha_cabinets',
+		);
+		return isset( $map[ $cat ] ) ? $map[ $cat ] : null;
+	}
+
+	/**
 	 * Synchronize a single canonical Component and all linked vendor prices
-	 * directly into wp_pc_components and wp_pc_vendor_prices.
+	 * directly into wp_pc_components, wp_pc_vendor_prices, and category tables.
 	 *
 	 * @param Component $component
 	 * @return array
@@ -222,6 +241,23 @@ class Post_Sync_Processor {
 			$wpdb->insert( $pc_comp_table, $comp_data );
 			$target_id = intval( $wpdb->insert_id );
 			$action = 'created';
+		}
+
+		// Also synchronize into specific category table (e.g. wp_pcha_processors)
+		$cat_table = self::get_category_table( $cat_slug );
+		if ( $cat_table ) {
+			$table_exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $cat_table ) );
+			if ( $table_exists === $cat_table ) {
+				$cat_comp_id = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$cat_table} WHERE id = %d OR mpn = %s OR slug = %s LIMIT 1", $target_id, $component->mpn, $slug ) );
+				if ( $cat_comp_id ) {
+					$wpdb->update( $cat_table, $comp_data, array( 'id' => intval( $cat_comp_id ) ) );
+				} else {
+					$cat_record = $comp_data;
+					$cat_record['id'] = $target_id;
+					$cat_record['created_at'] = current_time( 'mysql' );
+					$wpdb->insert( $cat_table, $cat_record );
+				}
+			}
 		}
 
 		// 2. Synchronize all merchant pricing offers into wp_pc_vendor_prices

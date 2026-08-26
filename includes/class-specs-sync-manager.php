@@ -200,6 +200,9 @@ class Specs_Sync_Manager {
 					$component->save();
 					$updated++;
 
+					// Immediately update specs in theme tables
+					Post_Sync_Processor::sync_component_to_theme( $component );
+
 					$summary = self::format_specs_summary( $structured_specs );
 					$logs[] = array( 'level' => 'success', 'message' => "Specs Saved for #{$component->id} [{$component->model_name}]: {$summary}" );
 				}

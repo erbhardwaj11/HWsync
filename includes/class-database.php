@@ -152,12 +152,49 @@ class Database {
 			UNIQUE KEY comp_vendor_uniq (component_id, vendor_name)
 		) {$charset_collate};";
 
+		// 7. PCSpecs Category-Specific Tables for seamless compatibility with Theme REST API
+		$cat_table_names = array(
+			'pcha_processors',
+			'pcha_graphics_cards',
+			'pcha_motherboards',
+			'pcha_rams',
+			'pcha_storages',
+			'pcha_power_supplies',
+			'pcha_cpu_coolers',
+			'pcha_cabinets',
+		);
+
 		dbDelta( $sql_vendors );
 		dbDelta( $sql_components );
 		dbDelta( $sql_prices );
 		dbDelta( $sql_history );
 		dbDelta( $sql_pc_components );
 		dbDelta( $sql_pc_vendor_prices );
+
+		foreach ( $cat_table_names as $ct_name ) {
+			$t_full = $wpdb->prefix . $ct_name;
+			$sql_ct = "CREATE TABLE {$t_full} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				post_id bigint(20) unsigned DEFAULT NULL,
+				category_id bigint(20) unsigned DEFAULT NULL,
+				name varchar(255) NOT NULL,
+				slug varchar(255) NOT NULL,
+				brand varchar(128) DEFAULT NULL,
+				category varchar(64) NOT NULL,
+				mpn varchar(128) DEFAULT NULL,
+				normalized_sku varchar(128) DEFAULT NULL,
+				image_url text DEFAULT NULL,
+				specs longtext DEFAULT NULL,
+				created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+				PRIMARY KEY  (id),
+				KEY category (category),
+				KEY brand (brand),
+				KEY slug (slug),
+				KEY mpn (mpn)
+			) {$charset_collate};";
+			dbDelta( $sql_ct );
+		}
 
 		// Ensure columns exist on existing databases
 		$existing_cols = $wpdb->get_col( "DESC {$vendors_table}" );

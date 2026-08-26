@@ -222,6 +222,9 @@ class Sync_Manager {
 
 		$vendor_price->save();
 
+		// Real-time automatic mirror to PCSpecs Theme tables & category tables
+		Post_Sync_Processor::sync_component_to_theme( $component );
+
 		return array(
 			'component_id'    => $component->id,
 			'vendor_price_id' => $vendor_price->id,
