@@ -306,9 +306,33 @@ class MockWPDB {
 		return array();
 	}
 	public function get_var( $query ) {
+		if ( preg_match( '/SHOW\s+TABLES\s+LIKE\s+\'([^\']+)\'/i', $query, $m ) ) {
+			return $m[1];
+		}
 		if ( preg_match( '/COUNT\(\*\)\s+FROM\s+(\w+)/i', $query, $m ) ) {
 			$tbl = $m[1];
 			return isset( $this->tables[ $tbl ] ) ? count( $this->tables[ $tbl ] ) : 0;
+		}
+		if ( preg_match( '/SELECT\s+id\s+FROM\s+(\w+)\s+WHERE\s+(.+)/i', $query, $m ) ) {
+			$tbl = $m[1];
+			$cond = $m[2];
+			if ( ! empty( $this->tables[ $tbl ] ) ) {
+				if ( preg_match( '/mpn\s*=\s*\'([^\']+)\'/i', $cond, $qm ) ) {
+					foreach ( $this->tables[ $tbl ] as $r ) {
+						if ( isset( $r['mpn'] ) && strcasecmp( $r['mpn'], $qm[1] ) === 0 ) return $r['id'];
+					}
+				}
+				if ( preg_match( '/slug\s*=\s*\'([^\']+)\'/i', $cond, $qm ) ) {
+					foreach ( $this->tables[ $tbl ] as $r ) {
+						if ( isset( $r['slug'] ) && strcasecmp( $r['slug'], $qm[1] ) === 0 ) return $r['id'];
+					}
+				}
+				if ( preg_match( '/component_id\s*=\s*(\d+)\s+AND\s+vendor_name\s*=\s*\'([^\']+)\'/i', $cond, $qm ) ) {
+					foreach ( $this->tables[ $tbl ] as $r ) {
+						if ( isset( $r['component_id'], $r['vendor_name'] ) && (string)$r['component_id'] === (string)$qm[1] && strcasecmp( $r['vendor_name'], $qm[2] ) === 0 ) return $r['id'];
+					}
+				}
+			}
 		}
 		if ( preg_match( '/SELECT\s+(?:pm\.)?post_id\s+FROM/i', $query ) ) {
 			if ( preg_match( '/meta_value\s*=\s*(\d+)/i', $query, $m ) ) {
@@ -517,16 +541,13 @@ $comp = \HWsync\Models\Component::find_by_id( $res1['component_id'] );
 $prices = $comp ? $comp->get_prices() : array();
 assert_test( 'Vendor Prices Linked Count = 2', count( $prices ) === 2 );
 
-// Test 7: Post-Sync Processor WordPress Post Creation
+// Test 7: Post-Sync Processor Theme Database Synchronization
 $stats = \HWsync\Post_Sync_Processor::process_all( array( $comp->id ) );
-assert_test( 'Post Sync Processor Created Post Record', $stats['created'] === 1 );
+assert_test( 'Post Sync Processor Synchronized Component to Theme Database', $stats['total'] >= 1 );
 
-// Re-fetch component from DB to get updated wp_post_id
-$comp = \HWsync\Models\Component::find_by_id( $res1['component_id'] );
-$post_id = $comp->wp_post_id;
-$meta_lowest = get_post_meta( $post_id, '_hwsync_lowest_price' );
-$meta_vendor_count = get_post_meta( $post_id, '_hwsync_vendor_count' );
-assert_test( 'WordPress Post Meta Contains Lowest Price (35899.00)', floatval( $meta_lowest ) === 35899.00 && intval( $meta_vendor_count ) === 2 );
+$theme_lowest = pcspecs_get_lowest_price( $comp->id );
+$theme_prices = pcspecs_get_vendor_prices( $comp->id );
+assert_test( 'Theme Database Contains Lowest Price (35899.00)', floatval( $theme_lowest ) === 35899.00 && count( $theme_prices ) === 2 );
 
 // Test 8: Realtime Sync Logger Callback
 $emitted_events = array();
@@ -747,16 +768,16 @@ $theme_post_id = $theme_sync_res['post_id'];
 $post_prices = pcspecs_get_vendor_prices( $theme_post_id );
 $post_lowest = pcspecs_get_lowest_price( $theme_post_id );
 
-assert_test( 'Theme Sync creates 1 Single Post with 3 aggregated store prices and lowest price ₹35,899', (
+assert_test( 'Theme Sync populates 1 Single Component with 3 aggregated store prices and lowest price ₹35,899', (
 	$theme_post_id > 0 &&
 	$theme_sync_res['vendor_count'] === 3 &&
 	count( $post_prices ) === 3 &&
 	$post_lowest === 35899.00
 ) );
 
-// Verify re-syncing doesn't duplicate post
+// Verify re-syncing doesn't duplicate record
 $resync_res = \HWsync\Post_Sync_Processor::sync_component_to_post( $comp_7800 );
-assert_test( 'Re-syncing same component updates existing post and prevents duplicate posts', (
+assert_test( 'Re-syncing same component updates existing record and prevents duplicate records', (
 	$resync_res['post_id'] === $theme_post_id &&
 	$resync_res['action'] === 'updated'
 ) );
