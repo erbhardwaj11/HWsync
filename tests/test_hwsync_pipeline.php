@@ -620,6 +620,62 @@ assert_test( 'Configurable Vendor Adapter parsed 1 Sample component with accurat
 	floatval( $parsed_samples[0]['price'] ) === 27499.00
 ) );
 
+// Test 19: Multi-Vendor Aggregation under 1 Deduplicated Theme Post
+$comp_7800 = \HWsync\Matching_Engine::match_or_create_component( array(
+	'title'    => 'AMD Ryzen 7 7800X3D Desktop Processor (8 Cores 16 Threads 5.0GHz)',
+	'price'    => 36499.00,
+	'category' => 'cpu',
+	'in_stock' => true,
+) );
+
+// Add prices from 3 different stores for the same component
+$v_md = \HWsync\Models\Vendor::find_by_slug( 'mdcomputers' );
+$v_vd = \HWsync\Models\Vendor::find_by_slug( 'vedant' );
+$v_pr = \HWsync\Models\Vendor::find_by_slug( 'primeabgb' );
+
+\HWsync\Matching_Engine::save_vendor_price( $comp_7800->id, $v_md ? $v_md->id : 1, array(
+	'title'    => 'MDComputers AMD Ryzen 7 7800X3D Processor',
+	'price'    => 36499.00,
+	'url'      => 'https://mdcomputers.in/amd-ryzen-7-7800x3d',
+	'in_stock' => true,
+) );
+
+\HWsync\Matching_Engine::save_vendor_price( $comp_7800->id, $v_vd ? $v_vd->id : 2, array(
+	'title'    => 'Vedant Computers AMD Ryzen 7 7800X3D',
+	'price'    => 35899.00,
+	'url'      => 'https://vedantcomputers.com/amd-ryzen-7-7800x3d',
+	'in_stock' => true,
+) );
+
+\HWsync\Matching_Engine::save_vendor_price( $comp_7800->id, $v_pr ? $v_pr->id : 3, array(
+	'title'    => 'PrimeABGB AMD Ryzen 7 7800X3D CPU',
+	'price'    => 36200.00,
+	'url'      => 'https://primeabgb.com/amd-ryzen-7-7800x3d',
+	'in_stock' => true,
+) );
+
+// Sync to post
+$theme_sync_res = \HWsync\Post_Sync_Processor::sync_component_to_post( $comp_7800 );
+$theme_post_id = $theme_sync_res['post_id'];
+
+// Test 20: Verify Theme Metadata & Helper Functions
+$post_prices = pcspecs_get_vendor_prices( $theme_post_id );
+$post_lowest = pcspecs_get_lowest_price( $theme_post_id );
+
+assert_test( 'Theme Sync creates 1 Single Post with 3 aggregated store prices and lowest price ₹35,899', (
+	$theme_post_id > 0 &&
+	$theme_sync_res['vendor_count'] === 3 &&
+	count( $post_prices ) === 3 &&
+	$post_lowest === 35899.00
+) );
+
+// Verify re-syncing doesn't duplicate post
+$resync_res = \HWsync\Post_Sync_Processor::sync_component_to_post( $comp_7800 );
+assert_test( 'Re-syncing same component updates existing post and prevents duplicate posts', (
+	$resync_res['post_id'] === $theme_post_id &&
+	$resync_res['action'] === 'updated'
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

@@ -11,6 +11,7 @@ class Public_Handler {
 
 	public static function init() {
 		add_shortcode( 'hwsync_price_table', array( __CLASS__, 'render_price_table_shortcode' ) );
+		add_shortcode( 'pcspecs_prices', array( __CLASS__, 'render_price_table_shortcode' ) );
 		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue_styles' ) );
 	}
 
@@ -29,6 +30,9 @@ class Public_Handler {
 			// Try getting component ID from current post meta
 			$post_id = get_the_ID();
 			$component_id = intval( get_post_meta( $post_id, '_hwsync_component_id', true ) );
+			if ( empty( $component_id ) ) {
+				$component_id = intval( get_post_meta( $post_id, '_pcspecs_component_id', true ) );
+			}
 		}
 
 		if ( empty( $component_id ) ) {
@@ -106,7 +110,7 @@ class Public_Handler {
 			display: inline-block;
 			padding: 2px 8px;
 			font-size: 0.75rem;
-			font-weight: 600;
+			font-weight: 700;
 			border-radius: 4px;
 		}
 		.hwsync-badge-instock {
@@ -118,25 +122,21 @@ class Public_Handler {
 			color: #b91c1c;
 		}
 		.hwsync-price-value {
-			font-size: 1.1rem;
 			font-weight: 700;
 			color: #0f172a;
+			font-size: 1.05rem;
 		}
 		.hwsync-original-price {
 			color: #94a3b8;
-			font-size: 0.85rem;
 			margin-left: 6px;
+			font-size: 0.85rem;
 		}
 		.hwsync-best-tag {
-			display: inline-block;
-			margin-left: 6px;
-			background: #16a34a;
-			color: #fff;
+			display: block;
 			font-size: 0.7rem;
-			padding: 2px 6px;
-			border-radius: 4px;
+			color: #15803d;
+			font-weight: 700;
 			text-transform: uppercase;
-			font-weight: bold;
 		}
 		.hwsync-buy-btn {
 			display: inline-flex;
@@ -146,21 +146,82 @@ class Public_Handler {
 			color: #ffffff !important;
 			padding: 6px 14px;
 			border-radius: 6px;
-			text-decoration: none !important;
-			font-weight: 600;
+			text-decoration: none;
 			font-size: 0.85rem;
-			transition: background 0.2s;
+			font-weight: 600;
+			transition: background 0.15s ease-in-out;
 		}
 		.hwsync-buy-btn:hover {
 			background: #1d4ed8;
 		}
 		.hwsync-btn-disabled {
-			background: #94a3b8;
+			background: #94a3b8 !important;
 		}
 		.hwsync-disclaimer {
-			margin-top: 12px;
+			margin-top: 14px;
+			margin-bottom: 0;
 			color: #94a3b8;
 		}
 		";
+	}
+}
+
+/**
+ * Global Theme Helper Functions for pcspecs & Theme Developers
+ */
+if ( ! function_exists( 'pcspecs_get_vendor_prices' ) ) {
+	function pcspecs_get_vendor_prices( $post_id = 0 ) {
+		if ( empty( $post_id ) ) {
+			$post_id = get_the_ID();
+		}
+		$prices = get_post_meta( $post_id, '_pcspecs_vendor_prices', true );
+		if ( ! empty( $prices ) && is_array( $prices ) ) {
+			return $prices;
+		}
+		return get_post_meta( $post_id, '_hwsync_vendor_prices', true ) ?: array();
+	}
+}
+
+if ( ! function_exists( 'pcspecs_get_lowest_price' ) ) {
+	function pcspecs_get_lowest_price( $post_id = 0 ) {
+		if ( empty( $post_id ) ) {
+			$post_id = get_the_ID();
+		}
+		$lowest = get_post_meta( $post_id, '_pcspecs_lowest_price', true );
+		if ( ! empty( $lowest ) ) {
+			return floatval( $lowest );
+		}
+		return floatval( get_post_meta( $post_id, '_hwsync_lowest_price', true ) );
+	}
+}
+
+if ( ! function_exists( 'pcspecs_render_price_table' ) ) {
+	function pcspecs_render_price_table( $post_id = 0 ) {
+		if ( empty( $post_id ) ) {
+			$post_id = get_the_ID();
+		}
+		$component_id = get_post_meta( $post_id, '_pcspecs_component_id', true ) ?: get_post_meta( $post_id, '_hwsync_component_id', true );
+		if ( $component_id ) {
+			return do_shortcode( '[hwsync_price_table id="' . intval( $component_id ) . '"]' );
+		}
+		return '';
+	}
+}
+
+if ( ! function_exists( 'hwsync_get_vendor_prices' ) ) {
+	function hwsync_get_vendor_prices( $post_id = 0 ) {
+		return pcspecs_get_vendor_prices( $post_id );
+	}
+}
+
+if ( ! function_exists( 'hwsync_get_lowest_price' ) ) {
+	function hwsync_get_lowest_price( $post_id = 0 ) {
+		return pcspecs_get_lowest_price( $post_id );
+	}
+}
+
+if ( ! function_exists( 'hwsync_render_price_table' ) ) {
+	function hwsync_render_price_table( $post_id = 0 ) {
+		return pcspecs_render_price_table( $post_id );
 	}
 }

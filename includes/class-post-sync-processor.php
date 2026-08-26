@@ -81,12 +81,106 @@ class Post_Sync_Processor {
 	}
 
 	/**
+	 * Get the target post type for theme syncing (defaults to pcspecs_component if exists, else hwsync_component or post)
+	 */
+	public static function get_target_post_type() {
+		$saved = get_option( 'hwsync_target_post_type' );
+		if ( ! empty( $saved ) ) {
+			return $saved;
+		}
+
+		if ( post_type_exists( 'pcspecs_component' ) ) {
+			return 'pcspecs_component';
+		}
+
+		return self::POST_TYPE;
+	}
+
+	/**
+	 * Synchronize a batch chunk of canonical components into the theme catalog posts.
+	 *
+	 * @param array $options Filter & pagination options
+	 * @return array Result summary with processed counts and item details
+	 */
+	public static function sync_theme_chunk( $options = array() ) {
+		$category         = isset( $options['category'] ) ? $options['category'] : 'all';
+		$offset           = isset( $options['offset'] ) ? intval( $options['offset'] ) : 0;
+		$limit            = isset( $options['limit'] ) ? intval( $options['limit'] ) : 10;
+		$target_post_type = isset( $options['post_type'] ) && ! empty( $options['post_type'] ) ? $options['post_type'] : self::get_target_post_type();
+
+		$args = array(
+			'limit'  => $limit,
+			'offset' => $offset,
+		);
+		if ( $category !== 'all' ) {
+			$args['category'] = $category;
+		}
+
+		$total_count = Component::count( $category !== 'all' ? array( 'category' => $category ) : array() );
+		$components  = Component::get_all( $args );
+
+		$created = 0;
+		$updated = 0;
+		$skipped = 0;
+		$logs    = array();
+
+		foreach ( $components as $component ) {
+			$res = self::sync_component_to_post( $component, $target_post_type );
+			$action = $res['action'];
+			$post_id = $res['post_id'];
+			$prices_count = $res['vendor_count'];
+			$lowest = $res['lowest_price'];
+
+			if ( $action === 'created' ) {
+				$created++;
+				$logs[] = sprintf(
+					__( '[NEW POST #%d] Created "%s" with %d vendor prices (Lowest: %s)', 'hwsync' ),
+					$post_id,
+					$component->brand . ' ' . $component->model_name,
+					$prices_count,
+					$lowest > 0 ? '₹' . number_format( $lowest, 2 ) : 'NA'
+				);
+			} elseif ( $action === 'updated' ) {
+				$updated++;
+				$logs[] = sprintf(
+					__( '[UPDATED POST #%d] "%s" mapped to %d vendor prices (Lowest: %s)', 'hwsync' ),
+					$post_id,
+					$component->brand . ' ' . $component->model_name,
+					$prices_count,
+					$lowest > 0 ? '₹' . number_format( $lowest, 2 ) : 'NA'
+				);
+			} else {
+				$skipped++;
+				$logs[] = sprintf(
+					__( '[SKIPPED] "%s" (No active vendor pricing found)', 'hwsync' ),
+					$component->brand . ' ' . $component->model_name
+				);
+			}
+		}
+
+		$next_offset = $offset + count( $components );
+		$is_done = ( $next_offset >= $total_count || empty( $components ) );
+
+		return array(
+			'success'     => true,
+			'total'       => $total_count,
+			'processed'   => count( $components ),
+			'offset'      => $next_offset,
+			'created'     => $created,
+			'updated'     => $updated,
+			'skipped'     => $skipped,
+			'is_done'     => $is_done,
+			'logs'        => $logs,
+		);
+	}
+
+	/**
 	 * Synchronize all canonical components into WordPress posts.
 	 *
 	 * @param array $component_ids Optional specific component IDs to process
 	 * @return array Stats of processed, created, and updated posts
 	 */
-	public static function process_all( $component_ids = array() ) {
+	public static function process_all( $component_ids = array(), $target_post_type = '' ) {
 		$stats = array(
 			'total'   => 0,
 			'created' => 0,
@@ -103,16 +197,16 @@ class Post_Sync_Processor {
 				}
 			}
 		} else {
-			$components = Component::get_all( array( 'limit' => 1000 ) );
+			$components = Component::get_all( array( 'limit' => 2000 ) );
 		}
 
 		$stats['total'] = count( $components );
 
 		foreach ( $components as $component ) {
-			$result = self::sync_component_to_post( $component );
-			if ( $result === 'created' ) {
+			$res = self::sync_component_to_post( $component, $target_post_type );
+			if ( $res['action'] === 'created' ) {
 				$stats['created']++;
-			} elseif ( $result === 'updated' ) {
+			} elseif ( $res['action'] === 'updated' ) {
 				$stats['updated']++;
 			} else {
 				$stats['skipped']++;
@@ -123,85 +217,209 @@ class Post_Sync_Processor {
 	}
 
 	/**
-	 * Sync a single canonical Component to wp_posts.
+	 * Sync a single canonical Component to a WordPress post without duplication.
+	 * Aggregates all vendor prices under this single post.
 	 *
 	 * @param Component $component
-	 * @return string 'created'|'updated'|'skipped'
+	 * @param string $target_post_type
+	 * @return array ['action' => 'created'|'updated'|'skipped', 'post_id' => int, 'vendor_count' => int, 'lowest_price' => float]
 	 */
-	public static function sync_component_to_post( Component $component ) {
-		$prices = $component->get_prices();
+	public static function sync_component_to_post( Component $component, $target_post_type = '' ) {
+		$post_type = ! empty( $target_post_type ) ? $target_post_type : self::get_target_post_type();
+		$prices    = $component->get_prices();
+
 		if ( empty( $prices ) ) {
-			return 'skipped';
+			return array(
+				'action'       => 'skipped',
+				'post_id'      => 0,
+				'vendor_count' => 0,
+				'lowest_price' => 0,
+			);
 		}
 
-		$lowest_price = null;
-		$highest_price = 0;
+		$lowest_price   = null;
+		$highest_price  = 0;
 		$in_stock_count = 0;
+		$vendor_prices_data = array();
 
 		foreach ( $prices as $p ) {
-			if ( $p->is_in_stock ) {
+			$is_stock = (bool) $p->is_in_stock;
+			if ( $is_stock ) {
 				$in_stock_count++;
-				if ( null === $lowest_price || $p->price < $lowest_price ) {
-					$lowest_price = $p->price;
+				if ( $p->price > 0 && ( null === $lowest_price || $p->price < $lowest_price ) ) {
+					$lowest_price = floatval( $p->price );
 				}
 			}
 			if ( $p->price > $highest_price ) {
-				$highest_price = $p->price;
+				$highest_price = floatval( $p->price );
 			}
+
+			$vendor_prices_data[] = array(
+				'vendor_id'            => $p->vendor_id,
+				'vendor_slug'          => $p->vendor_slug,
+				'vendor_name'          => $p->vendor_name ?: ucfirst( $p->vendor_slug ),
+				'vendor_product_title' => $p->vendor_product_title,
+				'price'                => floatval( $p->price ),
+				'original_price'       => ! empty( $p->original_price ) ? floatval( $p->original_price ) : null,
+				'is_in_stock'          => $is_stock,
+				'stock_status'         => $p->stock_status ?: ( $is_stock ? 'in_stock' : 'out_of_stock' ),
+				'product_url'          => $p->product_url,
+				'affiliate_url'        => ! empty( $p->affiliate_url ) ? $p->affiliate_url : $p->product_url,
+				'last_checked_at'      => $p->last_checked_at,
+			);
 		}
 
-		$post_title = $component->brand . ' ' . $component->model_name;
-		$post_content = self::build_post_content( $component, $lowest_price, $in_stock_count, count( $prices ) );
+		if ( null === $lowest_price ) {
+			$lowest_price = $highest_price > 0 ? $highest_price : 0.0;
+		}
+
+		$post_title   = trim( $component->brand . ' ' . $component->model_name );
+		$post_content = self::build_post_content( $component, $prices, $lowest_price, $in_stock_count );
+
+		// 1. Locate existing post to avoid any duplication
+		$post_id = self::find_existing_post( $component, $post_title, $post_type );
 
 		$post_data = array(
 			'post_title'   => $post_title,
 			'post_content' => $post_content,
 			'post_status'  => 'publish',
-			'post_type'    => self::POST_TYPE,
+			'post_type'    => $post_type,
 		);
 
 		$action = 'updated';
 
-		if ( ! empty( $component->wp_post_id ) && get_post( $component->wp_post_id ) ) {
-			$post_data['ID'] = $component->wp_post_id;
+		if ( $post_id ) {
+			$post_data['ID'] = $post_id;
 			wp_update_post( $post_data );
-			$post_id = $component->wp_post_id;
 		} else {
 			$post_id = wp_insert_post( $post_data );
-			$component->wp_post_id = $post_id;
-			$component->save();
-			$action = 'created';
+			$action  = 'created';
 		}
 
 		if ( $post_id && ! ( function_exists( 'is_wp_error' ) && \is_wp_error( $post_id ) ) ) {
-			// Update Post Meta
+			// Update Component record with linked post ID
+			$component->wp_post_id = $post_id;
+			$component->save();
+
+			// Store comprehensive custom fields and multi-vendor prices
 			update_post_meta( $post_id, '_hwsync_component_id', $component->id );
+			update_post_meta( $post_id, '_pcspecs_component_id', $component->id );
 			update_post_meta( $post_id, '_hwsync_lowest_price', $lowest_price );
+			update_post_meta( $post_id, '_lowest_price', $lowest_price );
+			update_post_meta( $post_id, '_price', $lowest_price );
+			update_post_meta( $post_id, 'price', $lowest_price );
 			update_post_meta( $post_id, '_hwsync_highest_price', $highest_price );
 			update_post_meta( $post_id, '_hwsync_vendor_count', count( $prices ) );
+			update_post_meta( $post_id, '_vendor_count', count( $prices ) );
 			update_post_meta( $post_id, '_hwsync_in_stock_count', $in_stock_count );
+			update_post_meta( $post_id, '_in_stock_count', $in_stock_count );
 			update_post_meta( $post_id, '_hwsync_specs', $component->get_specs() );
+			update_post_meta( $post_id, '_pcspecs_specs', $component->get_specs() );
+			update_post_meta( $post_id, '_hwsync_vendor_prices', $vendor_prices_data );
+			update_post_meta( $post_id, '_pcspecs_vendor_prices', $vendor_prices_data );
 			update_post_meta( $post_id, '_hwsync_mpn', $component->mpn );
+			update_post_meta( $post_id, '_hwsync_sku', $component->sku );
 			update_post_meta( $post_id, '_hwsync_last_synced_at', current_time( 'mysql' ) );
 
 			// Assign Taxonomies
 			if ( ! empty( $component->category ) ) {
-				wp_set_object_terms( $post_id, ucfirst( $component->category ), self::TAXONOMY_CAT );
+				$cat_name = ucfirst( $component->category );
+				if ( taxonomy_exists( self::TAXONOMY_CAT ) ) {
+					wp_set_object_terms( $post_id, $cat_name, self::TAXONOMY_CAT );
+				}
+				if ( taxonomy_exists( 'category' ) && $post_type === 'post' ) {
+					wp_set_object_terms( $post_id, $cat_name, 'category' );
+				}
+				if ( taxonomy_exists( 'pcspecs_category' ) ) {
+					wp_set_object_terms( $post_id, $cat_name, 'pcspecs_category' );
+				}
 			}
+
 			if ( ! empty( $component->brand ) ) {
-				wp_set_object_terms( $post_id, $component->brand, self::TAXONOMY_BRAND );
+				if ( taxonomy_exists( self::TAXONOMY_BRAND ) ) {
+					wp_set_object_terms( $post_id, $component->brand, self::TAXONOMY_BRAND );
+				}
+				if ( taxonomy_exists( 'post_tag' ) && $post_type === 'post' ) {
+					wp_set_object_terms( $post_id, $component->brand, 'post_tag' );
+				}
+				if ( taxonomy_exists( 'pcspecs_brand' ) ) {
+					wp_set_object_terms( $post_id, $component->brand, 'pcspecs_brand' );
+				}
 			}
 		}
 
-		return $action;
+		return array(
+			'action'       => $action,
+			'post_id'      => $post_id,
+			'vendor_count' => count( $prices ),
+			'lowest_price' => $lowest_price,
+		);
 	}
 
-	protected static function build_post_content( Component $component, $lowest_price, $in_stock_count, $vendor_count ) {
+	/**
+	 * Find an existing post for this component across meta, title, or slug to prevent duplicate posts.
+	 *
+	 * @param Component $component
+	 * @param string $post_title
+	 * @param string $post_type
+	 * @return int|null Existing Post ID
+	 */
+	protected static function find_existing_post( Component $component, $post_title, $post_type ) {
+		global $wpdb;
+
+		// 1. Direct Component wp_post_id match
+		if ( ! empty( $component->wp_post_id ) ) {
+			$p = get_post( $component->wp_post_id );
+			if ( $p && $p->post_status !== 'trash' ) {
+				return intval( $component->wp_post_id );
+			}
+		}
+
+		// 2. Query by _hwsync_component_id meta key
+		$meta_match = $wpdb->get_var( $wpdb->prepare(
+			"SELECT post_id FROM {$wpdb->postmeta} pm 
+			 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id 
+			 WHERE pm.meta_key = '_hwsync_component_id' AND pm.meta_value = %d AND p.post_status != 'trash' LIMIT 1",
+			$component->id
+		) );
+		if ( $meta_match ) {
+			return intval( $meta_match );
+		}
+
+		// 3. Query by exact Post Title in target post type
+		$title_match = $wpdb->get_var( $wpdb->prepare(
+			"SELECT ID FROM {$wpdb->posts} WHERE post_title = %s AND post_type = %s AND post_status != 'trash' LIMIT 1",
+			$post_title,
+			$post_type
+		) );
+		if ( $title_match ) {
+			return intval( $title_match );
+		}
+
+		// 4. Query by slug
+		$slug = sanitize_title( $post_title );
+		$slug_match = $wpdb->get_var( $wpdb->prepare(
+			"SELECT ID FROM {$wpdb->posts} WHERE post_name = %s AND post_type = %s AND post_status != 'trash' LIMIT 1",
+			$slug,
+			$post_type
+		) );
+		if ( $slug_match ) {
+			return intval( $slug_match );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Build comprehensive HTML post content featuring specs and multi-vendor comparison table.
+	 */
+	protected static function build_post_content( Component $component, $prices, $lowest_price, $in_stock_count ) {
 		$specs = $component->get_specs();
-		$price_formatted = $lowest_price ? '₹' . number_format( $lowest_price, 2 ) : 'Check Retailers';
+		$price_formatted = $lowest_price > 0 ? '₹' . number_format( $lowest_price, 2 ) : 'Check Retailers';
+		$vendor_count = count( $prices );
 
 		$content = '<div class="hwsync-component-overview">';
-		$content .= '<p class="hwsync-summary">Compare live prices for <strong>' . esc_html( $component->brand . ' ' . $component->model_name ) . '</strong> across verified Indian computer hardware retailers. Best price starting at <strong>' . esc_html( $price_formatted ) . '</strong> across ' . intval( $vendor_count ) . ' stores.</p>';
+		$content .= '<p class="hwsync-summary">Compare live prices for <strong>' . esc_html( $component->brand . ' ' . $component->model_name ) . '</strong> across verified Indian computer hardware retailers. Best price starting at <strong>' . esc_html( $price_formatted ) . '</strong> across ' . intval( $vendor_count ) . ' stores (' . intval( $in_stock_count ) . ' in stock).</p>';
 
 		if ( ! empty( $specs ) && is_array( $specs ) ) {
 			$content .= '<h3>Technical Specifications</h3>';
