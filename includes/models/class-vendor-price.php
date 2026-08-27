@@ -149,4 +149,8 @@ class Vendor_Price {
 
 		return $this->id;
 	}
+
+	public function get_formatted_price() {
+		return '₹' . number_format( floatval( $this->price ), 2 );
+	}
 }

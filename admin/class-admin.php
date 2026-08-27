@@ -1996,8 +1996,14 @@ class Admin {
 						headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 						body: postData.toString()
 					}).then(function(res) {
-						return res.json();
-					}).then(function(json) {
+						return res.text();
+					}).then(function(text) {
+						var json;
+						try {
+							json = JSON.parse(text);
+						} catch(e) {
+							throw new Error('Server returned invalid response: ' + text.substring(0, 100));
+						}
 						document.getElementById('prices-loading-spinner').style.display = 'none';
 						document.getElementById('prices-table-wrapper').style.display = 'block';
 
@@ -2454,9 +2460,9 @@ class Admin {
 				'vendor_name'          => $p->vendor_name ?: __( 'Unknown Store', 'hwsync' ),
 				'vendor_product_title' => $p->vendor_product_title,
 				'price'                => floatval( $p->price ),
-				'display_price'        => $p->get_formatted_price(),
+				'display_price'        => method_exists( $p, 'get_formatted_price' ) ? $p->get_formatted_price() : ( '₹' . number_format( floatval( $p->price ), 2 ) ),
 				'original_price'       => $p->original_price ? floatval( $p->original_price ) : null,
-				'display_original'     => $p->original_price ? '₹' . number_format( $p->original_price, 2 ) : null,
+				'display_original'     => $p->original_price ? '₹' . number_format( floatval( $p->original_price ), 2 ) : null,
 				'product_url'          => $p->product_url,
 				'is_in_stock'          => (bool) $p->is_in_stock,
 				'stock_status'         => $p->stock_status,
