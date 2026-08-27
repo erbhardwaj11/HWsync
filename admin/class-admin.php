@@ -27,6 +27,9 @@ class Admin {
 		add_action( 'wp_ajax_hwsync_delete_vendor', array( __CLASS__, 'handle_delete_vendor' ) );
 		add_action( 'wp_ajax_hwsync_test_vendor_sync', array( __CLASS__, 'handle_test_vendor_sync' ) );
 		add_action( 'wp_ajax_hwsync_merge_components', array( __CLASS__, 'handle_merge_components' ) );
+		add_action( 'wp_ajax_hwsync_get_component_prices', array( __CLASS__, 'handle_get_component_prices' ) );
+		add_action( 'wp_ajax_hwsync_manual_merge_components', array( __CLASS__, 'handle_manual_merge_components' ) );
+		add_action( 'wp_ajax_hwsync_unmerge_vendor_price', array( __CLASS__, 'handle_unmerge_vendor_price' ) );
 	}
 
 	public static function register_admin_menu() {
@@ -1525,55 +1528,579 @@ class Admin {
 	}
 
 	public static function render_components_page() {
-		$components = Component::get_all( array( 'limit' => 50 ) );
+		$cat_filter = isset( $_GET['cat'] ) ? sanitize_text_field( $_GET['cat'] ) : 'all';
+		$search     = isset( $_GET['s'] ) ? sanitize_text_field( $_GET['s'] ) : '';
+		$paged      = isset( $_GET['paged'] ) ? max( 1, intval( $_GET['paged'] ) ) : 1;
+		$limit      = 50;
+		$offset     = ( $paged - 1 ) * $limit;
+
+		$query_args = array(
+			'category' => ( $cat_filter !== 'all' ) ? $cat_filter : '',
+			'search'   => $search,
+			'limit'    => $limit,
+			'offset'   => $offset,
+		);
+
+		$components = Component::get_all( $query_args );
+		$total_count = Component::count( $query_args );
+		$total_pages = ceil( $total_count / $limit );
+		$nonce = wp_create_nonce( 'hwsync_manual_sync_action' );
 		?>
 		<div class="wrap">
-			<h1><?php esc_html_e( 'Canonical Component Catalog', 'hwsync' ); ?></h1>
-			<p><?php esc_html_e( 'Normalized hardware items and aggregated multi-vendor prices.', 'hwsync' ); ?></p>
-			<table class="wp-list-table widefat fixed striped">
-				<thead>
-					<tr>
-						<th><?php esc_html_e( 'Brand & Model', 'hwsync' ); ?></th>
-						<th><?php esc_html_e( 'Category', 'hwsync' ); ?></th>
-						<th><?php esc_html_e( 'MPN / SKU', 'hwsync' ); ?></th>
-						<th><?php esc_html_e( 'Linked WP Post', 'hwsync' ); ?></th>
-						<th><?php esc_html_e( 'Lowest Price', 'hwsync' ); ?></th>
-						<th><?php esc_html_e( 'Stores', 'hwsync' ); ?></th>
-					</tr>
-				</thead>
-				<tbody>
-					<?php if ( empty( $components ) ) : ?>
-						<tr><td colspan="6"><?php esc_html_e( 'No components synced yet. Run a sync to populate catalog.', 'hwsync' ); ?></td></tr>
-					<?php else : ?>
-						<?php foreach ( $components as $comp ) :
-							$prices = $comp->get_prices();
-							$lowest = $comp->get_lowest_price();
-						?>
-							<tr>
-								<td><strong><?php echo esc_html( $comp->brand . ' ' . $comp->model_name ); ?></strong></td>
-								<td><span class="badge"><?php echo esc_html( ucfirst( $comp->category ) ); ?></span></td>
-								<td><code><?php echo esc_html( $comp->mpn ?: ( $comp->sku ?: '-' ) ); ?></code></td>
-								<td>
-									<?php if ( $comp->wp_post_id ) : ?>
-										<a href="<?php echo esc_url( get_edit_post_link( $comp->wp_post_id ) ); ?>" target="_blank">Post #<?php echo intval( $comp->wp_post_id ); ?></a>
-									<?php else : ?>
-										-
-									<?php endif; ?>
-								</td>
-								<td>
-									<?php if ( $lowest ) : ?>
-										<strong style="color: #16a34a;">₹<?php echo esc_html( number_format( $lowest->price, 2 ) ); ?></strong>
-										<br/><small>(<?php echo esc_html( $lowest->vendor_name ); ?>)</small>
-									<?php else : ?>
-										-
-									<?php endif; ?>
-								</td>
-								<td><?php echo count( $prices ); ?> <?php esc_html_e( 'stores', 'hwsync' ); ?></td>
-							</tr>
-						<?php endforeach; ?>
+			<h1 class="wp-heading-inline"><span class="dashicons dashicons-products" style="font-size: 30px; width: 30px; height: 30px;"></span> <?php esc_html_e( 'Canonical Component Catalog', 'hwsync' ); ?></h1>
+			<p style="color: #64748b; font-size: 13px; margin: 4px 0 16px 0;">
+				<?php esc_html_e( 'Aggregated multi-vendor hardware components. Review store pairings, merge duplicate records, or unmerge incorrectly grouped store prices.', 'hwsync' ); ?>
+			</p>
+
+			<!-- Action & Filter Bar -->
+			<div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; background: #fff; padding: 14px 16px; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+				
+				<!-- Left: Filters & Search Form -->
+				<form method="get" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+					<input type="hidden" name="page" value="hwsync-components" />
+
+					<select name="cat" onchange="this.form.submit()" style="height: 36px; border-radius: 6px; font-size: 13px;">
+						<option value="all" <?php selected( $cat_filter, 'all' ); ?>><?php esc_html_e( 'All Categories', 'hwsync' ); ?></option>
+						<option value="cpu" <?php selected( $cat_filter, 'cpu' ); ?>><?php esc_html_e( 'Processors (CPU)', 'hwsync' ); ?></option>
+						<option value="gpu" <?php selected( $cat_filter, 'gpu' ); ?>><?php esc_html_e( 'Graphics Cards (GPU)', 'hwsync' ); ?></option>
+						<option value="motherboard" <?php selected( $cat_filter, 'motherboard' ); ?>><?php esc_html_e( 'Motherboards', 'hwsync' ); ?></option>
+						<option value="ram" <?php selected( $cat_filter, 'ram' ); ?>><?php esc_html_e( 'Memory (RAM)', 'hwsync' ); ?></option>
+						<option value="storage" <?php selected( $cat_filter, 'storage' ); ?>><?php esc_html_e( 'Storage (SSDs/HDDs)', 'hwsync' ); ?></option>
+						<option value="psu" <?php selected( $cat_filter, 'psu' ); ?>><?php esc_html_e( 'Power Supply Units', 'hwsync' ); ?></option>
+						<option value="cooler" <?php selected( $cat_filter, 'cooler' ); ?>><?php esc_html_e( 'Coolers (AIO/Air)', 'hwsync' ); ?></option>
+						<option value="cabinet" <?php selected( $cat_filter, 'cabinet' ); ?>><?php esc_html_e( 'Cabinets / Cases', 'hwsync' ); ?></option>
+					</select>
+
+					<input type="search" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="<?php esc_attr_e( 'Search brand, model, SKU...', 'hwsync' ); ?>" style="height: 36px; width: 220px; border-radius: 6px; font-size: 13px;" />
+
+					<button type="submit" class="button" style="height: 36px; border-radius: 6px; font-weight: 600;"><?php esc_html_e( 'Filter', 'hwsync' ); ?></button>
+					<?php if ( $cat_filter !== 'all' || ! empty( $search ) ) : ?>
+						<a href="<?php echo esc_url( admin_url( 'admin.php?page=hwsync-components' ) ); ?>" class="button" style="height: 36px; border-radius: 6px;"><?php esc_html_e( 'Reset', 'hwsync' ); ?></a>
 					<?php endif; ?>
-				</tbody>
-			</table>
+				</form>
+
+				<!-- Right: Merge Action Buttons -->
+				<div style="display: flex; gap: 8px; align-items: center;">
+					<button type="button" id="btn-bulk-merge-selected" class="button" disabled style="height: 36px; border-radius: 6px; font-weight: 600; background: #f8fafc; border-color: #cbd5e1; color: #64748b;">
+						<span class="dashicons dashicons-randomize" style="line-height: 1.4;"></span> <?php esc_html_e( 'Merge Selected Components', 'hwsync' ); ?> (<span id="selected-comp-count">0</span>)
+					</button>
+					<button type="button" id="btn-open-manual-merge" class="button button-primary" style="height: 36px; border-radius: 6px; font-weight: 600; background: #2563eb; border-color: #1d4ed8; display: inline-flex; align-items: center; gap: 4px;">
+						<span class="dashicons dashicons-admin-links"></span> <?php esc_html_e( 'Manual Merge Tool', 'hwsync' ); ?>
+					</button>
+				</div>
+			</div>
+
+			<!-- Component Table -->
+			<div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+				<table class="wp-list-table widefat fixed striped">
+					<thead>
+						<tr>
+							<td style="width: 40px; text-align: center; vertical-align: middle;">
+								<input type="checkbox" id="cb-select-all-comps" />
+							</td>
+							<th style="font-weight: 600; color: #334155; width: 60px;">ID</th>
+							<th style="font-weight: 600; color: #334155;"><?php esc_html_e( 'Brand & Hardware Model', 'hwsync' ); ?></th>
+							<th style="font-weight: 600; color: #334155; width: 130px;"><?php esc_html_e( 'Category', 'hwsync' ); ?></th>
+							<th style="font-weight: 600; color: #334155; width: 140px;"><?php esc_html_e( 'MPN / SKU', 'hwsync' ); ?></th>
+							<th style="font-weight: 600; color: #334155; width: 160px;"><?php esc_html_e( 'Lowest Live Price', 'hwsync' ); ?></th>
+							<th style="font-weight: 600; color: #334155; width: 220px; text-align: right;"><?php esc_html_e( 'Linked Stores & Actions', 'hwsync' ); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php if ( empty( $components ) ) : ?>
+							<tr><td colspan="7" style="padding: 30px; text-align: center; color: #64748b; font-size: 14px;"><?php esc_html_e( 'No components found matching your query.', 'hwsync' ); ?></td></tr>
+						<?php else : ?>
+							<?php foreach ( $components as $comp ) :
+								$prices = $comp->get_prices();
+								$lowest = $comp->get_lowest_price();
+								$price_count = count( $prices );
+							?>
+								<tr id="comp-row-<?php echo esc_attr( $comp->id ); ?>">
+									<td style="text-align: center; vertical-align: middle;">
+										<input type="checkbox" class="cb-comp-item" value="<?php echo esc_attr( $comp->id ); ?>" data-name="<?php echo esc_attr( $comp->brand . ' ' . $comp->model_name ); ?>" data-category="<?php echo esc_attr( $comp->category ); ?>" />
+									</td>
+									<td style="vertical-align: middle; color: #64748b; font-size: 12px; font-weight: 600;">
+										#<?php echo intval( $comp->id ); ?>
+									</td>
+									<td style="vertical-align: middle;">
+										<strong style="font-size: 13.5px; color: #0f172a;"><?php echo esc_html( $comp->brand . ' ' . $comp->model_name ); ?></strong>
+										<?php if ( $comp->wp_post_id ) : ?>
+											<span style="font-size: 11px; margin-left: 6px; color: #64748b;">(Linked Post #<?php echo intval( $comp->wp_post_id ); ?>)</span>
+										<?php endif; ?>
+									</td>
+									<td style="vertical-align: middle;">
+										<span style="display: inline-block; font-size: 11px; font-weight: 700; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 12px; text-transform: uppercase;">
+											<?php echo esc_html( $comp->category ); ?>
+										</span>
+									</td>
+									<td style="vertical-align: middle; font-size: 12px; color: #475569;">
+										<code><?php echo esc_html( $comp->mpn ?: ( $comp->sku ?: '-' ) ); ?></code>
+									</td>
+									<td style="vertical-align: middle;">
+										<?php if ( $lowest && floatval( $lowest->price ) > 0 ) : ?>
+											<strong style="color: #16a34a; font-size: 14px;">₹<?php echo esc_html( number_format( $lowest->price, 2 ) ); ?></strong>
+											<br/><small style="color: #64748b; font-size: 11px;"><?php echo esc_html( $lowest->vendor_name ); ?></small>
+										<?php else : ?>
+											<span style="color: #94a3b8; font-size: 12px;">NA (Out of Stock)</span>
+										<?php endif; ?>
+									</td>
+									<td style="vertical-align: middle; text-align: right;">
+										<button type="button" class="button btn-view-comp-prices"
+											data-id="<?php echo esc_attr( $comp->id ); ?>"
+											data-name="<?php echo esc_attr( $comp->brand . ' ' . $comp->model_name ); ?>"
+											data-category="<?php echo esc_attr( $comp->category ); ?>"
+											style="background: #f0fdf4; border-color: #bbf7d0; color: #15803d; font-weight: 600; font-size: 12px; border-radius: 6px;">
+											<span class="dashicons dashicons-tag" style="font-size: 14px; width: 14px; height: 14px; margin-top: 2px;"></span>
+											<?php echo sprintf( esc_html__( '%d Stores Linked', 'hwsync' ), $price_count ); ?>
+										</button>
+									</td>
+								</tr>
+							<?php endforeach; ?>
+						<?php endif; ?>
+					</tbody>
+				</table>
+			</div>
+
+			<!-- Pagination -->
+			<?php if ( $total_pages > 1 ) : ?>
+				<div style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center; color: #64748b; font-size: 13px;">
+					<div>
+						<?php echo sprintf( esc_html__( 'Showing page %d of %d (%d total items)', 'hwsync' ), $paged, $total_pages, $total_count ); ?>
+					</div>
+					<div style="display: flex; gap: 4px;">
+						<?php for ( $i = 1; $i <= $total_pages; $i++ ) : 
+							if ( $i == 1 || $i == $total_pages || abs( $i - $paged ) <= 2 ) :
+								$url = add_query_arg( array( 'paged' => $i, 'cat' => $cat_filter, 's' => $search ) );
+								$is_curr = ( $i == $paged );
+						?>
+							<a href="<?php echo esc_url( $url ); ?>" class="button <?php echo $is_curr ? 'button-primary' : ''; ?>" style="min-width: 32px; text-align: center;">
+								<?php echo intval( $i ); ?>
+							</a>
+						<?php elseif ( abs( $i - $paged ) == 3 ) : ?>
+							<span style="padding: 0 6px; line-height: 30px;">...</span>
+						<?php endif; endfor; ?>
+					</div>
+				</div>
+			<?php endif; ?>
+
+			<!-- Modal 1: Linked Stores & Price Management / Unmerge Modal -->
+			<div id="modal-manage-prices" style="display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.6); z-index: 100000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+				<div style="background: #fff; width: 780px; max-width: 95%; max-height: 90vh; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); overflow-y: auto; display: flex; flex-direction: column;">
+					
+					<div style="padding: 16px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc;">
+						<div>
+							<h2 id="modal-prices-comp-title" style="margin: 0; font-size: 17px; font-weight: 700; color: #0f172a;">Component Linked Stores</h2>
+							<span id="modal-prices-comp-cat" style="font-size: 11px; font-weight: 600; color: #0369a1; text-transform: uppercase;">CATEGORY</span>
+						</div>
+						<button type="button" id="btn-close-prices-modal" style="background: none; border: none; font-size: 24px; color: #64748b; cursor: pointer;">&times;</button>
+					</div>
+
+					<div style="padding: 20px 24px; flex: 1;">
+						<p style="color: #64748b; font-size: 12px; margin-top: 0; line-height: 1.5;">
+							<?php esc_html_e( 'Review each retailer price listing paired to this canonical hardware item. If any store product was paired incorrectly, click "Unmerge / Split" to detach it into its own separate standalone component record.', 'hwsync' ); ?>
+						</p>
+
+						<div id="prices-loading-spinner" style="text-align: center; padding: 30px; color: #64748b; font-size: 13px;">
+							<span class="dashicons dashicons-update spin" style="font-size: 24px; width: 24px; height: 24px; animation: rotation 1s infinite linear;"></span>
+							<p><?php esc_html_e( 'Loading linked store listings...', 'hwsync' ); ?></p>
+						</div>
+
+						<div id="prices-table-wrapper" style="display: none;">
+							<table class="widefat striped" style="border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden;">
+								<thead>
+									<tr style="background: #f8fafc;">
+										<th style="font-weight: 600; color: #334155;"><?php esc_html_e( 'Retailer Store', 'hwsync' ); ?></th>
+										<th style="font-weight: 600; color: #334155;"><?php esc_html_e( 'Product Listing at Store', 'hwsync' ); ?></th>
+										<th style="font-weight: 600; color: #334155; width: 140px;"><?php esc_html_e( 'Live Price', 'hwsync' ); ?></th>
+										<th style="font-weight: 600; color: #334155; width: 160px; text-align: right;"><?php esc_html_e( 'Pairing Action', 'hwsync' ); ?></th>
+									</tr>
+								</thead>
+								<tbody id="prices-modal-tbody">
+									<!-- Dynamic Rows Injected by JS -->
+								</tbody>
+							</table>
+						</div>
+					</div>
+
+					<div style="display: flex; justify-content: flex-end; padding: 14px 24px; border-top: 1px solid #e2e8f0; background: #f8fafc;">
+						<button type="button" id="btn-done-prices-modal" class="button button-primary" style="background: #2563eb; border-color: #1d4ed8; padding: 0 20px; font-weight: 600;">
+							<?php esc_html_e( 'Done', 'hwsync' ); ?>
+						</button>
+					</div>
+				</div>
+			</div>
+
+			<!-- Modal 2: Manual Component Merge Tool Modal -->
+			<div id="modal-manual-merge" style="display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.6); z-index: 100000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+				<div style="background: #fff; width: 620px; max-width: 95%; max-height: 90vh; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); overflow-y: auto; display: flex; flex-direction: column;">
+					
+					<div style="padding: 16px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc;">
+						<h2 style="margin: 0; font-size: 17px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+							<span class="dashicons dashicons-randomize" style="color: #2563eb;"></span>
+							<?php esc_html_e( 'Merge Components Tool', 'hwsync' ); ?>
+						</h2>
+						<button type="button" id="btn-close-merge-modal" style="background: none; border: none; font-size: 24px; color: #64748b; cursor: pointer;">&times;</button>
+					</div>
+
+					<form id="form-manual-merge" style="padding: 20px 24px; flex: 1;">
+						<p style="color: #64748b; font-size: 12.5px; margin-top: 0; line-height: 1.5;">
+							<?php esc_html_e( 'Consolidate multiple separate component records into a single canonical hardware item. All vendor price listings will be reassigned to the Primary Component, technical specifications merged, and the redundant component deleted.', 'hwsync' ); ?>
+						</p>
+
+						<div style="margin-bottom: 16px;">
+							<label style="display: block; font-weight: 600; font-size: 12px; color: #334155; margin-bottom: 6px;">
+								<span class="dashicons dashicons-yes" style="color: #16a34a; font-size: 16px;"></span>
+								<?php esc_html_e( 'Primary Component (Target to Retain):', 'hwsync' ); ?>
+							</label>
+							<select id="merge-target-select" style="width: 100%; height: 38px; border-radius: 6px;" required>
+								<option value=""><?php esc_html_e( '-- Select Primary Component --', 'hwsync' ); ?></option>
+								<?php foreach ( $components as $comp ) : ?>
+									<option value="<?php echo esc_attr( $comp->id ); ?>">
+										#<?php echo intval( $comp->id ); ?> - [<?php echo esc_html( strtoupper( $comp->category ) ); ?>] <?php echo esc_html( $comp->brand . ' ' . $comp->model_name ); ?>
+									</option>
+								<?php endforeach; ?>
+							</select>
+						</div>
+
+						<div style="margin-bottom: 20px;">
+							<label style="display: block; font-weight: 600; font-size: 12px; color: #334155; margin-bottom: 6px;">
+								<span class="dashicons dashicons-no" style="color: #dc2626; font-size: 16px;"></span>
+								<?php esc_html_e( 'Secondary Component (Source to Merge & Remove):', 'hwsync' ); ?>
+							</label>
+							<select id="merge-source-select" style="width: 100%; height: 38px; border-radius: 6px;" required>
+								<option value=""><?php esc_html_e( '-- Select Component to Merge --', 'hwsync' ); ?></option>
+								<?php foreach ( $components as $comp ) : ?>
+									<option value="<?php echo esc_attr( $comp->id ); ?>">
+										#<?php echo intval( $comp->id ); ?> - [<?php echo esc_html( strtoupper( $comp->category ) ); ?>] <?php echo esc_html( $comp->brand . ' ' . $comp->model_name ); ?>
+									</option>
+								<?php endforeach; ?>
+							</select>
+						</div>
+
+						<div id="merge-alert-box" style="display: none; padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 12px; font-weight: 600;"></div>
+
+						<div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+							<button type="button" id="btn-cancel-merge-modal" class="button"><?php esc_html_e( 'Cancel', 'hwsync' ); ?></button>
+							<button type="submit" id="btn-submit-manual-merge" class="button button-primary" style="background: #2563eb; border-color: #1d4ed8; padding: 0 20px; font-weight: 600;">
+								<?php esc_html_e( 'Merge Components Now', 'hwsync' ); ?>
+							</button>
+						</div>
+					</form>
+				</div>
+			</div>
+
+			<!-- JavaScript Controller for Merge and Unmerge Actions -->
+			<script>
+			document.addEventListener('DOMContentLoaded', function() {
+				var nonce = '<?php echo esc_js( $nonce ); ?>';
+				var modalPrices = document.getElementById('modal-manage-prices');
+				var modalMerge = document.getElementById('modal-manual-merge');
+				var selectedComps = [];
+
+				// Checkbox Multi-Select logic
+				var cbAll = document.getElementById('cb-select-all-comps');
+				var itemCbs = document.querySelectorAll('.cb-comp-item');
+				var bulkMergeBtn = document.getElementById('btn-bulk-merge-selected');
+				var selCountLabel = document.getElementById('selected-comp-count');
+
+				function updateSelectedState() {
+					selectedComps = [];
+					itemCbs.forEach(function(cb) {
+						if (cb.checked) {
+							selectedComps.push({
+								id: cb.value,
+								name: cb.getAttribute('data-name'),
+								category: cb.getAttribute('data-category')
+							});
+						}
+					});
+
+					selCountLabel.textContent = selectedComps.length;
+					if (selectedComps.length >= 2) {
+						bulkMergeBtn.disabled = false;
+						bulkMergeBtn.style.background = '#2563eb';
+						bulkMergeBtn.style.borderColor = '#1d4ed8';
+						bulkMergeBtn.style.color = '#fff';
+					} else {
+						bulkMergeBtn.disabled = true;
+						bulkMergeBtn.style.background = '#f8fafc';
+						bulkMergeBtn.style.borderColor = '#cbd5e1';
+						bulkMergeBtn.style.color = '#64748b';
+					}
+				}
+
+				if (cbAll) {
+					cbAll.addEventListener('change', function() {
+						itemCbs.forEach(function(cb) { cb.checked = cbAll.checked; });
+						updateSelectedState();
+					});
+				}
+
+				itemCbs.forEach(function(cb) {
+					cb.addEventListener('change', function() {
+						updateSelectedState();
+					});
+				});
+
+				// Open Manual Merge Modal
+				document.getElementById('btn-open-manual-merge').addEventListener('click', function() {
+					modalMerge.style.display = 'flex';
+				});
+
+				document.getElementById('btn-close-merge-modal').addEventListener('click', function() {
+					modalMerge.style.display = 'none';
+				});
+				document.getElementById('btn-cancel-merge-modal').addEventListener('click', function() {
+					modalMerge.style.display = 'none';
+				});
+
+				// Bulk Merge Selected
+				bulkMergeBtn.addEventListener('click', function() {
+					if (selectedComps.length < 2) return;
+
+					var target = selectedComps[0];
+					var sources = selectedComps.slice(1);
+
+					var sourceNames = sources.map(function(s) { return '"' + s.name + '"'; }).join(', ');
+					if (confirm('Merge ' + sources.length + ' component(s) (' + sourceNames + ') into primary component "' + target.name + '"?')) {
+						var mergeIdx = 0;
+						bulkMergeBtn.disabled = true;
+						bulkMergeBtn.textContent = 'Merging...';
+
+						function mergeNextStep() {
+							if (mergeIdx >= sources.length) {
+								alert('Successfully merged selected components!');
+								window.location.reload();
+								return;
+							}
+
+							var curSource = sources[mergeIdx++];
+							var postData = new URLSearchParams();
+							postData.append('action', 'hwsync_manual_merge_components');
+							postData.append('target_id', target.id);
+							postData.append('source_id', curSource.id);
+							postData.append('hwsync_nonce', nonce);
+
+							fetch(ajaxurl, {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+								body: postData.toString()
+							}).then(function(res) {
+								return res.json();
+							}).then(function(json) {
+								if (json.success) {
+									mergeNextStep();
+								} else {
+									alert('Error merging: ' + (json.data && json.data.message ? json.data.message : 'Unknown error'));
+									window.location.reload();
+								}
+							}).catch(function(err) {
+								alert('Network error: ' + err.message);
+								window.location.reload();
+							});
+						}
+
+						mergeNextStep();
+					}
+				});
+
+				// Submit Manual Merge Form
+				document.getElementById('form-manual-merge').addEventListener('submit', function(e) {
+					e.preventDefault();
+					var targetId = document.getElementById('merge-target-select').value;
+					var sourceId = document.getElementById('merge-source-select').value;
+					var submitBtn = document.getElementById('btn-submit-manual-merge');
+					var alertBox = document.getElementById('merge-alert-box');
+
+					if (targetId === sourceId) {
+						alertBox.style.display = 'block';
+						alertBox.style.background = '#fee2e2';
+						alertBox.style.color = '#dc2626';
+						alertBox.textContent = 'Primary and secondary components cannot be the same.';
+						return;
+					}
+
+					submitBtn.disabled = true;
+					submitBtn.textContent = 'Merging...';
+
+					var postData = new URLSearchParams();
+					postData.append('action', 'hwsync_manual_merge_components');
+					postData.append('target_id', targetId);
+					postData.append('source_id', sourceId);
+					postData.append('hwsync_nonce', nonce);
+
+					fetch(ajaxurl, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+						body: postData.toString()
+					}).then(function(res) {
+						return res.json();
+					}).then(function(json) {
+						submitBtn.disabled = false;
+						submitBtn.textContent = '<?php esc_html_e( "Merge Components Now", "hwsync" ); ?>';
+						if (json.success) {
+							alert(json.data && json.data.message ? json.data.message : 'Components merged successfully!');
+							window.location.reload();
+						} else {
+							alertBox.style.display = 'block';
+							alertBox.style.background = '#fee2e2';
+							alertBox.style.color = '#dc2626';
+							alertBox.textContent = (json.data && json.data.message) ? json.data.message : 'Error merging components.';
+						}
+					}).catch(function(err) {
+						submitBtn.disabled = false;
+						submitBtn.textContent = '<?php esc_html_e( "Merge Components Now", "hwsync" ); ?>';
+						alertBox.style.display = 'block';
+						alertBox.style.background = '#fee2e2';
+						alertBox.style.color = '#dc2626';
+						alertBox.textContent = 'Network error: ' + err.message;
+					});
+				});
+
+				// View & Unmerge Prices Modal
+				var currentActiveCompId = null;
+
+				document.querySelectorAll('.btn-view-comp-prices').forEach(function(btn) {
+					btn.addEventListener('click', function() {
+						var compId = this.getAttribute('data-id');
+						var compName = this.getAttribute('data-name');
+						var compCat = this.getAttribute('data-category');
+
+						currentActiveCompId = compId;
+						document.getElementById('modal-prices-comp-title').textContent = compName;
+						document.getElementById('modal-prices-comp-cat').textContent = compCat;
+
+						document.getElementById('prices-loading-spinner').style.display = 'block';
+						document.getElementById('prices-table-wrapper').style.display = 'none';
+						modalPrices.style.display = 'flex';
+
+						loadComponentPrices(compId);
+					});
+				});
+
+				document.getElementById('btn-close-prices-modal').addEventListener('click', function() {
+					modalPrices.style.display = 'none';
+				});
+				document.getElementById('btn-done-prices-modal').addEventListener('click', function() {
+					modalPrices.style.display = 'none';
+				});
+
+				function loadComponentPrices(compId) {
+					var postData = new URLSearchParams();
+					postData.append('action', 'hwsync_get_component_prices');
+					postData.append('component_id', compId);
+					postData.append('hwsync_nonce', nonce);
+
+					fetch(ajaxurl, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+						body: postData.toString()
+					}).then(function(res) {
+						return res.json();
+					}).then(function(json) {
+						document.getElementById('prices-loading-spinner').style.display = 'none';
+						document.getElementById('prices-table-wrapper').style.display = 'block';
+
+						var tbody = document.getElementById('prices-modal-tbody');
+						tbody.innerHTML = '';
+
+						if (json.success && json.data && json.data.prices && json.data.prices.length > 0) {
+							json.data.prices.forEach(function(p) {
+								var tr = document.createElement('tr');
+								tr.id = 'vp-row-' + p.id;
+
+								var stockBadge = p.is_in_stock 
+									? '<span style="color: #16a34a; font-weight: 600; font-size: 11px; background: #dcfce7; padding: 2px 6px; border-radius: 4px;">In Stock</span>'
+									: '<span style="color: #dc2626; font-weight: 600; font-size: 11px; background: #fee2e2; padding: 2px 6px; border-radius: 4px;">Out of Stock</span>';
+
+								var originalPriceHtml = p.display_original ? ' <del style="color: #94a3b8; font-size: 11px; margin-left: 4px;">' + p.display_original + '</del>' : '';
+
+								tr.innerHTML = 
+									'<td style="vertical-align: middle;">' +
+										'<strong style="font-size: 13px; color: #0f172a;">' + escapeHtml(p.vendor_name) + '</strong>' +
+									'</td>' +
+									'<td style="vertical-align: middle;">' +
+										'<a href="' + escapeHtml(p.product_url) + '" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 12.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">' +
+											escapeHtml(p.vendor_product_title) + ' <span class="dashicons dashicons-external" style="font-size: 13px; width: 13px; height: 13px;"></span>' +
+										'</a>' +
+									'</td>' +
+									'<td style="vertical-align: middle;">' +
+										'<strong style="color: #16a34a; font-size: 13.5px;">' + escapeHtml(p.display_price) + '</strong>' + originalPriceHtml + '<br/>' + stockBadge +
+									'</td>' +
+									'<td style="vertical-align: middle; text-align: right;">' +
+										'<button type="button" class="button btn-unmerge-price" data-id="' + p.id + '" data-title="' + escapeHtml(p.vendor_product_title) + '" style="background: #fff; border-color: #fca5a5; color: #dc2626; font-size: 11.5px; font-weight: 600; border-radius: 6px;">' +
+											'<span class="dashicons dashicons-editor-unlink" style="font-size: 14px; width: 14px; height: 14px; margin-top: 2px;"></span> <?php esc_html_e( "Unmerge / Split", "hwsync" ); ?>' +
+										'</button>' +
+									'</td>';
+
+								tbody.appendChild(tr);
+							});
+
+							// Attach click handlers to unmerge buttons
+							document.querySelectorAll('.btn-unmerge-price').forEach(function(unmergeBtn) {
+								unmergeBtn.addEventListener('click', function() {
+									var vpId = this.getAttribute('data-id');
+									var vpTitle = this.getAttribute('data-title');
+
+									var customName = prompt('Detach this listing into a new standalone component.\nEnter component name:', vpTitle);
+									if (customName !== null) {
+										unmergeBtn.disabled = true;
+										unmergeBtn.textContent = 'Unmerging...';
+
+										var uData = new URLSearchParams();
+										uData.append('action', 'hwsync_unmerge_vendor_price');
+										uData.append('vendor_price_id', vpId);
+										uData.append('custom_model_name', customName);
+										uData.append('hwsync_nonce', nonce);
+
+										fetch(ajaxurl, {
+											method: 'POST',
+											headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+											body: uData.toString()
+										}).then(function(res) {
+											return res.json();
+										}).then(function(json) {
+											if (json.success) {
+												var row = document.getElementById('vp-row-' + vpId);
+												if (row) row.remove();
+												alert(json.data && json.data.message ? json.data.message : 'Successfully separated into a new component!');
+												window.location.reload();
+											} else {
+												alert('Error unmerging: ' + (json.data && json.data.message ? json.data.message : 'Unknown error'));
+												unmergeBtn.disabled = false;
+												unmergeBtn.textContent = 'Unmerge / Split';
+											}
+										}).catch(function(err) {
+											alert('Network error: ' + err.message);
+											unmergeBtn.disabled = false;
+											unmergeBtn.textContent = 'Unmerge / Split';
+										});
+									}
+								});
+							});
+
+						} else {
+							tbody.innerHTML = '<tr><td colspan="4" style="padding: 20px; text-align: center; color: #64748b;">No active store prices currently linked to this component.</td></tr>';
+						}
+					}).catch(function(err) {
+						document.getElementById('prices-loading-spinner').style.display = 'none';
+						alert('Error loading prices: ' + err.message);
+					});
+				}
+
+				function escapeHtml(text) {
+					if (typeof text !== 'string') return text;
+					var map = {
+						'&': '&amp;',
+						'<': '&lt;',
+						'>': '&gt;',
+						'"': '&quot;',
+						"'": '&#039;'
+					};
+					return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+				}
+			});
+			</script>
 		</div>
 		<?php
 	}
@@ -1904,6 +2431,82 @@ class Admin {
 		$result = Matching_Engine::merge_duplicate_components( $category );
 
 		wp_send_json_success( $result );
+	}
+
+	public static function handle_get_component_prices() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$component_id = isset( $_POST['component_id'] ) ? intval( $_POST['component_id'] ) : 0;
+		$component = Component::find_by_id( $component_id );
+		if ( ! $component ) {
+			wp_send_json_error( array( 'message' => __( 'Component not found.', 'hwsync' ) ) );
+		}
+
+		$prices = $component->get_prices();
+		$data = array();
+		foreach ( $prices as $p ) {
+			$data[] = array(
+				'id'                   => intval( $p->id ),
+				'vendor_id'            => intval( $p->vendor_id ),
+				'vendor_name'          => $p->vendor_name ?: __( 'Unknown Store', 'hwsync' ),
+				'vendor_product_title' => $p->vendor_product_title,
+				'price'                => floatval( $p->price ),
+				'display_price'        => $p->get_formatted_price(),
+				'original_price'       => $p->original_price ? floatval( $p->original_price ) : null,
+				'display_original'     => $p->original_price ? '₹' . number_format( $p->original_price, 2 ) : null,
+				'product_url'          => $p->product_url,
+				'is_in_stock'          => (bool) $p->is_in_stock,
+				'stock_status'         => $p->stock_status,
+				'last_checked_at'      => $p->last_checked_at,
+			);
+		}
+
+		wp_send_json_success( array(
+			'component_id' => $component->id,
+			'brand'        => $component->brand,
+			'model_name'   => $component->model_name,
+			'category'     => $component->category,
+			'prices'       => $data,
+		) );
+	}
+
+	public static function handle_manual_merge_components() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$target_id = isset( $_POST['target_id'] ) ? intval( $_POST['target_id'] ) : 0;
+		$source_id = isset( $_POST['source_id'] ) ? intval( $_POST['source_id'] ) : 0;
+
+		$result = Matching_Engine::manual_merge_components( $target_id, $source_id );
+
+		if ( ! empty( $result['success'] ) ) {
+			wp_send_json_success( $result );
+		} else {
+			wp_send_json_error( $result );
+		}
+	}
+
+	public static function handle_unmerge_vendor_price() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$vendor_price_id   = isset( $_POST['vendor_price_id'] ) ? intval( $_POST['vendor_price_id'] ) : 0;
+		$custom_model_name = isset( $_POST['custom_model_name'] ) ? sanitize_text_field( $_POST['custom_model_name'] ) : null;
+
+		$result = Matching_Engine::unmerge_vendor_price( $vendor_price_id, $custom_model_name );
+
+		if ( ! empty( $result['success'] ) ) {
+			wp_send_json_success( $result );
+		} else {
+			wp_send_json_error( $result );
+		}
 	}
 
 	public static function handle_stream_specs_sync() {

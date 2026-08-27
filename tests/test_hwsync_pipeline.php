@@ -866,6 +866,67 @@ assert_test( 'Sync_Manager dynamically generates Configurable_Vendor_Adapter obe
 	$adapter_instance instanceof \HWsync\Vendors\Configurable_Vendor_Adapter
 ) );
 
+// Test 26: Manual Component Merge
+$comp_primary = new \HWsync\Models\Component( array(
+	'brand'      => 'Gigabyte',
+	'model_name' => 'GeForce RTX 4070 Windforce OC 12GB',
+	'category'   => 'gpu',
+) );
+$comp_primary->save();
+
+$vp_prim = new \HWsync\Models\Vendor_Price( array(
+	'component_id'         => $comp_primary->id,
+	'vendor_id'            => 1,
+	'vendor_product_title' => 'Gigabyte RTX 4070 Windforce OC 12GB',
+	'price'                => 55999.00,
+	'product_url'          => 'https://example.com/gpu1',
+	'is_in_stock'          => 1,
+) );
+$vp_prim->save();
+
+$comp_secondary = new \HWsync\Models\Component( array(
+	'brand'      => 'Gigabyte',
+	'model_name' => 'RTX 4070 12GB Windforce Edition',
+	'category'   => 'gpu',
+) );
+$comp_secondary->save();
+
+$vp_sec = new \HWsync\Models\Vendor_Price( array(
+	'component_id'         => $comp_secondary->id,
+	'vendor_id'            => 2,
+	'vendor_product_title' => 'Gigabyte RTX 4070 Windforce 12G Graphics Card',
+	'price'                => 54500.00,
+	'product_url'          => 'https://example.com/gpu2',
+	'is_in_stock'          => 1,
+) );
+$vp_sec->save();
+
+$manual_merge_res = \HWsync\Matching_Engine::manual_merge_components( $comp_primary->id, $comp_secondary->id );
+$merged_prices = hwsync_get_vendor_prices( $comp_primary->id );
+$lowest_merged_gpu = hwsync_get_lowest_price( $comp_primary->id );
+$deleted_secondary = \HWsync\Models\Component::find_by_id( $comp_secondary->id );
+
+assert_test( 'Manual Merge reassigns store prices, eliminates secondary component, and updates lowest price (₹54,500)', (
+	! empty( $manual_merge_res['success'] ) &&
+	count( $merged_prices ) === 2 &&
+	$lowest_merged_gpu === 54500.00 &&
+	$deleted_secondary === null
+) );
+
+// Test 27: Unmerge / Split Vendor Price into Standalone Component
+$unmerge_res = \HWsync\Matching_Engine::unmerge_vendor_price( $vp_sec->id, 'Gigabyte RTX 4070 Custom Split Component' );
+$old_comp_prices_after = hwsync_get_vendor_prices( $comp_primary->id );
+$new_comp_created = \HWsync\Models\Component::find_by_id( $unmerge_res['new_component_id'] ?? 0 );
+$new_comp_prices = $new_comp_created ? hwsync_get_vendor_prices( $new_comp_created->id ) : array();
+
+assert_test( 'Unmerge / Split detaches store price, creates clean standalone component, and updates pairing matrices', (
+	! empty( $unmerge_res['success'] ) &&
+	count( $old_comp_prices_after ) === 1 &&
+	$new_comp_created !== null &&
+	$new_comp_created->model_name === 'Gigabyte RTX 4070 Custom Split Component' &&
+	count( $new_comp_prices ) === 1
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

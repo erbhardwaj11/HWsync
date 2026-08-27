@@ -520,4 +520,166 @@ class Matching_Engine {
 			'logs'             => $logs,
 		);
 	}
+
+	/**
+	 * Manually merge one source component into a target canonical component.
+	 *
+	 * @param int $target_id Primary component ID to retain.
+	 * @param int $source_id Secondary component ID to merge and remove.
+	 * @return array Result status and message.
+	 */
+	public static function manual_merge_components( $target_id, $source_id ) {
+		global $wpdb;
+
+		$target_id = intval( $target_id );
+		$source_id = intval( $source_id );
+
+		if ( $target_id <= 0 || $source_id <= 0 || $target_id === $source_id ) {
+			return array(
+				'success' => false,
+				'message' => __( 'Invalid target or source component ID.', 'hwsync' ),
+			);
+		}
+
+		$target = Component::find_by_id( $target_id );
+		$source = Component::find_by_id( $source_id );
+
+		if ( ! $target || ! $source ) {
+			return array(
+				'success' => false,
+				'message' => __( 'One or both components could not be found.', 'hwsync' ),
+			);
+		}
+
+		$prices_table = Database::get_table_name( 'vendor_prices' );
+		$comp_table   = Database::get_table_name( 'components' );
+
+		// Move / merge vendor prices
+		$target_prices = $target->get_prices();
+		$existing_vendors = array();
+		foreach ( $target_prices as $tp ) {
+			$existing_vendors[ $tp->vendor_id ] = $tp;
+		}
+
+		$source_prices = $source->get_prices();
+		$moved_count = 0;
+
+		foreach ( $source_prices as $sp ) {
+			if ( isset( $existing_vendors[ $sp->vendor_id ] ) ) {
+				$existing_vp = $existing_vendors[ $sp->vendor_id ];
+				// If source price is active and lower, update the target's price record
+				if ( floatval( $sp->price ) > 0 && ( floatval( $existing_vp->price ) <= 0 || floatval( $sp->price ) < floatval( $existing_vp->price ) ) ) {
+					$existing_vp->price          = $sp->price;
+					$existing_vp->original_price = $sp->original_price ?: $existing_vp->original_price;
+					$existing_vp->product_url    = $sp->product_url ?: $existing_vp->product_url;
+					$existing_vp->is_in_stock    = $sp->is_in_stock;
+					$existing_vp->save();
+				}
+				// Delete duplicate price listing
+				$wpdb->query( $wpdb->prepare( "DELETE FROM {$prices_table} WHERE id = %d", $sp->id ) );
+			} else {
+				// Reassign vendor price to target
+				$sp->component_id = $target->id;
+				$sp->save();
+				$existing_vendors[ $sp->vendor_id ] = $sp;
+			}
+			$moved_count++;
+		}
+
+		// Merge specs
+		$target_specs = $target->get_specs() ?: array();
+		$source_specs = $source->get_specs() ?: array();
+		if ( ! empty( $source_specs ) ) {
+			$target->specs_json = array_merge( $source_specs, $target_specs );
+		}
+
+		if ( empty( $target->mpn ) && ! empty( $source->mpn ) ) {
+			$target->mpn = $source->mpn;
+		}
+		if ( empty( $target->sku ) && ! empty( $source->sku ) ) {
+			$target->sku = $source->sku;
+		}
+		$target->save();
+
+		// Delete source component
+		$wpdb->query( $wpdb->prepare( "DELETE FROM {$comp_table} WHERE id = %d", $source->id ) );
+
+		return array(
+			'success'          => true,
+			'target_id'        => $target->id,
+			'prices_moved'     => $moved_count,
+			'message'          => sprintf( __( 'Successfully merged "%s" into "%s"!', 'hwsync' ), $source->model_name, $target->model_name ),
+		);
+	}
+
+	/**
+	 * Unmerge / Split an incorrectly paired vendor price listing into a new separate component.
+	 *
+	 * @param int $vendor_price_id The vendor price row to detach.
+	 * @param string|null $custom_model_name Optional custom name for the new component.
+	 * @return array Result with new component ID and message.
+	 */
+	public static function unmerge_vendor_price( $vendor_price_id, $custom_model_name = null ) {
+		global $wpdb;
+
+		$vp_id = intval( $vendor_price_id );
+		$prices_table = Database::get_table_name( 'vendor_prices' );
+		$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$prices_table} WHERE id = %d", $vp_id ), \ARRAY_A );
+
+		if ( ! $row ) {
+			return array(
+				'success' => false,
+				'message' => __( 'Vendor price record not found.', 'hwsync' ),
+			);
+		}
+
+		$vendor_price = new \HWsync\Models\Vendor_Price( $row );
+		$old_comp_id = $vendor_price->component_id;
+		$old_comp = Component::find_by_id( $old_comp_id );
+
+		$category = $old_comp ? $old_comp->category : 'other';
+		$raw_title = ! empty( $vendor_price->vendor_product_title ) ? $vendor_price->vendor_product_title : 'Separated Hardware Component';
+
+		// Parse brand and model name
+		$brand = 'Generic';
+		$brands = array( 'AMD', 'Intel', 'NVIDIA', 'Asus', 'Gigabyte', 'MSI', 'Zotac', 'Galax', 'Inno3D', 'Sapphire', 'PowerColor', 'Corsair', 'G.Skill', 'Kingston', 'Crucial', 'Adata', 'Samsung', 'Western Digital', 'WD', 'Seagate', 'Cooler Master', 'DeepCool', 'NZXT', 'Lian Li', 'Thermaltake', 'Antec', 'SilverStone', 'Ant Esports' );
+		foreach ( $brands as $b ) {
+			if ( stripos( $raw_title, $b ) !== false ) {
+				$brand = $b;
+				break;
+			}
+		}
+
+		$model_name = ! empty( $custom_model_name ) ? sanitize_text_field( $custom_model_name ) : $raw_title;
+
+		// Create new standalone component
+		$new_comp = new Component( array(
+			'category'   => $category,
+			'brand'      => $brand,
+			'model_name' => $model_name,
+			'sku'        => $vendor_price->vendor_sku ?: null,
+			'mpn'        => null,
+			'specs_json' => array(),
+		) );
+		$new_comp_id = $new_comp->save();
+
+		if ( ! $new_comp_id ) {
+			return array(
+				'success' => false,
+				'message' => __( 'Failed to create new separated component.', 'hwsync' ),
+			);
+		}
+
+		// Re-link vendor price to the new component
+		$vendor_price->component_id = $new_comp_id;
+		$vendor_price->save();
+
+		return array(
+			'success'          => true,
+			'old_component_id' => $old_comp_id,
+			'new_component_id' => $new_comp_id,
+			'new_model_name'   => $model_name,
+			'message'          => sprintf( __( 'Successfully unmerged "%s" into its own separate component record (#%d)!', 'hwsync' ), $raw_title, $new_comp_id ),
+		);
+	}
 }

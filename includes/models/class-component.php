@@ -74,18 +74,28 @@ class Component {
 		global $wpdb;
 		$table = Database::get_table_name( 'components' );
 		$category = isset( $args['category'] ) ? $args['category'] : '';
-		$limit = isset( $args['limit'] ) ? intval( $args['limit'] ) : 100;
-		$offset = isset( $args['offset'] ) ? intval( $args['offset'] ) : 0;
+		$search   = isset( $args['search'] ) ? trim( $args['search'] ) : '';
+		$limit    = isset( $args['limit'] ) ? intval( $args['limit'] ) : 100;
+		$offset   = isset( $args['offset'] ) ? intval( $args['offset'] ) : 0;
 
 		$where = 'WHERE 1=1';
 		$params = array();
 
-		if ( ! empty( $category ) ) {
+		if ( ! empty( $category ) && $category !== 'all' ) {
 			$where .= ' AND category = %s';
 			$params[] = $category;
 		}
 
-		$sql = "SELECT * FROM {$table} {$where} ORDER BY id ASC LIMIT %d OFFSET %d";
+		if ( ! empty( $search ) ) {
+			$like = '%' . $wpdb->esc_like( $search ) . '%';
+			$where .= ' AND (brand LIKE %s OR model_name LIKE %s OR mpn LIKE %s OR sku LIKE %s)';
+			$params[] = $like;
+			$params[] = $like;
+			$params[] = $like;
+			$params[] = $like;
+		}
+
+		$sql = "SELECT * FROM {$table} {$where} ORDER BY id DESC LIMIT %d OFFSET %d";
 		$params[] = $limit;
 		$params[] = $offset;
 
@@ -103,12 +113,30 @@ class Component {
 		global $wpdb;
 		$table = Database::get_table_name( 'components' );
 		$category = isset( $args['category'] ) ? $args['category'] : '';
+		$search   = isset( $args['search'] ) ? trim( $args['search'] ) : '';
+
+		$where = 'WHERE 1=1';
+		$params = array();
 
 		if ( ! empty( $category ) && $category !== 'all' ) {
-			return intval( $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE category = %s", $category ) ) );
+			$where .= ' AND category = %s';
+			$params[] = $category;
 		}
 
-		return intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" ) );
+		if ( ! empty( $search ) ) {
+			$like = '%' . $wpdb->esc_like( $search ) . '%';
+			$where .= ' AND (brand LIKE %s OR model_name LIKE %s OR mpn LIKE %s OR sku LIKE %s)';
+			$params[] = $like;
+			$params[] = $like;
+			$params[] = $like;
+			$params[] = $like;
+		}
+
+		if ( empty( $params ) ) {
+			return intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" ) );
+		}
+
+		return intval( $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} {$where}", ...$params ) ) );
 	}
 
 	public function save() {
