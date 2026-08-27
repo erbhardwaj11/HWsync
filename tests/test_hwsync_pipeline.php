@@ -441,6 +441,7 @@ function wp_set_object_terms( $post_id, $terms, $taxonomy ) {
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-database.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-backup-manager.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-specs-sync-manager.php';
+require_once HWSYNC_PLUGIN_DIR . 'includes/class-image-sync-manager.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-cron.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/models/class-component.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/models/class-vendor.php';
@@ -925,6 +926,38 @@ assert_test( 'Unmerge / Split detaches store price, creates clean standalone com
 	$new_comp_created !== null &&
 	$new_comp_created->model_name === 'Gigabyte RTX 4070 Custom Split Component' &&
 	count( $new_comp_prices ) === 1
+) );
+
+// Test 28: Extract Product Image from HTML (OpenGraph, Schema, WooCommerce)
+$mock_html_og = '<html><head><meta property="og:image" content="https://example.com/images/products/rtx-4070-windforce.jpg" /><title>Gigabyte RTX 4070</title></head><body><h1>Gigabyte RTX 4070</h1></body></html>';
+$extracted_img_og = \HWsync\Image_Sync_Manager::extract_product_image_from_html( $mock_html_og, 'https://example.com/product/1' );
+
+$mock_html_woo = '<html><body><div class="woocommerce-product-gallery__image"><a href="https://vendor.in/wp-content/uploads/2024/01/ryzen-7-7800x3d.png"><img src="thumb.jpg"/></a></div></body></html>';
+$extracted_img_woo = \HWsync\Image_Sync_Manager::extract_product_image_from_html( $mock_html_woo, 'https://vendor.in/product/cpu' );
+
+$mock_html_shopify = '<html><body><script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Corsair RM850e","image":["https://cdn.shopify.com/s/files/1/0000/products/rm850e_large.webp"]}</script></body></html>';
+$extracted_img_shopify = \HWsync\Image_Sync_Manager::extract_product_image_from_html( $mock_html_shopify, 'https://store.in/products/rm850e' );
+
+assert_test( 'Multi-Selector Product Image Extraction (OpenGraph, WooCommerce, Shopify CDN)', (
+	$extracted_img_og === 'https://example.com/images/products/rtx-4070-windforce.jpg' &&
+	$extracted_img_woo === 'https://vendor.in/wp-content/uploads/2024/01/ryzen-7-7800x3d.png' &&
+	$extracted_img_shopify === 'https://cdn.shopify.com/s/files/1/0000/products/rm850e_large.webp'
+) );
+
+// Test 29: Product Image Association with Component Model
+$comp_for_img = new \HWsync\Models\Component( array(
+	'brand'      => 'AMD',
+	'model_name' => 'Ryzen 7 7800X3D',
+	'category'   => 'cpu',
+	'image_url'  => 'https://example.com/wp-content/uploads/hwsync/amd-ryzen-7-7800x3d.jpg',
+) );
+$comp_for_img->save();
+
+$saved_comp_with_img = \HWsync\Models\Component::find_by_id( $comp_for_img->id );
+assert_test( 'Component Image Model persistence & get_image_url() resolution', (
+	$saved_comp_with_img !== null &&
+	$saved_comp_with_img->image_url === 'https://example.com/wp-content/uploads/hwsync/amd-ryzen-7-7800x3d.jpg' &&
+	$saved_comp_with_img->get_image_url() === 'https://example.com/wp-content/uploads/hwsync/amd-ryzen-7-7800x3d.jpg'
 ) );
 
 echo "\n---------------------------------------------\n";

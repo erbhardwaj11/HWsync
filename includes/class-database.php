@@ -6,7 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class Database {
-	const DB_VERSION = '1.0.1';
+	const DB_VERSION = '1.0.2';
 
 	public static function get_table_name( $name ) {
 		global $wpdb;
@@ -56,6 +56,7 @@ class Database {
 			sku varchar(128) DEFAULT NULL,
 			ean_upc varchar(64) DEFAULT NULL,
 			specs_json longtext DEFAULT NULL,
+			image_url varchar(500) DEFAULT NULL,
 			wp_post_id bigint(20) unsigned DEFAULT NULL,
 			sync_hash varchar(64) DEFAULT NULL,
 			created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -122,6 +123,13 @@ class Database {
 			}
 			if ( ! in_array( 'config_json', $existing_cols ) ) {
 				$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN config_json longtext DEFAULT NULL AFTER sync_method" );
+			}
+		}
+
+		$existing_comp_cols = $wpdb->get_col( "DESC {$components_table}" );
+		if ( ! empty( $existing_comp_cols ) ) {
+			if ( ! in_array( 'image_url', $existing_comp_cols ) ) {
+				$wpdb->query( "ALTER TABLE {$components_table} ADD COLUMN image_url varchar(500) DEFAULT NULL AFTER specs_json" );
 			}
 		}
 

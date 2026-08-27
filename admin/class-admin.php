@@ -30,6 +30,8 @@ class Admin {
 		add_action( 'wp_ajax_hwsync_get_component_prices', array( __CLASS__, 'handle_get_component_prices' ) );
 		add_action( 'wp_ajax_hwsync_manual_merge_components', array( __CLASS__, 'handle_manual_merge_components' ) );
 		add_action( 'wp_ajax_hwsync_unmerge_vendor_price', array( __CLASS__, 'handle_unmerge_vendor_price' ) );
+		add_action( 'wp_ajax_hwsync_stream_image_sync', array( __CLASS__, 'handle_stream_image_sync' ) );
+		add_action( 'wp_ajax_hwsync_sync_image_chunk', array( __CLASS__, 'handle_sync_image_chunk' ) );
 	}
 
 	public static function register_admin_menu() {
@@ -159,22 +161,32 @@ class Admin {
 								</select>
 							</div>
 
-							<div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 15px;">
-								<button type="button" id="btn-start-live-sync" class="button button-primary" style="background: #2563eb; border-color: #1d4ed8; padding: 6px 16px; font-weight: 600; border-radius: 6px; height: 38px; display: inline-flex; align-items: center; gap: 6px;">
+							<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 15px;">
+								<button type="button" id="btn-start-live-sync" class="button button-primary" style="background: #2563eb; border-color: #1d4ed8; padding: 6px 14px; font-weight: 600; border-radius: 6px; height: 38px; display: inline-flex; align-items: center; gap: 6px;">
 									<span class="dashicons dashicons-update" style="line-height: 1;"></span>
-									<span><?php esc_html_e( 'Live Scrape Sync', 'hwsync' ); ?></span>
+									<span><?php esc_html_e( 'Live Scrape', 'hwsync' ); ?></span>
 								</button>
-								<button type="button" id="btn-sync-specs" class="button" style="background: #0284c7; border-color: #0369a1; color: #fff; padding: 6px 14px; font-weight: 600; border-radius: 6px; height: 38px; display: inline-flex; align-items: center; gap: 6px;">
+								<button type="button" id="btn-sync-specs" class="button" style="background: #0284c7; border-color: #0369a1; color: #fff; padding: 6px 12px; font-weight: 600; border-radius: 6px; height: 38px; display: inline-flex; align-items: center; gap: 6px;">
 									<span class="dashicons dashicons-admin-generic" style="line-height: 1;"></span>
 									<span><?php esc_html_e( 'Sync Specs', 'hwsync' ); ?></span>
 								</button>
-								<button type="button" id="btn-merge-components" class="button" style="background: #f59e0b; border-color: #d97706; color: #fff; padding: 6px 14px; font-weight: 600; border-radius: 6px; height: 38px; display: inline-flex; align-items: center; gap: 6px;">
+								<button type="button" id="btn-sync-images" class="button" style="background: #8b5cf6; border-color: #7c3aed; color: #fff; padding: 6px 12px; font-weight: 600; border-radius: 6px; height: 38px; display: inline-flex; align-items: center; gap: 6px;">
+									<span class="dashicons dashicons-format-image" style="line-height: 1;"></span>
+									<span><?php esc_html_e( 'Sync Images', 'hwsync' ); ?></span>
+								</button>
+								<button type="button" id="btn-merge-components" class="button" style="background: #f59e0b; border-color: #d97706; color: #fff; padding: 6px 12px; font-weight: 600; border-radius: 6px; height: 38px; display: inline-flex; align-items: center; gap: 6px;">
 									<span class="dashicons dashicons-randomize" style="line-height: 1;"></span>
-									<span><?php esc_html_e( 'Merge & Deduplicate', 'hwsync' ); ?></span>
+									<span><?php esc_html_e( 'Merge', 'hwsync' ); ?></span>
 								</button>
 								<button type="button" id="btn-stop-sync" class="button" style="display: none; border-color: #ef4444; color: #ef4444; height: 38px; border-radius: 6px;">
-									<?php esc_html_e( 'Stop Sync', 'hwsync' ); ?>
+									<?php esc_html_e( 'Stop', 'hwsync' ); ?>
 								</button>
+							</div>
+
+							<div style="margin-top: 10px;">
+								<label style="font-size: 11.5px; color: #64748b; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
+									<input type="checkbox" id="chk-force-images" value="1" /> <?php esc_html_e( 'Force re-download photos for products that already have images', 'hwsync' ); ?>
+								</label>
 							</div>
 						</form>
 					</div>
@@ -201,7 +213,7 @@ class Admin {
 					</div>
 
 					<!-- Console Live Metrics Counter Pills -->
-					<div style="background: #131d31; padding: 8px 16px; border-bottom: 1px solid #1e293b; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; font-size: 11px; text-align: center;">
+					<div style="background: #131d31; padding: 8px 16px; border-bottom: 1px solid #1e293b; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; font-size: 11px; text-align: center;">
 						<div style="background: #1e293b; padding: 4px 6px; border-radius: 4px; color: #94a3b8;">
 							Scraped: <strong id="m-scraped" style="color: #38bdf8;">0</strong>
 						</div>
@@ -214,12 +226,15 @@ class Admin {
 						<div style="background: #1e293b; padding: 4px 6px; border-radius: 4px; color: #94a3b8;">
 							Specs: <strong id="m-specs" style="color: #4ade80;">0</strong>
 						</div>
+						<div style="background: #1e293b; padding: 4px 6px; border-radius: 4px; color: #94a3b8;">
+							Images: <strong id="m-images" style="color: #c084fc;">0</strong>
+						</div>
 					</div>
 
 					<!-- Terminal Stream Area -->
 					<div id="hwsync-terminal" style="flex: 1; padding: 14px 16px; overflow-y: auto; max-height: 320px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 12px; line-height: 1.6; color: #e2e8f0; background: #0b0f19;">
 						<div class="log-line log-muted" style="color: #64748b;">
-							<span style="color: #475569;">[--:--:--]</span> HWsync Live Engine ready. Click "Start Live Sync" to scrape or "Sync Specs" to extract deep technical specifications.
+							<span style="color: #475569;">[--:--:--]</span> HWsync Live Engine ready. Select options and click "Live Scrape", "Sync Specs", or "Sync Images".
 						</div>
 					</div>
 
@@ -350,6 +365,36 @@ class Admin {
 					runChunkedSpecsSync(category, nonce);
 				});
 
+				var syncImagesBtn = document.getElementById('btn-sync-images');
+				var mImages = document.getElementById('m-images');
+
+				if (syncImagesBtn) {
+					syncImagesBtn.addEventListener('click', function() {
+						var category = document.getElementById('target_category').value;
+						var nonce = document.querySelector('input[name="hwsync_nonce"]').value;
+						var force = document.getElementById('chk-force-images') && document.getElementById('chk-force-images').checked ? 1 : 0;
+
+						startBtn.disabled = true;
+						syncSpecsBtn.disabled = true;
+						syncImagesBtn.disabled = true;
+						if (mergeBtn) mergeBtn.disabled = true;
+						syncImagesBtn.innerHTML = '<span class="dashicons dashicons-update spin" style="animation: rotation 1s infinite linear;"></span> Syncing Images...';
+						stopBtn.style.display = 'inline-block';
+
+						statusDot.style.background = '#8b5cf6';
+						statusDot.style.boxShadow = '0 0 10px #8b5cf6';
+						statusBadge.textContent = 'IMAGE SYNC';
+						statusBadge.style.background = '#7c3aed';
+						statusBadge.style.color = '#fff';
+
+						appendLog('info', 'Initiating Product Image Sync for category [' + category + '] (Force: ' + (force ? 'Yes' : 'No') + ')...');
+
+						abortController = new AbortController();
+
+						runChunkedImageSync(category, nonce, force);
+					});
+				}
+
 				if (mergeBtn) {
 					mergeBtn.addEventListener('click', function() {
 						var category = document.getElementById('target_category').value;
@@ -357,6 +402,7 @@ class Admin {
 
 						startBtn.disabled = true;
 						syncSpecsBtn.disabled = true;
+						if (syncImagesBtn) syncImagesBtn.disabled = true;
 						mergeBtn.disabled = true;
 						mergeBtn.innerHTML = '<span class="dashicons dashicons-update spin" style="animation: rotation 1s infinite linear;"></span> Merging...';
 						stopBtn.style.display = 'inline-block';
@@ -560,6 +606,64 @@ class Admin {
 					}
 
 					fetchSpecsStep();
+				}
+
+				function runChunkedImageSync(categoryChoice, nonce, force) {
+					var offset = 0;
+					var limit = 4;
+
+					function fetchImageStep() {
+						if (abortController && abortController.signal.aborted) {
+							appendLog('warning', 'Image Sync aborted by user.');
+							finishSync();
+							return;
+						}
+
+						var postData = new URLSearchParams();
+						postData.append('action', 'hwsync_sync_image_chunk');
+						postData.append('target_category', categoryChoice);
+						postData.append('offset', offset);
+						postData.append('limit', limit);
+						postData.append('force_images', force);
+						postData.append('hwsync_nonce', nonce);
+
+						fetch(ajaxurl, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+							body: postData.toString(),
+							signal: abortController ? abortController.signal : null
+						}).then(function(res) {
+							return res.json();
+						}).then(function(json) {
+							if (json.success && json.data) {
+								var d = json.data;
+								if (d.logs && Array.isArray(d.logs)) {
+									d.logs.forEach(function(l) {
+										appendLog(l.level, l.message);
+									});
+								}
+
+								var curImages = parseInt(mImages.textContent) || 0;
+								mImages.textContent = curImages + (d.images_saved || 0);
+
+								if (d.has_more) {
+									offset += limit;
+									fetchImageStep();
+								} else {
+									appendLog('success', 'Product Image Synchronization completed! Saved ' + mImages.textContent + ' photos.');
+									finishSync();
+								}
+							} else {
+								appendLog('warning', 'Image sync step returned no data. Finished.');
+								finishSync();
+							}
+						}).catch(function(err) {
+							appendLog('error', 'Image request error: ' + err.message);
+							finishSync();
+						});
+					}
+
+					fetchImageStep();
 				}
 
 				function runBrowserHeadlessSyncForVendor(vendorObj, categoryChoice, nonce, nextCallback) {
@@ -796,12 +900,16 @@ class Admin {
 
 				function finishSync() {
 					startBtn.disabled = false;
-					startBtn.innerHTML = '<span class="dashicons dashicons-update"></span> <?php esc_html_e( "Live Scrape Sync", "hwsync" ); ?>';
+					startBtn.innerHTML = '<span class="dashicons dashicons-update"></span> <?php esc_html_e( "Live Scrape", "hwsync" ); ?>';
 					syncSpecsBtn.disabled = false;
 					syncSpecsBtn.innerHTML = '<span class="dashicons dashicons-admin-generic"></span> <?php esc_html_e( "Sync Specs", "hwsync" ); ?>';
+					if (syncImagesBtn) {
+						syncImagesBtn.disabled = false;
+						syncImagesBtn.innerHTML = '<span class="dashicons dashicons-format-image"></span> <?php esc_html_e( "Sync Images", "hwsync" ); ?>';
+					}
 					if (mergeBtn) {
 						mergeBtn.disabled = false;
-						mergeBtn.innerHTML = '<span class="dashicons dashicons-randomize"></span> <?php esc_html_e( "Merge & Deduplicate", "hwsync" ); ?>';
+						mergeBtn.innerHTML = '<span class="dashicons dashicons-randomize"></span> <?php esc_html_e( "Merge", "hwsync" ); ?>';
 					}
 					stopBtn.style.display = 'none';
 
@@ -1623,10 +1731,21 @@ class Admin {
 										#<?php echo intval( $comp->id ); ?>
 									</td>
 									<td style="vertical-align: middle;">
-										<strong style="font-size: 13.5px; color: #0f172a;"><?php echo esc_html( $comp->brand . ' ' . $comp->model_name ); ?></strong>
-										<?php if ( $comp->wp_post_id ) : ?>
-											<span style="font-size: 11px; margin-left: 6px; color: #64748b;">(Linked Post #<?php echo intval( $comp->wp_post_id ); ?>)</span>
-										<?php endif; ?>
+										<div style="display: flex; align-items: center; gap: 10px;">
+											<?php if ( ! empty( $comp->get_image_url() ) ) : ?>
+												<img src="<?php echo esc_url( $comp->get_image_url() ); ?>" alt="" style="width: 38px; height: 38px; object-fit: contain; border-radius: 6px; border: 1px solid #e2e8f0; background: #fff; flex-shrink: 0; padding: 2px;" />
+											<?php else : ?>
+												<div style="width: 38px; height: 38px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; display: flex; align-items: center; justify-content: center; color: #cbd5e1; flex-shrink: 0;">
+													<span class="dashicons dashicons-format-image" style="font-size: 18px; width: 18px; height: 18px; line-height: 18px;"></span>
+												</div>
+											<?php endif; ?>
+											<div>
+												<strong style="font-size: 13.5px; color: #0f172a;"><?php echo esc_html( $comp->brand . ' ' . $comp->model_name ); ?></strong>
+												<?php if ( $comp->wp_post_id ) : ?>
+													<span style="font-size: 11px; margin-left: 6px; color: #64748b;">(Linked Post #<?php echo intval( $comp->wp_post_id ); ?>)</span>
+												<?php endif; ?>
+											</div>
+										</div>
 									</td>
 									<td style="vertical-align: middle;">
 										<span style="display: inline-block; font-size: 11px; font-weight: 700; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 12px; text-transform: uppercase;">
@@ -2551,6 +2670,71 @@ class Admin {
 		$report = $specs_manager->run_specs_sync( array( 'category' => $category ), $stream_logger );
 
 		exit;
+	}
+
+	public static function handle_stream_image_sync() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( \__( 'Unauthorized', 'hwsync' ) );
+		}
+
+		if ( function_exists( 'set_time_limit' ) ) {
+			@set_time_limit( 0 );
+		}
+
+		header( 'Content-Type: text/event-stream' );
+		header( 'Cache-Control: no-cache' );
+		header( 'Connection: keep-alive' );
+		header( 'X-Accel-Buffering: no' );
+
+		while ( ob_get_level() > 0 ) {
+			ob_end_flush();
+		}
+
+		$category = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
+		$force    = ! empty( $_POST['force_images'] );
+
+		$stream_logger = function( $level, $message, $stats = array() ) {
+			$payload = array(
+				'level'     => $level,
+				'message'   => $message,
+				'stats'     => $stats,
+				'timestamp' => current_time( 'H:i:s' ),
+			);
+			echo "data: " . wp_json_encode( $payload ) . "\n\n";
+			flush();
+		};
+
+		$image_manager = new Image_Sync_Manager();
+		$report = $image_manager->run_images_sync( array(
+			'category' => $category,
+			'limit'    => 100,
+			'force'    => $force,
+		), $stream_logger );
+
+		exit;
+	}
+
+	public static function handle_sync_image_chunk() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$category = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
+		$offset   = isset( $_POST['offset'] ) ? intval( $_POST['offset'] ) : 0;
+		$limit    = isset( $_POST['limit'] ) ? intval( $_POST['limit'] ) : 4;
+		$force    = ! empty( $_POST['force_images'] );
+
+		$image_manager = new Image_Sync_Manager();
+		$report = $image_manager->sync_images_chunk( array(
+			'category' => $category,
+			'offset'   => $offset,
+			'limit'    => $limit,
+			'force'    => $force,
+		) );
+
+		wp_send_json_success( $report );
 	}
 
 	public static function render_maintenance_page() {

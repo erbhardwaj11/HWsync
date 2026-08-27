@@ -1,4 +1,4 @@
-# HWsync (v0.0.1.2)
+# HWsync (v0.0.1.3)
 
 High-performance WordPress plugin & synchronization engine for PC hardware components and real-time multi-vendor pricing across Indian computer retail stores.
 
@@ -10,6 +10,7 @@ High-performance WordPress plugin & synchronization engine for PC hardware compo
 - Automated Post-Sync Component Matching & Price Consolidation
 - Interactive Manual Component Merge Tool (Bulk & Custom Target/Source Consolidation)
 - Interactive Store Listing Unmerge / Split Tool (Detach incorrectly paired store prices into clean standalone components)
+- **Dedicated Product Image Synchronization Engine** (Scrapes vendor photos, renames to canonical component names, saves to uploads, registers in Media Library, and sets featured images)
 - Dynamic detailed specifications scraper from store product pages
 - Interactive multi-vendor price comparison table shortcode `[hwsync_price_table]`
 - Full Database CSV Export, Restore, and Reset utilities

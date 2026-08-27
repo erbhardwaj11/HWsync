@@ -20,6 +20,7 @@ class Component {
 	public $sku;
 	public $ean_upc;
 	public $specs_json;
+	public $image_url;
 	public $wp_post_id;
 	public $sync_hash;
 	public $created_at;
@@ -151,6 +152,7 @@ class Component {
 			'sku'        => $this->sku,
 			'ean_upc'    => $this->ean_upc,
 			'specs_json' => is_array( $this->specs_json ) ? wp_json_encode( $this->specs_json ) : $this->specs_json,
+			'image_url'  => $this->image_url,
 			'wp_post_id' => $this->wp_post_id,
 			'sync_hash'  => $this->sync_hash,
 		);
@@ -185,5 +187,16 @@ class Component {
 			return array();
 		}
 		return is_array( $this->specs_json ) ? $this->specs_json : json_decode( $this->specs_json, true );
+	}
+
+	public function get_image_url() {
+		if ( ! empty( $this->image_url ) ) {
+			return $this->image_url;
+		}
+		$specs = $this->get_specs();
+		if ( ! empty( $specs['image_url'] ) ) {
+			return $specs['image_url'];
+		}
+		return '';
 	}
 }

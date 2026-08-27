@@ -96,6 +96,60 @@ class CLI_Command extends WP_CLI_Command {
 	}
 
 	/**
+	 * Run Product Image Synchronization.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--category=<category>]
+	 * : Component category to sync images for (e.g. cpu, gpu, motherboard, ram, storage, psu, cooler, cabinet, or all).
+	 * ---
+	 * default: all
+	 * ---
+	 *
+	 * [--limit=<limit>]
+	 * : Number of components to process.
+	 * ---
+	 * default: 100
+	 * ---
+	 *
+	 * [--force]
+	 * : Force re-download images even if already present.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp hwsync sync-images
+	 *     wp hwsync sync-images --category=gpu --limit=50
+	 */
+	public function sync_images( $args, $assoc_args ) {
+		$category = isset( $assoc_args['category'] ) ? $assoc_args['category'] : 'all';
+		$limit    = isset( $assoc_args['limit'] ) ? intval( $assoc_args['limit'] ) : 100;
+		$force    = isset( $assoc_args['force'] );
+
+		WP_CLI::line( "Starting Product Image Sync for category: [{$category}] (Limit: {$limit}, Force: " . ( $force ? 'Yes' : 'No' ) . ")..." );
+
+		$logger = function( $level, $message ) {
+			if ( $level === 'error' ) {
+				WP_CLI::error( $message, false );
+			} elseif ( $level === 'warning' ) {
+				WP_CLI::warning( $message );
+			} elseif ( $level === 'success' || $level === 'finish' ) {
+				WP_CLI::success( $message );
+			} else {
+				WP_CLI::line( $message );
+			}
+		};
+
+		$manager = new Image_Sync_Manager();
+		$report = $manager->run_images_sync( array(
+			'category' => $category,
+			'limit'    => $limit,
+			'force'    => $force,
+		), $logger );
+
+		WP_CLI::success( "Image sync finished! Processed {$report['total_components']} components: {$report['images_saved']} images downloaded, {$report['skipped']} skipped, {$report['errors']} missing." );
+	}
+
+	/**
 	 * Display current database stats and vendor status.
 	 *
 	 * ## EXAMPLES
