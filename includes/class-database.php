@@ -181,6 +181,14 @@ class Database {
 				'sync_method'   => 'curl_html',
 				'is_active'     => 1,
 			),
+			array(
+				'vendor_slug'   => 'theitdepot',
+				'vendor_name'   => 'The IT Depot',
+				'base_url'      => 'https://www.theitdepot.com',
+				'adapter_class' => 'HWsync\\Vendors\\TheITDepot_Adapter',
+				'sync_method'   => 'curl_html',
+				'is_active'     => 1,
+			),
 		);
 
 		foreach ( $default_vendors as $vendor ) {

@@ -453,6 +453,7 @@ require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-vedant-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-primeabgb-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-elitehubs-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-pcstudio-adapter.php';
+require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-theitdepot-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-configurable-vendor-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-sync-manager.php';
 require_once HWSYNC_PLUGIN_DIR . 'public/class-public.php';
@@ -958,6 +959,21 @@ assert_test( 'Component Image Model persistence & get_image_url() resolution', (
 	$saved_comp_with_img !== null &&
 	$saved_comp_with_img->image_url === 'https://example.com/wp-content/uploads/hwsync/amd-ryzen-7-7800x3d.jpg' &&
 	$saved_comp_with_img->get_image_url() === 'https://example.com/wp-content/uploads/hwsync/amd-ryzen-7-7800x3d.jpg'
+) );
+
+// Test 30: The IT Depot HTML Parsing & Offer Price Extraction
+$mock_itdepot_html = '<div class="product-layout product-grid"><div class="image"><a href="https://www.theitdepot.com/Graphic_Card/asus_dual_geforce_rtx_3050"><img data-src="https://www.theitdepot.com/image/cache/catalog/asus3050.jpg" /></a></div><div class="caption"><div class="name"><a href="https://www.theitdepot.com/Graphic_Card/asus_dual_geforce_rtx_3050">Asus Dual GeForce RTX 3050 OC Edition 6GB GDDR6 (DUAL-RTX3050-O6G)</a></div><div class="price"><span class="price-new">₹60,530.00</span> <span class="price-old">₹42,999.00</span></div></div><div class="cart-group"></div></div>';
+$itdepot_adapter = new \HWsync\Vendors\TheITDepot_Adapter();
+$parsed_itdepot = $itdepot_adapter->parse_html( $mock_itdepot_html, 'gpu' );
+
+assert_test( 'The IT Depot (Journal 3 / OpenCart) Adapter Parsing & Price Extraction', (
+	count( $parsed_itdepot ) === 1 &&
+	$parsed_itdepot[0]['title'] === 'Asus Dual GeForce RTX 3050 OC Edition 6GB GDDR6 (DUAL-RTX3050-O6G)' &&
+	$parsed_itdepot[0]['price'] === 60530.00 &&
+	$parsed_itdepot[0]['original_price'] === 42999.00 &&
+	$parsed_itdepot[0]['sku'] === 'DUAL-RTX3050-O6G' &&
+	$parsed_itdepot[0]['in_stock'] === 1 &&
+	$parsed_itdepot[0]['image_url'] === 'https://www.theitdepot.com/image/cache/catalog/asus3050.jpg'
 ) );
 
 echo "\n---------------------------------------------\n";
