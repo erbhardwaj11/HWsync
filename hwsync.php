@@ -15,10 +15,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly.
 }
 
-define( 'HWSYNC_VERSION', '0.0.2.0' );
-define( 'HWSYNC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
-define( 'HWSYNC_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'HWSYNC_PLUGIN_FILE', __FILE__ );
+if ( ! defined( 'HWSYNC_VERSION' ) ) {
+	define( 'HWSYNC_VERSION', '0.0.2.1' );
+}
+if ( ! defined( 'HWSYNC_PLUGIN_DIR' ) ) {
+	define( 'HWSYNC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
+}
+if ( ! defined( 'HWSYNC_PLUGIN_URL' ) ) {
+	define( 'HWSYNC_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
+}
+if ( ! defined( 'HWSYNC_PLUGIN_FILE' ) ) {
+	define( 'HWSYNC_PLUGIN_FILE', __FILE__ );
+}
 
 /**
  * Autoloader for HWsync classes.
@@ -74,22 +82,23 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 /**
  * Main Plugin Bootstrap
  */
-class HWsync_Plugin {
-	private static $instance = null;
+if ( ! class_exists( 'HWsync_Plugin' ) ) {
+	class HWsync_Plugin {
+		private static $instance = null;
 
-	public static function get_instance() {
-		if ( null === self::$instance ) {
-			self::$instance = new self();
+		public static function get_instance() {
+			if ( null === self::$instance ) {
+				self::$instance = new self();
+			}
+			return self::$instance;
 		}
-		return self::$instance;
-	}
 
-	private function __construct() {
-		register_activation_hook( HWSYNC_PLUGIN_FILE, array( $this, 'activate' ) );
-		register_deactivation_hook( HWSYNC_PLUGIN_FILE, array( $this, 'deactivate' ) );
+		private function __construct() {
+			register_activation_hook( __FILE__, array( $this, 'activate' ) );
+			register_deactivation_hook( __FILE__, array( $this, 'deactivate' ) );
 
-		add_action( 'init', array( $this, 'init' ) );
-	}
+			add_action( 'init', array( $this, 'init' ) );
+		}
 
 	public function activate() {
 		try {
@@ -139,6 +148,7 @@ class HWsync_Plugin {
 			// Catch any initialization error gracefully
 		}
 	}
+}
 }
 
 HWsync_Plugin::get_instance();
