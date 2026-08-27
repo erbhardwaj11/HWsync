@@ -265,4 +265,23 @@ abstract class Abstract_Vendor_Adapter {
 			'original_price' => $original_price,
 		);
 	}
+
+	/**
+	 * Extracts hardware SKU / MPN string from title (e.g. DUAL-RTX3050-O6G or 100-100000910WOF).
+	 *
+	 * @param string $title Product title.
+	 * @return string|null
+	 */
+	public static function extract_sku_from_title( $title ) {
+		if ( empty( $title ) ) {
+			return null;
+		}
+		if ( preg_match( '/\(([A-Z0-9_-]{4,})\)/i', $title, $m ) ) {
+			return trim( $m[1] );
+		}
+		if ( preg_match( '/\b([A-Z0-9]{3,}-[A-Z0-9_-]{3,})\b/i', $title, $m ) ) {
+			return trim( $m[1] );
+		}
+		return null;
+	}
 }
