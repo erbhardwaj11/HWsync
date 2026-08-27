@@ -108,12 +108,20 @@ class Database {
 			KEY recorded_at (recorded_at)
 		) {$charset_collate};";
 
-		if ( function_exists( 'dbDelta' ) ) {
-			dbDelta( $sql_vendors );
-			dbDelta( $sql_components );
-			dbDelta( $sql_prices );
-			dbDelta( $sql_history );
-		} else {
+		try {
+			if ( function_exists( 'dbDelta' ) ) {
+				\dbDelta( $sql_vendors );
+				\dbDelta( $sql_components );
+				\dbDelta( $sql_prices );
+				\dbDelta( $sql_history );
+			} else {
+				$wpdb->query( $sql_vendors );
+				$wpdb->query( $sql_components );
+				$wpdb->query( $sql_prices );
+				$wpdb->query( $sql_history );
+			}
+		} catch ( \Throwable $e ) {
+			// Fallback direct queries
 			$wpdb->query( $sql_vendors );
 			$wpdb->query( $sql_components );
 			$wpdb->query( $sql_prices );
@@ -121,23 +129,27 @@ class Database {
 		}
 
 		// Ensure columns exist on existing databases and modify column constraints
-		$existing_cols = $wpdb->get_col( "DESC {$vendors_table}" );
-		if ( ! empty( $existing_cols ) ) {
-			// Ensure adapter_class is nullable with default empty string
-			$wpdb->query( "ALTER TABLE {$vendors_table} MODIFY COLUMN adapter_class varchar(128) NULL DEFAULT ''" );
-			if ( ! in_array( 'sync_method', $existing_cols ) ) {
-				$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN sync_method varchar(64) NOT NULL DEFAULT 'curl_html' AFTER adapter_class" );
+		try {
+			$existing_cols = $wpdb->get_col( "DESC {$vendors_table}" );
+			if ( ! empty( $existing_cols ) ) {
+				// Ensure adapter_class is nullable with default empty string
+				@$wpdb->query( "ALTER TABLE {$vendors_table} MODIFY COLUMN adapter_class varchar(128) NULL DEFAULT ''" );
+				if ( ! in_array( 'sync_method', $existing_cols ) ) {
+					@$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN sync_method varchar(64) NOT NULL DEFAULT 'curl_html' AFTER adapter_class" );
+				}
+				if ( ! in_array( 'config_json', $existing_cols ) ) {
+					@$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN config_json longtext DEFAULT NULL AFTER sync_method" );
+				}
 			}
-			if ( ! in_array( 'config_json', $existing_cols ) ) {
-				$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN config_json longtext DEFAULT NULL AFTER sync_method" );
-			}
-		}
 
-		$existing_comp_cols = $wpdb->get_col( "DESC {$components_table}" );
-		if ( ! empty( $existing_comp_cols ) ) {
-			if ( ! in_array( 'image_url', $existing_comp_cols ) ) {
-				$wpdb->query( "ALTER TABLE {$components_table} ADD COLUMN image_url varchar(500) DEFAULT NULL AFTER specs_json" );
+			$existing_comp_cols = $wpdb->get_col( "DESC {$components_table}" );
+			if ( ! empty( $existing_comp_cols ) ) {
+				if ( ! in_array( 'image_url', $existing_comp_cols ) ) {
+					@$wpdb->query( "ALTER TABLE {$components_table} ADD COLUMN image_url varchar(500) DEFAULT NULL AFTER specs_json" );
+				}
 			}
+		} catch ( \Throwable $e ) {
+			// Non-critical schema alteration error caught safely
 		}
 
 		update_option( 'hwsync_db_version', self::DB_VERSION );
