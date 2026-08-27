@@ -3,7 +3,7 @@
  * Plugin Name: HWsync - Indian PC Component & Multi-Vendor Price Synchronizer
  * Plugin URI: https://github.com/hwsync/hwsync
  * Description: High-performance hardware component and multi-vendor pricing synchronizer for Indian PC retailers. Tracks canonical components, links vendor prices, and updates WordPress posts.
- * Version: 0.0.1.5
+ * Version: 0.0.1.6
  * Author: HWsync Team
  * Author URI: https://github.com/hwsync
  * License: GPL-2.0+
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly.
 }
 
-define( 'HWSYNC_VERSION', '0.0.1.5' );
+define( 'HWSYNC_VERSION', '0.0.1.6' );
 define( 'HWSYNC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HWSYNC_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'HWSYNC_PLUGIN_FILE', __FILE__ );

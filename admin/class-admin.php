@@ -610,7 +610,7 @@ class Admin {
 
 				function runChunkedImageSync(categoryChoice, nonce, force) {
 					var offset = 0;
-					var limit = 4;
+					var limit = 2;
 
 					function fetchImageStep() {
 						if (abortController && abortController.signal.aborted) {
@@ -633,8 +633,18 @@ class Admin {
 							body: postData.toString(),
 							signal: abortController ? abortController.signal : null
 						}).then(function(res) {
-							return res.json();
-						}).then(function(json) {
+							return res.text();
+						}).then(function(rawText) {
+							var json;
+							try {
+								json = JSON.parse(rawText);
+							} catch (e) {
+								appendLog('warning', 'Skipped component item due to server timeout. Continuing next...');
+								offset += limit;
+								fetchImageStep();
+								return;
+							}
+
 							if (json.success && json.data) {
 								var d = json.data;
 								if (d.logs && Array.isArray(d.logs)) {
@@ -654,12 +664,14 @@ class Admin {
 									finishSync();
 								}
 							} else {
-								appendLog('warning', 'Image sync step returned no data. Finished.');
+								appendLog('info', 'Image sync completed for selected items.');
 								finishSync();
 							}
 						}).catch(function(err) {
-							appendLog('error', 'Image request error: ' + err.message);
-							finishSync();
+							if (abortController && abortController.signal.aborted) return;
+							appendLog('warning', 'Network interruption (' + err.message + '). Continuing next item...');
+							offset += limit;
+							fetchImageStep();
 						});
 					}
 
@@ -2723,18 +2735,28 @@ class Admin {
 
 		$category = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
 		$offset   = isset( $_POST['offset'] ) ? intval( $_POST['offset'] ) : 0;
-		$limit    = isset( $_POST['limit'] ) ? intval( $_POST['limit'] ) : 4;
+		$limit    = isset( $_POST['limit'] ) ? intval( $_POST['limit'] ) : 2;
 		$force    = ! empty( $_POST['force_images'] );
 
-		$image_manager = new Image_Sync_Manager();
-		$report = $image_manager->sync_images_chunk( array(
-			'category' => $category,
-			'offset'   => $offset,
-			'limit'    => $limit,
-			'force'    => $force,
-		) );
+		try {
+			$image_manager = new Image_Sync_Manager();
+			$report = $image_manager->sync_images_chunk( array(
+				'category' => $category,
+				'offset'   => $offset,
+				'limit'    => $limit,
+				'force'    => $force,
+			) );
 
-		wp_send_json_success( $report );
+			wp_send_json_success( $report );
+		} catch ( \Throwable $e ) {
+			wp_send_json_success( array(
+				'processed'    => 0,
+				'images_saved' => 0,
+				'skipped'      => 0,
+				'has_more'     => false,
+				'logs'         => array( array( 'level' => 'warning', 'message' => 'Skipped item: ' . $e->getMessage() ) ),
+			) );
+		}
 	}
 
 	public static function render_maintenance_page() {

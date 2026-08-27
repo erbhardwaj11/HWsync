@@ -13,6 +13,7 @@ class Image_Sync_Manager {
 
 	/**
 	 * Run product image synchronization for existing canonical components in DB.
+	 * Guarantees strictly 1 product image per canonical component.
 	 *
 	 * @param array $options Sync options ('category', 'component_id', 'limit', 'offset', 'force').
 	 * @param callable|null $logger Progress callback logger.
@@ -25,11 +26,11 @@ class Image_Sync_Manager {
 
 		$category     = isset( $options['category'] ) ? sanitize_text_field( $options['category'] ) : 'all';
 		$component_id = isset( $options['component_id'] ) ? intval( $options['component_id'] ) : 0;
-		$limit        = isset( $options['limit'] ) ? intval( $options['limit'] ) : 50;
+		$limit        = isset( $options['limit'] ) ? intval( $options['limit'] ) : 2;
 		$offset       = isset( $options['offset'] ) ? intval( $options['offset'] ) : 0;
 		$force        = ! empty( $options['force'] );
 
-		$this->emit( $logger, 'info', "Starting Product Image Synchronization Engine..." );
+		$this->emit( $logger, 'info', "Starting Single-Image Synchronization Engine..." );
 
 		$where_clauses = array( "1=1" );
 		if ( $component_id > 0 ) {
@@ -62,7 +63,7 @@ class Image_Sync_Manager {
 			'errors'           => 0,
 		);
 
-		$this->emit( $logger, 'info', "Found " . count( $components_raw ) . " components. Scanning vendor listings for product photos..." );
+		$this->emit( $logger, 'info', "Processing " . count( $components_raw ) . " canonical components (1 photo per product)..." );
 
 		foreach ( $components_raw as $c_row ) {
 			$component = new Component( $c_row );
@@ -84,33 +85,63 @@ class Image_Sync_Manager {
 
 			$image_downloaded = false;
 
-			// Scan linked vendor product pages until 1 clean image is found
+			// 1. FAST PATH: Check if any linked price listing already has image_url stored in raw_data
 			foreach ( $prices as $p ) {
-				if ( empty( $p->product_url ) ) {
-					continue;
+				$raw_data = is_array( $p->raw_data_json ) ? $p->raw_data_json : ( json_decode( (string) $p->raw_data_json, true ) ?: array() );
+				$candidate_url = '';
+
+				if ( ! empty( $raw_data['image_url'] ) ) {
+					$candidate_url = $raw_data['image_url'];
+				} elseif ( ! empty( $raw_data['img_url'] ) ) {
+					$candidate_url = $raw_data['img_url'];
+				} elseif ( ! empty( $raw_data['image'] ) ) {
+					$candidate_url = $raw_data['image'];
 				}
 
-				$vendor_slug = ! empty( $p->vendor_slug ) ? $p->vendor_slug : '';
-				$this->emit( $logger, 'debug', "Checking {$vendor_slug} product page for #{$component->id} [{$comp_name}]..." );
+				if ( ! empty( $candidate_url ) && filter_var( $candidate_url, FILTER_VALIDATE_URL ) ) {
+					$vendor_slug = ! empty( $p->vendor_slug ) ? $p->vendor_slug : 'store';
+					$this->emit( $logger, 'debug', "Found catalog image from {$vendor_slug} for #{$component->id} [{$comp_name}]..." );
 
-				$remote_img_url = $this->fetch_image_from_product_url( $p->product_url, $vendor_slug );
-				if ( empty( $remote_img_url ) ) {
-					continue;
+					$save_res = $this->download_and_attach_image( $component, $candidate_url );
+					if ( $save_res && ! empty( $save_res['url'] ) ) {
+						$component->image_url = $save_res['url'];
+						$component->save();
+
+						$image_downloaded = true;
+						$report['images_saved']++;
+
+						$this->emit( $logger, 'success', "Attached 1 photo for [{$comp_name}] -> {$save_res['file_name']}" );
+						break; // STRICTLY 1 PHOTO PER PRODUCT
+					}
 				}
+			}
 
-				$this->emit( $logger, 'match', "Found product image at {$vendor_slug}: {$remote_img_url}" );
+			// 2. FALLBACK: If no feed image was found, visit only the PRIMARY store product page
+			if ( ! $image_downloaded ) {
+				foreach ( $prices as $p ) {
+					if ( empty( $p->product_url ) ) {
+						continue;
+					}
 
-				// Download, rename, and store image
-				$save_res = $this->download_and_attach_image( $component, $remote_img_url );
-				if ( $save_res && ! empty( $save_res['url'] ) ) {
-					$component->image_url = $save_res['url'];
-					$component->save();
+					$vendor_slug = ! empty( $p->vendor_slug ) ? $p->vendor_slug : '';
+					$this->emit( $logger, 'debug', "Checking {$vendor_slug} product page for #{$component->id} [{$comp_name}]..." );
 
-					$image_downloaded = true;
-					$report['images_saved']++;
+					$remote_img_url = $this->fetch_image_from_product_url( $p->product_url, $vendor_slug );
+					if ( empty( $remote_img_url ) ) {
+						continue;
+					}
 
-					$this->emit( $logger, 'success', "Successfully attached photo for [{$comp_name}] -> {$save_res['file_name']}" );
-					break; // Exactly one photo per product
+					$save_res = $this->download_and_attach_image( $component, $remote_img_url );
+					if ( $save_res && ! empty( $save_res['url'] ) ) {
+						$component->image_url = $save_res['url'];
+						$component->save();
+
+						$image_downloaded = true;
+						$report['images_saved']++;
+
+						$this->emit( $logger, 'success', "Attached 1 photo for [{$comp_name}] -> {$save_res['file_name']}" );
+						break; // STRICTLY 1 PHOTO PER PRODUCT
+					}
 				}
 			}
 
@@ -120,7 +151,7 @@ class Image_Sync_Manager {
 			}
 		}
 
-		$this->emit( $logger, 'finish', "Product Image Sync finished! Downloaded {$report['images_saved']} images ({$report['skipped']} skipped, {$report['errors']} missing)." );
+		$this->emit( $logger, 'finish', "Product Image Sync step completed! Processed {$report['total_components']} components: {$report['images_saved']} saved, {$report['skipped']} skipped." );
 
 		return $report;
 	}
@@ -138,9 +169,11 @@ class Image_Sync_Manager {
 			return null;
 		}
 
+		$default_ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
 		$response = wp_remote_get( $url, array(
-			'timeout'    => 15,
-			'user-agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 HWsync/0.0.1.3',
+			'timeout'    => 10,
+			'user-agent' => $default_ua,
 			'sslverify'  => false,
 			'headers'    => array(
 				'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -286,83 +319,93 @@ class Image_Sync_Manager {
 			return null;
 		}
 
-		$response = wp_remote_get( $remote_url, array(
-			'timeout'    => 20,
-			'user-agent' => 'Mozilla/5.0 HWsync/0.0.1.3 Image Downloader',
-			'sslverify'  => false,
-		) );
+		try {
+			$response = wp_remote_get( $remote_url, array(
+				'timeout'    => 12,
+				'user-agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 HWsync/0.0.1.5',
+				'sslverify'  => false,
+			) );
 
-		if ( is_wp_error( $response ) ) {
-			return null;
-		}
+			if ( is_wp_error( $response ) ) {
+				return null;
+			}
 
-		$image_data = wp_remote_retrieve_body( $response );
-		if ( empty( $image_data ) || strlen( $image_data ) < 1000 ) {
-			return null;
-		}
+			$image_data = wp_remote_retrieve_body( $response );
+			if ( empty( $image_data ) || strlen( $image_data ) < 500 ) {
+				return null;
+			}
 
-		// Determine file extension
-		$content_type = wp_remote_retrieve_header( $response, 'content-type' );
-		$ext = 'jpg';
-		if ( stripos( $content_type, 'png' ) !== false || preg_match( '/\.png($|\?)/i', $remote_url ) ) {
-			$ext = 'png';
-		} elseif ( stripos( $content_type, 'webp' ) !== false || preg_match( '/\.webp($|\?)/i', $remote_url ) ) {
-			$ext = 'webp';
-		}
+			// Determine file extension
+			$content_type = wp_remote_retrieve_header( $response, 'content-type' );
+			$ext = 'jpg';
+			if ( stripos( $content_type, 'png' ) !== false || preg_match( '/\.png($|\?)/i', $remote_url ) ) {
+				$ext = 'png';
+			} elseif ( stripos( $content_type, 'webp' ) !== false || preg_match( '/\.webp($|\?)/i', $remote_url ) ) {
+				$ext = 'webp';
+			}
 
-		// Generate clean, SEO-friendly file name based on canonical component
-		$comp_title = trim( $component->brand . '-' . $component->model_name );
-		$file_name = sanitize_file_name( sanitize_title( $comp_title ) . '.' . $ext );
-		if ( empty( $file_name ) || $file_name === '.' . $ext ) {
-			$file_name = 'component-' . $component->id . '.' . $ext;
-		}
+			// Generate clean, SEO-friendly file name based on canonical component
+			$comp_title = trim( $component->brand . '-' . $component->model_name );
+			$file_name = sanitize_file_name( sanitize_title( $comp_title ) . '.' . $ext );
+			if ( empty( $file_name ) || $file_name === '.' . $ext ) {
+				$file_name = 'component-' . $component->id . '.' . $ext;
+			}
 
-		// Upload to WordPress uploads directory
-		$upload = wp_upload_bits( $file_name, null, $image_data );
-		if ( ! empty( $upload['error'] ) ) {
-			return null;
-		}
+			// Upload to WordPress uploads directory
+			$upload = wp_upload_bits( $file_name, null, $image_data );
+			if ( ! empty( $upload['error'] ) ) {
+				return null;
+			}
 
-		$local_file_path = $upload['file'];
-		$local_url       = $upload['url'];
+			$local_file_path = $upload['file'];
+			$local_url       = $upload['url'];
 
-		// Register in Media Library if WordPress core media functions are available
-		$attachment_id = 0;
-		if ( function_exists( 'wp_insert_attachment' ) && function_exists( 'wp_generate_attachment_metadata' ) ) {
-			if ( ! function_exists( 'wp_read_image_metadata' ) ) {
+			// Register in Media Library safely
+			$attachment_id = 0;
+			if ( function_exists( 'wp_insert_attachment' ) ) {
 				if ( defined( 'ABSPATH' ) && file_exists( ABSPATH . 'wp-admin/includes/image.php' ) ) {
 					require_once ABSPATH . 'wp-admin/includes/image.php';
 					require_once ABSPATH . 'wp-admin/includes/file.php';
 					require_once ABSPATH . 'wp-admin/includes/media.php';
 				}
-			}
 
-			$wp_filetype = wp_check_filetype( $file_name, null );
-			$attachment = array(
-				'post_mime_type' => $wp_filetype['type'] ?: 'image/jpeg',
-				'post_title'     => trim( $component->brand . ' ' . $component->model_name ),
-				'post_content'   => '',
-				'post_status'    => 'inherit',
-			);
+				$wp_filetype = wp_check_filetype( $file_name, null );
+				$attachment = array(
+					'post_mime_type' => $wp_filetype['type'] ?: 'image/jpeg',
+					'post_title'     => trim( $component->brand . ' ' . $component->model_name ),
+					'post_content'   => '',
+					'post_status'    => 'inherit',
+				);
 
-			$attachment_id = wp_insert_attachment( $attachment, $local_file_path );
-			if ( ! is_wp_error( $attachment_id ) && $attachment_id > 0 ) {
-				$attach_data = wp_generate_attachment_metadata( $attachment_id, $local_file_path );
-				wp_update_attachment_metadata( $attachment_id, $attach_data );
+				$attachment_id = wp_insert_attachment( $attachment, $local_file_path );
+				if ( ! is_wp_error( $attachment_id ) && $attachment_id > 0 ) {
+					if ( function_exists( 'wp_generate_attachment_metadata' ) ) {
+						try {
+							$attach_data = @wp_generate_attachment_metadata( $attachment_id, $local_file_path );
+							if ( is_array( $attach_data ) ) {
+								wp_update_attachment_metadata( $attachment_id, $attach_data );
+							}
+						} catch ( \Throwable $t ) {
+							// Ignore metadata generation failure, base image is saved
+						}
+					}
 
-				// If component is linked to WordPress post, set featured thumbnail
-				if ( ! empty( $component->wp_post_id ) && function_exists( 'set_post_thumbnail' ) ) {
-					set_post_thumbnail( $component->wp_post_id, $attachment_id );
+					// If component is linked to WordPress post, set featured thumbnail
+					if ( ! empty( $component->wp_post_id ) && function_exists( 'set_post_thumbnail' ) ) {
+						set_post_thumbnail( $component->wp_post_id, $attachment_id );
+					}
 				}
 			}
-		}
 
-		return array(
-			'url'           => $local_url,
-			'file_path'     => $local_file_path,
-			'file_name'     => $file_name,
-			'attachment_id' => $attachment_id,
-		);
+			return array(
+				'url'           => $local_url,
+				'file_path'     => $local_file_path,
+				'file_name'     => $file_name,
+				'attachment_id' => $attachment_id,
+			);
+		} catch ( \Throwable $e ) {
+			return null;
+		}
 	}
 
 	/**
@@ -374,7 +417,7 @@ class Image_Sync_Manager {
 	public function sync_images_chunk( $options = array() ) {
 		$category = isset( $options['category'] ) ? sanitize_text_field( $options['category'] ) : 'all';
 		$offset   = isset( $options['offset'] ) ? intval( $options['offset'] ) : 0;
-		$limit    = isset( $options['limit'] ) ? intval( $options['limit'] ) : 4;
+		$limit    = isset( $options['limit'] ) ? intval( $options['limit'] ) : 2;
 		$force    = ! empty( $options['force'] );
 
 		$logs = array();
@@ -382,12 +425,17 @@ class Image_Sync_Manager {
 			$logs[] = array( 'level' => $level, 'message' => $message );
 		};
 
-		$report = $this->run_images_sync( array(
-			'category' => $category,
-			'offset'   => $offset,
-			'limit'    => $limit,
-			'force'    => $force,
-		), $logger );
+		try {
+			$report = $this->run_images_sync( array(
+				'category' => $category,
+				'offset'   => $offset,
+				'limit'    => $limit,
+				'force'    => $force,
+			), $logger );
+		} catch ( \Throwable $e ) {
+			$logs[] = array( 'level' => 'error', 'message' => "Exception during sync: " . $e->getMessage() );
+			$report = array( 'total_components' => 0, 'images_saved' => 0, 'skipped' => 0, 'errors' => 1 );
+		}
 
 		global $wpdb;
 		$comp_table = Database::get_table_name( 'components' );
