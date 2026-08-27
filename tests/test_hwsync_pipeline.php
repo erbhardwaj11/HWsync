@@ -202,6 +202,9 @@ class MockWPDB {
 		return 'DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
 	}
 	public function prepare( $query, ...$args ) {
+		if ( isset( $args[0] ) && is_array( $args[0] ) && count( $args ) === 1 ) {
+			$args = $args[0];
+		}
 		foreach ( $args as $arg ) {
 			$val = is_numeric( $arg ) ? $arg : "'" . addslashes( (string)$arg ) . "'";
 			$query = preg_replace( '/(%d|%s|%f)/', $val, $query, 1 );
@@ -760,7 +763,7 @@ $vp3->save();
 $all_3_prices = hwsync_get_vendor_prices( $comp_7800->id );
 $lowest_3 = hwsync_get_lowest_price( $comp_7800->id );
 
-assert_test( 'Multi-Vendor Engine aggregates 3 store prices and accurately detects lowest price ₹35,899', (
+assert_test( 'Multi-Vendor Engine aggregates 3 store prices and accurately detects lowest price INR 35899', (
 	count( $all_3_prices ) === 3 &&
 	$lowest_3 === 35899.00
 ) );
@@ -815,7 +818,7 @@ $merge_res = \HWsync\Matching_Engine::merge_duplicate_components( 'cabinet' );
 $shark_merged_prices = hwsync_get_vendor_prices( $comp_shark_1->id );
 $shark_lowest = hwsync_get_lowest_price( $comp_shark_1->id );
 
-assert_test( 'Merge Engine consolidates duplicate component listings and sets lowest price (₹360,000.00)', (
+assert_test( 'Merge Engine consolidates duplicate component listings and sets lowest price (INR 360000.00)', (
 	$merge_res['total_merged'] >= 1 &&
 	count( $shark_merged_prices ) === 2 &&
 	$shark_lowest === 360000.00
@@ -906,7 +909,7 @@ $merged_prices = hwsync_get_vendor_prices( $comp_primary->id );
 $lowest_merged_gpu = hwsync_get_lowest_price( $comp_primary->id );
 $deleted_secondary = \HWsync\Models\Component::find_by_id( $comp_secondary->id );
 
-assert_test( 'Manual Merge reassigns store prices, eliminates secondary component, and updates lowest price (₹54,500)', (
+assert_test( 'Manual Merge reassigns store prices, eliminates secondary component, and updates lowest price (INR 54500.00)', (
 	! empty( $manual_merge_res['success'] ) &&
 	count( $merged_prices ) === 2 &&
 	$lowest_merged_gpu === 54500.00 &&
