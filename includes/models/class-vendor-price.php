@@ -107,16 +107,36 @@ class Vendor_Price {
 			'last_checked_at'      => current_time( 'mysql' ),
 		);
 
-		$existing = self::find_by_component_and_vendor( $this->component_id, $this->vendor_id );
-
-		if ( $existing ) {
-			$this->id = $existing->id;
-			$price_changed = ( floatval( $existing->price ) !== floatval( $this->price ) );
-
+		if ( $this->id ) {
 			$wpdb->update( $table, $data, array( 'id' => $this->id ) );
+		} else {
+			$existing = self::find_by_component_and_vendor( $this->component_id, $this->vendor_id );
 
-			// Record in price history if price changed
-			if ( $price_changed ) {
+			if ( $existing ) {
+				$this->id = $existing->id;
+				$price_changed = ( floatval( $existing->price ) !== floatval( $this->price ) );
+
+				$wpdb->update( $table, $data, array( 'id' => $this->id ) );
+
+				// Record in price history if price changed
+				if ( $price_changed ) {
+					$wpdb->insert(
+						$history_table,
+						array(
+							'vendor_price_id' => $this->id,
+							'component_id'    => $this->component_id,
+							'vendor_id'       => $this->vendor_id,
+							'price'           => floatval( $this->price ),
+							'is_in_stock'     => $this->is_in_stock ? 1 : 0,
+							'recorded_at'     => current_time( 'mysql' ),
+						)
+					);
+				}
+			} else {
+				$wpdb->insert( $table, $data );
+				$this->id = $wpdb->insert_id;
+
+				// Record initial price history entry
 				$wpdb->insert(
 					$history_table,
 					array(
@@ -129,22 +149,6 @@ class Vendor_Price {
 					)
 				);
 			}
-		} else {
-			$wpdb->insert( $table, $data );
-			$this->id = $wpdb->insert_id;
-
-			// Record initial price history entry
-			$wpdb->insert(
-				$history_table,
-				array(
-					'vendor_price_id' => $this->id,
-					'component_id'    => $this->component_id,
-					'vendor_id'       => $this->vendor_id,
-					'price'           => floatval( $this->price ),
-					'is_in_stock'     => $this->is_in_stock ? 1 : 0,
-					'recorded_at'     => current_time( 'mysql' ),
-				)
-			);
 		}
 
 		return $this->id;

@@ -670,9 +670,13 @@ class Matching_Engine {
 			);
 		}
 
-		// Re-link vendor price to the new component
+		// Re-link vendor price to the new component directly in database
+		$wpdb->update(
+			$prices_table,
+			array( 'component_id' => $new_comp_id ),
+			array( 'id' => $vp_id )
+		);
 		$vendor_price->component_id = $new_comp_id;
-		$vendor_price->save();
 
 		return array(
 			'success'          => true,
