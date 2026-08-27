@@ -52,10 +52,21 @@ if ( ! function_exists( 'pcspecs_get_lowest_price' ) ) {
 		$prices = pcspecs_get_vendor_prices( $id );
 		$lowest = null;
 		foreach ( $prices as $p ) {
-			$val      = isset( $p['current_price'] ) ? floatval( $p['current_price'] ) : ( isset( $p['price'] ) ? floatval( $p['price'] ) : 0 );
-			$in_stock = isset( $p['stock_status'] ) ? ( $p['stock_status'] === 'instock' || $p['stock_status'] === 'in_stock' ) : ( ! empty( $p['is_in_stock'] ) );
-			if ( $val > 0 && ( null === $lowest || ( $in_stock && $val < $lowest ) ) ) {
-				$lowest = $val;
+			$val = isset( $p['current_price'] ) && floatval( $p['current_price'] ) > 0 
+				? floatval( $p['current_price'] ) 
+				: ( isset( $p['price'] ) ? floatval( $p['price'] ) : 0 );
+
+			$in_stock = true;
+			if ( isset( $p['stock_status'] ) && $p['stock_status'] !== '' && $p['stock_status'] !== null ) {
+				$in_stock = in_array( strtolower( (string) $p['stock_status'] ), array( 'instock', 'in_stock', '1', 'true' ), true );
+			} elseif ( isset( $p['is_in_stock'] ) ) {
+				$in_stock = ! empty( $p['is_in_stock'] );
+			}
+
+			if ( $val > 0 && $in_stock ) {
+				if ( null === $lowest || $val < $lowest ) {
+					$lowest = $val;
+				}
 			}
 		}
 		if ( null !== $lowest ) {

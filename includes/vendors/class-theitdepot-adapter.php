@@ -85,23 +85,31 @@ class TheITDepot_Adapter extends Abstract_Vendor_Adapter {
 				$url = $this->base_url . '/' . ltrim( $url, '/' );
 			}
 
-			// Extract Clean Prices (Sale Offer Price vs Old MRP)
-			$extracted_prices = self::extract_clean_prices( $block );
-			$clean_price      = $extracted_prices['price'];
-			$clean_old_price  = $extracted_prices['original_price'];
-
-			// Fallback if raw tag search needed
+			// Extract Sale Price (.price-new > .price-normal > .price)
 			$raw_price = '';
-			if ( preg_match( '/<span[^>]*class=["\']price-new["\'][^>]*>(.*?)<\/span>/is', $block, $m_price ) ) {
+			if ( preg_match( '/<span[^>]*class=["\'][^"\']*\bprice-new\b[^"\']*["\'][^>]*>(.*?)<\/span>/is', $block, $m_price ) ) {
 				$raw_price = $m_price[1];
-			} elseif ( preg_match( '/<span[^>]*class=["\']price-normal["\'][^>]*>(.*?)<\/span>/is', $block, $m_price ) ) {
+			} elseif ( preg_match( '/<span[^>]*class=["\'][^"\']*\bprice-normal\b[^"\']*["\'][^>]*>(.*?)<\/span>/is', $block, $m_price ) ) {
 				$raw_price = $m_price[1];
-			} elseif ( preg_match( '/<span[^>]*class=["\']price["\'][^>]*>(.*?)<\/span>/is', $block, $m_price ) ) {
+			} elseif ( preg_match( '/<span[^>]*class=["\'][^"\']*\bprice\b[^"\']*["\'][^>]*>(.*?)<\/span>/is', $block, $m_price ) ) {
 				$raw_price = $m_price[1];
 			}
 
-			if ( $clean_price <= 0 && ! empty( $raw_price ) ) {
-				$clean_price = self::clean_price( strip_tags( $raw_price ) );
+			// Extract Old MRP Price (.price-old)
+			$raw_old_price = '';
+			if ( preg_match( '/<span[^>]*class=["\'][^"\']*\bprice-old\b[^"\']*["\'][^>]*>(.*?)<\/span>/is', $block, $m_old_price ) ) {
+				$raw_old_price = $m_old_price[1];
+			}
+
+			$clean_price = ! empty( $raw_price ) ? self::clean_price( strip_tags( $raw_price ) ) : 0.0;
+			$clean_old_price = ! empty( $raw_old_price ) ? self::clean_price( strip_tags( $raw_old_price ) ) : null;
+
+			if ( $clean_price <= 0 ) {
+				$extracted_prices = self::extract_clean_prices( $block );
+				$clean_price = $extracted_prices['price'];
+				if ( $clean_old_price === null ) {
+					$clean_old_price = $extracted_prices['original_price'];
+				}
 			}
 
 			// Image URL

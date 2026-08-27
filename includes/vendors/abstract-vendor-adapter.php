@@ -211,7 +211,7 @@ abstract class Abstract_Vendor_Adapter {
 		// 2. Look for explicit regular / MRP / old price tags
 		$old_patterns = array(
 			// MDComputers <span class="del">, WooCommerce <del>, OpenCart .price-old, etc.
-			'/<(?:del|span|div|p)\b[^>]*class="[^"]*\b(?:del|price-old|old-price|regular-price|mrp|strike)\b[^"]*"[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)',
+			'/<(?:del|span|div|p)\b[^>]*class="[^"]*\b(?:del|price-old|old-price|regular-price|mrp|strike)\b[^"]*"[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)/i',
 			'/<(?:del|span|div|p)\b[^>]*class="[^"]*\b(?:del|price-old|old-price|regular-price|mrp|strike)\b[^"]*"[^>]*>[\s\S]*?<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
 			'/<del\b[^>]*>[\s\S]*?<bdi>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/bdi>/i',
 			'/<del\b[^>]*>[\s\S]*?(?:(?:&#8377;|₹|Rs\.?)\s*)?([\d,]+(?:\.\d+)?)<\/del>/i',
