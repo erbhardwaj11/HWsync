@@ -12,8 +12,36 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Image_Sync_Manager {
 
 	/**
+	 * Audit image status across canonical components in database.
+	 *
+	 * @param string $category Hardware category slug or 'all'.
+	 * @return array Array with total, already_synced, needing_sync counts.
+	 */
+	public static function audit_image_status( $category = 'all' ) {
+		global $wpdb;
+		$comp_table = Database::get_table_name( 'components' );
+		
+		$where_clauses = array( "1=1" );
+		if ( $category !== 'all' && ! empty( $category ) ) {
+			$where_clauses[] = $wpdb->prepare( "category = %s", $category );
+		}
+		$where_sql = implode( ' AND ', $where_clauses );
+
+		$total = intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$comp_table} WHERE {$where_sql}" ) );
+		$already_synced = intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$comp_table} WHERE {$where_sql} AND image_url IS NOT NULL AND image_url != ''" ) );
+		$needing_sync = max( 0, $total - $already_synced );
+
+		return array(
+			'total'          => $total,
+			'already_synced' => $already_synced,
+			'needing_sync'   => $needing_sync,
+		);
+	}
+
+	/**
 	 * Run product image synchronization for existing canonical components in DB.
-	 * Guarantees strictly 1 product image per canonical component.
+	 * First performs an internal check: components with images already synced are skipped,
+	 * and only the remaining components without images are synced.
 	 *
 	 * @param array $options Sync options ('category', 'component_id', 'limit', 'offset', 'force').
 	 * @param callable|null $logger Progress callback logger.
@@ -30,7 +58,11 @@ class Image_Sync_Manager {
 		$offset       = isset( $options['offset'] ) ? intval( $options['offset'] ) : 0;
 		$force        = ! empty( $options['force'] );
 
-		$this->emit( $logger, 'info', "Starting Single-Image Synchronization Engine..." );
+		// 1. Upfront Internal Check / Audit on initial step
+		if ( $offset === 0 ) {
+			$audit = self::audit_image_status( $category );
+			$this->emit( $logger, 'info', "Image Pre-Check: Found {$audit['total']} total components ({$audit['already_synced']} already synced with photos, {$audit['needing_sync']} left to sync)." );
+		}
 
 		$where_clauses = array( "1=1" );
 		if ( $component_id > 0 ) {
@@ -39,15 +71,10 @@ class Image_Sync_Manager {
 			$where_clauses[] = $wpdb->prepare( "category = %s", $category );
 		}
 
-		if ( ! $force ) {
-			$where_clauses[] = "(image_url IS NULL OR image_url = '')";
-		}
-
 		$where_sql = implode( ' AND ', $where_clauses );
 		$components_raw = $wpdb->get_results( "SELECT * FROM {$comp_table} WHERE {$where_sql} ORDER BY id ASC LIMIT {$limit} OFFSET {$offset}", \ARRAY_A );
 
 		if ( empty( $components_raw ) ) {
-			$this->emit( $logger, 'warning', "No components found needing image sync." );
 			return array(
 				'total_components' => 0,
 				'images_saved'     => 0,
@@ -63,12 +90,11 @@ class Image_Sync_Manager {
 			'errors'           => 0,
 		);
 
-		$this->emit( $logger, 'info', "Processing " . count( $components_raw ) . " canonical components (1 photo per product)..." );
-
 		foreach ( $components_raw as $c_row ) {
 			$component = new Component( $c_row );
 			$comp_name = trim( $component->brand . ' ' . $component->model_name );
 
+			// 2. INTERNAL CHECK: If component already has an image, do NOT sync again
 			if ( ! $force && ! empty( $component->image_url ) ) {
 				$this->emit( $logger, 'debug', "Component #{$component->id} [{$comp_name}] already has image. Skipping." );
 				$report['skipped']++;
@@ -85,7 +111,7 @@ class Image_Sync_Manager {
 
 			$image_downloaded = false;
 
-			// 1. FAST PATH: Check if any linked price listing already has image_url stored in raw_data
+			// 3. FAST PATH: Check if any linked price listing already has image_url in raw_data
 			foreach ( $prices as $p ) {
 				$raw_data = is_array( $p->raw_data_json ) ? $p->raw_data_json : ( json_decode( (string) $p->raw_data_json, true ) ?: array() );
 				$candidate_url = '';
@@ -116,7 +142,7 @@ class Image_Sync_Manager {
 				}
 			}
 
-			// 2. FALLBACK: If no feed image was found, visit only the PRIMARY store product page
+			// 4. FALLBACK: Visit only the PRIMARY store product page
 			if ( ! $image_downloaded ) {
 				foreach ( $prices as $p ) {
 					if ( empty( $p->product_url ) ) {
@@ -150,8 +176,6 @@ class Image_Sync_Manager {
 				$report['errors']++;
 			}
 		}
-
-		$this->emit( $logger, 'finish', "Product Image Sync step completed! Processed {$report['total_components']} components: {$report['images_saved']} saved, {$report['skipped']} skipped." );
 
 		return $report;
 	}
@@ -322,7 +346,7 @@ class Image_Sync_Manager {
 		try {
 			$response = wp_remote_get( $remote_url, array(
 				'timeout'    => 12,
-				'user-agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 HWsync/0.0.1.5',
+				'user-agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 HWsync/0.0.1.7',
 				'sslverify'  => false,
 			) );
 
@@ -440,11 +464,8 @@ class Image_Sync_Manager {
 		global $wpdb;
 		$comp_table = Database::get_table_name( 'components' );
 		$where = ( $category !== 'all' && ! empty( $category ) ) ? $wpdb->prepare( "WHERE category = %s", $category ) : "WHERE 1=1";
-		if ( ! $force ) {
-			$where .= " AND (image_url IS NULL OR image_url = '')";
-		}
-		$remaining = intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$comp_table} {$where}" ) );
-		$has_more = ( $offset + $limit ) < $remaining;
+		$total_count = intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$comp_table} {$where}" ) );
+		$has_more = ( $offset + $limit ) < $total_count;
 
 		return array(
 			'processed'    => $report['total_components'],
