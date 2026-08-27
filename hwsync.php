@@ -69,6 +69,7 @@ if ( is_admin() ) {
 }
 
 require_once HWSYNC_PLUGIN_DIR . 'public/class-public.php';
+require_once HWSYNC_PLUGIN_DIR . 'includes/helpers.php';
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once HWSYNC_PLUGIN_DIR . 'includes/class-cli.php';

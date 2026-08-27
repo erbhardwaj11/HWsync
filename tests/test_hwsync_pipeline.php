@@ -307,7 +307,7 @@ class MockWPDB {
 	}
 	public function get_var( $query ) {
 		if ( preg_match( '/SHOW\s+TABLES\s+LIKE\s+\'([^\']+)\'/i', $query, $m ) ) {
-			return $m[1];
+			return isset( $this->tables[ $m[1] ] ) ? $m[1] : null;
 		}
 		if ( preg_match( '/COUNT\(\*\)\s+FROM\s+(\w+)/i', $query, $m ) ) {
 			$tbl = $m[1];
@@ -454,6 +454,7 @@ require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-theitdepot-adapter.php'
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-configurable-vendor-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-sync-manager.php';
 require_once HWSYNC_PLUGIN_DIR . 'public/class-public.php';
+require_once HWSYNC_PLUGIN_DIR . 'includes/helpers.php';
 
 // Begin Tests
 echo "=============================================\n";
