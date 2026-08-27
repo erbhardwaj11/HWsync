@@ -3,7 +3,7 @@
  * Plugin Name: HWsync - Indian PC Component & Multi-Vendor Price Synchronizer
  * Plugin URI: https://github.com/hwsync/hwsync
  * Description: High-performance hardware component and multi-vendor pricing synchronizer for Indian PC retailers. Tracks canonical components, links vendor prices, and updates WordPress posts.
- * Version: 0.0.1.9
+ * Version: 0.0.1.7
  * Author: HWsync Team
  * Author URI: https://github.com/hwsync
  * License: GPL-2.0+
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly.
 }
 
-define( 'HWSYNC_VERSION', '0.0.1.9' );
+define( 'HWSYNC_VERSION', '0.0.1.7' );
 define( 'HWSYNC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HWSYNC_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'HWSYNC_PLUGIN_FILE', __FILE__ );
@@ -110,13 +110,9 @@ class HWsync_Plugin {
 		load_plugin_textdomain( 'hwsync', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
 
 		// Check for DB schema updates on upgrade
-		try {
-			if ( get_option( 'hwsync_db_version' ) !== \HWsync\Database::DB_VERSION ) {
-				\HWsync\Database::create_tables();
-				\HWsync\Database::seed_default_vendors();
-			}
-		} catch ( \Throwable $t ) {
-			// Catch any DB update notices safely
+		if ( get_option( 'hwsync_db_version' ) !== \HWsync\Database::DB_VERSION ) {
+			\HWsync\Database::create_tables();
+			\HWsync\Database::seed_default_vendors();
 		}
 
 		// Init public shortcodes & styles
