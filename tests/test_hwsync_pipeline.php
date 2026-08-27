@@ -287,6 +287,15 @@ class MockWPDB {
 				}
 				return $filtered;
 			}
+			if ( preg_match( '/category\s*=\s*\'([^\']+)\'/i', $query, $qm ) ) {
+				$filtered = array();
+				foreach ( $rows as $r ) {
+					if ( isset( $r['category'] ) && strcasecmp( $r['category'], $qm[1] ) === 0 ) {
+						$filtered[] = $r;
+					}
+				}
+				return $filtered;
+			}
 			return $rows;
 		}
 		return array();

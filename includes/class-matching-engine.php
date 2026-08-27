@@ -351,6 +351,31 @@ class Matching_Engine {
 			return true;
 		}
 
+		// 8. Significant Token Overlap Check
+		$stop_words = array( 'with', 'for', 'the', 'and', 'case', 'cabinet', 'chassis', 'fan', 'cooler', 'master', 'gaming', 'edition', 'desktop', 'pc', 'box', 'pack', 'series', 'rgb', 'argb', 'oc' );
+		$get_tokens = function( $str, $brand ) use ( $stop_words ) {
+			preg_match_all( '/[a-zA-Z0-9]+/', strtolower( (string)$str ), $m );
+			$words = $m[0] ?? array();
+			$filtered = array();
+			$brand_lower = strtolower( (string) $brand );
+			foreach ( $words as $w ) {
+				if ( ! in_array( $w, $stop_words, true ) && $w !== $brand_lower && strlen( $w ) >= 1 ) {
+					$filtered[] = $w;
+				}
+			}
+			return array_unique( $filtered );
+		};
+
+		$tok_a = $get_tokens( $a->model_name, $a->brand );
+		$tok_b = $get_tokens( $b->model_name, $b->brand );
+		if ( ! empty( $tok_a ) && ! empty( $tok_b ) ) {
+			$intersect = array_intersect( $tok_a, $tok_b );
+			$min_count = min( count( $tok_a ), count( $tok_b ) );
+			if ( $min_count >= 2 && ( count( $intersect ) / $min_count ) >= 0.8 ) {
+				return true;
+			}
+		}
+
 		return false;
 	}
 
