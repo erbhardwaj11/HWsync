@@ -433,9 +433,6 @@ function update_post_meta( $post_id, $key, $value ) {
 function get_post_meta( $post_id, $key, $single = false ) {
 	return $GLOBALS['mock_postmeta'][ $post_id ][ $key ] ?? '';
 }
-function wp_set_object_terms( $post_id, $terms, $taxonomy ) {
-	return true;
-}
 
 // Require HWsync files
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-database.php';

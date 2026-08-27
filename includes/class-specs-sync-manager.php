@@ -639,45 +639,4 @@ class Specs_Sync_Manager {
 			) );
 		}
 	}
-
-	/**
-	 * Run a chunked step for Specifications synchronization via AJAX.
-	 *
-	 * @param array $options Chunk options ('category', 'offset', 'limit').
-	 * @return array Chunk result.
-	 */
-	public function sync_specs_chunk( $options = array() ) {
-		$category = isset( $options['category'] ) ? sanitize_text_field( $options['category'] ) : 'all';
-		$offset   = isset( $options['offset'] ) ? intval( $options['offset'] ) : 0;
-		$limit    = isset( $options['limit'] ) ? intval( $options['limit'] ) : 2;
-
-		$logs = array();
-		$logger = function( $level, $message ) use ( &$logs ) {
-			$logs[] = array( 'level' => $level, 'message' => $message );
-		};
-
-		try {
-			$report = $this->run_specs_sync( array(
-				'category' => $category,
-				'offset'   => $offset,
-				'limit'    => $limit,
-			), $logger );
-		} catch ( \Throwable $e ) {
-			$logs[] = array( 'level' => 'error', 'message' => "Exception during specs sync: " . $e->getMessage() );
-			$report = array( 'total_components' => 0, 'specs_updated' => 0, 'errors' => array( $e->getMessage() ) );
-		}
-
-		global $wpdb;
-		$comp_table = Database::get_table_name( 'components' );
-		$where = ( $category !== 'all' && ! empty( $category ) ) ? $wpdb->prepare( "WHERE category = %s", $category ) : "WHERE 1=1";
-		$remaining = intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$comp_table} {$where}" ) );
-		$has_more = ( $offset + $limit ) < $remaining;
-
-		return array(
-			'processed'     => $report['total_components'] ?? 0,
-			'specs_updated' => $report['specs_updated'] ?? 0,
-			'has_more'      => $has_more,
-			'logs'          => $logs,
-		);
-	}
 }
