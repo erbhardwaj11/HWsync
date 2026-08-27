@@ -6,7 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class Database {
-	const DB_VERSION = '1.0.0';
+	const DB_VERSION = '1.0.1';
 
 	public static function get_table_name( $name ) {
 		global $wpdb;
@@ -63,9 +63,9 @@ class Database {
 			PRIMARY KEY  (id),
 			KEY category (category),
 			KEY brand (brand),
+			KEY model_name (model_name(191)),
 			KEY mpn (mpn),
-			KEY wp_post_id (wp_post_id),
-			KEY sync_hash (sync_hash)
+			KEY sku (sku)
 		) {$charset_collate};";
 
 		// 3. Vendor Prices Table
@@ -73,17 +73,16 @@ class Database {
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 			component_id bigint(20) unsigned NOT NULL,
 			vendor_id bigint(20) unsigned NOT NULL,
+			vendor_product_title varchar(255) NOT NULL,
+			product_url varchar(500) NOT NULL,
 			vendor_sku varchar(128) DEFAULT NULL,
-			vendor_product_title text NOT NULL,
-			product_url text NOT NULL,
-			affiliate_url text DEFAULT NULL,
-			price decimal(10,2) NOT NULL DEFAULT 0.00,
+			price decimal(10,2) NOT NULL,
 			original_price decimal(10,2) DEFAULT NULL,
 			is_in_stock tinyint(1) NOT NULL DEFAULT 1,
 			stock_status varchar(32) NOT NULL DEFAULT 'in_stock',
-			warranty_months int(11) DEFAULT NULL,
 			raw_data_json longtext DEFAULT NULL,
 			last_checked_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			PRIMARY KEY  (id),
 			KEY component_id (component_id),
@@ -113,9 +112,11 @@ class Database {
 		dbDelta( $sql_prices );
 		dbDelta( $sql_history );
 
-		// Ensure columns exist on existing databases
+		// Ensure columns exist on existing databases and modify column constraints
 		$existing_cols = $wpdb->get_col( "DESC {$vendors_table}" );
 		if ( ! empty( $existing_cols ) ) {
+			// Ensure adapter_class is nullable with default empty string
+			$wpdb->query( "ALTER TABLE {$vendors_table} MODIFY COLUMN adapter_class varchar(128) NULL DEFAULT ''" );
 			if ( ! in_array( 'sync_method', $existing_cols ) ) {
 				$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN sync_method varchar(64) NOT NULL DEFAULT 'curl_html' AFTER adapter_class" );
 			}
