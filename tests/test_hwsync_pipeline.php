@@ -300,6 +300,22 @@ class MockWPDB {
 			$this->auto_increment = intval( $m[2] );
 			return true;
 		}
+		if ( preg_match( '/DELETE\s+FROM\s+(\w+)\s+WHERE\s+(.+)/i', $sql, $m ) ) {
+			$tbl = $m[1];
+			$cond = $m[2];
+			if ( ! empty( $this->tables[ $tbl ] ) ) {
+				if ( preg_match( '/id\s*=\s*(\d+)/i', $cond, $qm ) ) {
+					$target_id = $qm[1];
+					foreach ( $this->tables[ $tbl ] as $idx => $r ) {
+						if ( (string)$r['id'] === (string)$target_id ) {
+							unset( $this->tables[ $tbl ][ $idx ] );
+						}
+					}
+					$this->tables[ $tbl ] = array_values( $this->tables[ $tbl ] );
+				}
+			}
+			return true;
+		}
 		return true;
 	}
 	public function get_col( $query ) {
