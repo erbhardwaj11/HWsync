@@ -551,7 +551,7 @@ class Admin {
 
 				function runChunkedSpecsSync(categoryChoice, nonce) {
 					var offset = 0;
-					var limit = 4;
+					var limit = 2;
 					var totalProcessed = 0;
 
 					function fetchSpecsStep() {
@@ -574,8 +574,18 @@ class Admin {
 							body: postData.toString(),
 							signal: abortController ? abortController.signal : null
 						}).then(function(res) {
-							return res.json();
-						}).then(function(json) {
+							return res.text();
+						}).then(function(rawText) {
+							var json;
+							try {
+								json = JSON.parse(rawText);
+							} catch (e) {
+								appendLog('warning', 'Skipped component specs item due to server timeout. Continuing next...');
+								offset += limit;
+								fetchSpecsStep();
+								return;
+							}
+
 							if (json.success && json.data) {
 								var d = json.data;
 								if (d.logs && Array.isArray(d.logs)) {
@@ -596,12 +606,14 @@ class Admin {
 									finishSync();
 								}
 							} else {
-								appendLog('warning', 'Specs sync step returned no data. Finished.');
+								appendLog('info', 'Specs sync step completed for selected items.');
 								finishSync();
 							}
 						}).catch(function(err) {
-							appendLog('error', 'Specs request error: ' + err.message);
-							finishSync();
+							if (abortController && abortController.signal.aborted) return;
+							appendLog('warning', 'Network interruption (' + err.message + '). Continuing next item...');
+							offset += limit;
+							fetchSpecsStep();
 						});
 					}
 
@@ -2643,6 +2655,35 @@ class Admin {
 			wp_send_json_success( $result );
 		} else {
 			wp_send_json_error( $result );
+		}
+	}
+
+	public static function handle_sync_specs_chunk() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$category = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
+		$offset   = isset( $_POST['offset'] ) ? intval( $_POST['offset'] ) : 0;
+		$limit    = isset( $_POST['limit'] ) ? intval( $_POST['limit'] ) : 2;
+
+		try {
+			$specs_manager = new Specs_Sync_Manager();
+			$report = $specs_manager->sync_specs_chunk( array(
+				'category' => $category,
+				'offset'   => $offset,
+				'limit'    => $limit,
+			) );
+
+			wp_send_json_success( $report );
+		} catch ( \Throwable $e ) {
+			wp_send_json_success( array(
+				'processed'     => 0,
+				'specs_updated' => 0,
+				'has_more'      => false,
+				'logs'          => array( array( 'level' => 'warning', 'message' => 'Skipped specs item: ' . $e->getMessage() ) ),
+			) );
 		}
 	}
 

@@ -28,6 +28,7 @@ class Specs_Sync_Manager {
 		$category     = isset( $options['category'] ) ? sanitize_text_field( $options['category'] ) : 'all';
 		$component_id = isset( $options['component_id'] ) ? intval( $options['component_id'] ) : 0;
 		$limit        = isset( $options['limit'] ) ? intval( $options['limit'] ) : 100;
+		$offset       = isset( $options['offset'] ) ? intval( $options['offset'] ) : 0;
 
 		$this->emit( $logger, 'info', "Starting Technical Specifications Sync engine..." );
 
@@ -39,7 +40,7 @@ class Specs_Sync_Manager {
 		}
 
 		$where_sql = implode( ' AND ', $where_clauses );
-		$components_raw = $wpdb->get_results( "SELECT * FROM {$comp_table} WHERE {$where_sql} ORDER BY id ASC LIMIT {$limit}", \ARRAY_A );
+		$components_raw = $wpdb->get_results( "SELECT * FROM {$comp_table} WHERE {$where_sql} ORDER BY id ASC LIMIT {$limit} OFFSET {$offset}", \ARRAY_A );
 
 		if ( empty( $components_raw ) ) {
 			$this->emit( $logger, 'warning', "No components found in database matching criteria." );
@@ -637,5 +638,46 @@ class Specs_Sync_Manager {
 				'timestamp' => current_time( 'H:i:s' ),
 			) );
 		}
+	}
+
+	/**
+	 * Run a chunked step for Specifications synchronization via AJAX.
+	 *
+	 * @param array $options Chunk options ('category', 'offset', 'limit').
+	 * @return array Chunk result.
+	 */
+	public function sync_specs_chunk( $options = array() ) {
+		$category = isset( $options['category'] ) ? sanitize_text_field( $options['category'] ) : 'all';
+		$offset   = isset( $options['offset'] ) ? intval( $options['offset'] ) : 0;
+		$limit    = isset( $options['limit'] ) ? intval( $options['limit'] ) : 2;
+
+		$logs = array();
+		$logger = function( $level, $message ) use ( &$logs ) {
+			$logs[] = array( 'level' => $level, 'message' => $message );
+		};
+
+		try {
+			$report = $this->run_specs_sync( array(
+				'category' => $category,
+				'offset'   => $offset,
+				'limit'    => $limit,
+			), $logger );
+		} catch ( \Throwable $e ) {
+			$logs[] = array( 'level' => 'error', 'message' => "Exception during specs sync: " . $e->getMessage() );
+			$report = array( 'total_components' => 0, 'specs_updated' => 0, 'errors' => array( $e->getMessage() ) );
+		}
+
+		global $wpdb;
+		$comp_table = Database::get_table_name( 'components' );
+		$where = ( $category !== 'all' && ! empty( $category ) ) ? $wpdb->prepare( "WHERE category = %s", $category ) : "WHERE 1=1";
+		$remaining = intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$comp_table} {$where}" ) );
+		$has_more = ( $offset + $limit ) < $remaining;
+
+		return array(
+			'processed'     => $report['total_components'] ?? 0,
+			'specs_updated' => $report['specs_updated'] ?? 0,
+			'has_more'      => $has_more,
+			'logs'          => $logs,
+		);
 	}
 }
