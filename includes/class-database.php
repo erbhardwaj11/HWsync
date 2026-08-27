@@ -13,6 +13,11 @@ class Database {
 		return $wpdb->prefix . 'hwsync_' . $name;
 	}
 
+	public static function table_exists( $table_name ) {
+		global $wpdb;
+		return $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $table_name ) ) === $table_name;
+	}
+
 	public static function create_tables() {
 		global $wpdb;
 		$charset_collate = $wpdb->get_charset_collate();
@@ -159,6 +164,10 @@ class Database {
 		global $wpdb;
 		$table = self::get_table_name( 'vendors' );
 
+		if ( ! self::table_exists( $table ) ) {
+			return;
+		}
+
 		$default_vendors = array(
 			array(
 				'vendor_slug'   => 'mdcomputers',
@@ -210,11 +219,15 @@ class Database {
 			),
 		);
 
-		foreach ( $default_vendors as $vendor ) {
-			$exists = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE vendor_slug = %s", $vendor['vendor_slug'] ) );
-			if ( ! $exists ) {
-				$wpdb->insert( $table, $vendor );
+		try {
+			foreach ( $default_vendors as $vendor ) {
+				$exists = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE vendor_slug = %s", $vendor['vendor_slug'] ) );
+				if ( ! $exists ) {
+					$wpdb->insert( $table, $vendor );
+				}
 			}
+		} catch ( \Throwable $e ) {
+			// Ignore seed errors
 		}
 	}
 }
