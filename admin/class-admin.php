@@ -32,6 +32,7 @@ class Admin {
 		add_action( 'wp_ajax_hwsync_unmerge_vendor_price', array( __CLASS__, 'handle_unmerge_vendor_price' ) );
 		add_action( 'wp_ajax_hwsync_stream_image_sync', array( __CLASS__, 'handle_stream_image_sync' ) );
 		add_action( 'wp_ajax_hwsync_sync_image_chunk', array( __CLASS__, 'handle_sync_image_chunk' ) );
+		add_action( 'wp_ajax_hwsync_clear_component_specs', array( __CLASS__, 'handle_clear_component_specs' ) );
 	}
 
 	public static function register_admin_menu() {
@@ -1711,10 +1712,16 @@ class Admin {
 					<?php endif; ?>
 				</form>
 
-				<!-- Right: Merge Action Buttons -->
-				<div style="display: flex; gap: 8px; align-items: center;">
+				<!-- Right: Action Buttons -->
+				<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+					<button type="button" id="btn-bulk-clear-specs" class="button" disabled style="height: 36px; border-radius: 6px; font-weight: 600; background: #fef2f2; border-color: #fca5a5; color: #b91c1c; display: inline-flex; align-items: center; gap: 4px;">
+						<span class="dashicons dashicons-trash"></span> <?php esc_html_e( 'Clear Specs', 'hwsync' ); ?> (<span id="selected-specs-count">0</span>)
+					</button>
+					<button type="button" id="btn-open-wipe-specs" class="button" style="height: 36px; border-radius: 6px; font-weight: 600; background: #fff; border-color: #cbd5e1; color: #475569; display: inline-flex; align-items: center; gap: 4px;">
+						<span class="dashicons dashicons-eraser"></span> <?php esc_html_e( 'Wipe Specs...', 'hwsync' ); ?>
+					</button>
 					<button type="button" id="btn-bulk-merge-selected" class="button" disabled style="height: 36px; border-radius: 6px; font-weight: 600; background: #f8fafc; border-color: #cbd5e1; color: #64748b;">
-						<span class="dashicons dashicons-randomize" style="line-height: 1.4;"></span> <?php esc_html_e( 'Merge Selected Components', 'hwsync' ); ?> (<span id="selected-comp-count">0</span>)
+						<span class="dashicons dashicons-randomize" style="line-height: 1.4;"></span> <?php esc_html_e( 'Merge Selected', 'hwsync' ); ?> (<span id="selected-comp-count">0</span>)
 					</button>
 					<button type="button" id="btn-open-manual-merge" class="button button-primary" style="height: 36px; border-radius: 6px; font-weight: 600; background: #2563eb; border-color: #1d4ed8; display: inline-flex; align-items: center; gap: 4px;">
 						<span class="dashicons dashicons-admin-links"></span> <?php esc_html_e( 'Manual Merge Tool', 'hwsync' ); ?>
@@ -1735,7 +1742,7 @@ class Admin {
 							<th style="font-weight: 600; color: #334155; width: 130px;"><?php esc_html_e( 'Category', 'hwsync' ); ?></th>
 							<th style="font-weight: 600; color: #334155; width: 140px;"><?php esc_html_e( 'MPN / SKU', 'hwsync' ); ?></th>
 							<th style="font-weight: 600; color: #334155; width: 160px;"><?php esc_html_e( 'Lowest Live Price', 'hwsync' ); ?></th>
-							<th style="font-weight: 600; color: #334155; width: 220px; text-align: right;"><?php esc_html_e( 'Linked Stores & Actions', 'hwsync' ); ?></th>
+							<th style="font-weight: 600; color: #334155; width: 240px; text-align: right;"><?php esc_html_e( 'Linked Stores & Actions', 'hwsync' ); ?></th>
 						</tr>
 					</thead>
 					<tbody>
@@ -1746,6 +1753,7 @@ class Admin {
 								$prices = $comp->get_prices();
 								$lowest = $comp->get_lowest_price();
 								$price_count = count( $prices );
+								$has_specs = ! empty( $comp->specs_json );
 							?>
 								<tr id="comp-row-<?php echo esc_attr( $comp->id ); ?>">
 									<td style="text-align: center; vertical-align: middle;">
@@ -1788,14 +1796,25 @@ class Admin {
 										<?php endif; ?>
 									</td>
 									<td style="vertical-align: middle; text-align: right;">
-										<button type="button" class="button btn-view-comp-prices"
-											data-id="<?php echo esc_attr( $comp->id ); ?>"
-											data-name="<?php echo esc_attr( $comp->brand . ' ' . $comp->model_name ); ?>"
-											data-category="<?php echo esc_attr( $comp->category ); ?>"
-											style="background: #f0fdf4; border-color: #bbf7d0; color: #15803d; font-weight: 600; font-size: 12px; border-radius: 6px;">
-											<span class="dashicons dashicons-tag" style="font-size: 14px; width: 14px; height: 14px; margin-top: 2px;"></span>
-											<?php echo sprintf( esc_html__( '%d Stores Linked', 'hwsync' ), $price_count ); ?>
-										</button>
+										<div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
+											<?php if ( $has_specs ) : ?>
+												<button type="button" class="button btn-clear-comp-specs"
+													data-id="<?php echo esc_attr( $comp->id ); ?>"
+													data-name="<?php echo esc_attr( $comp->brand . ' ' . $comp->model_name ); ?>"
+													style="background: #fff1f2; border-color: #fecdd3; color: #be123c; font-size: 11px; padding: 0 6px; border-radius: 4px; font-weight: 600;"
+													title="<?php esc_attr_e( 'Remove specifications for this component', 'hwsync' ); ?>">
+													<span class="dashicons dashicons-trash" style="font-size: 13px; line-height: 22px; width: 13px; height: 13px;"></span> <?php esc_html_e( 'Specs', 'hwsync' ); ?>
+												</button>
+											<?php endif; ?>
+											<button type="button" class="button btn-view-comp-prices"
+												data-id="<?php echo esc_attr( $comp->id ); ?>"
+												data-name="<?php echo esc_attr( $comp->brand . ' ' . $comp->model_name ); ?>"
+												data-category="<?php echo esc_attr( $comp->category ); ?>"
+												style="background: #f0fdf4; border-color: #bbf7d0; color: #15803d; font-weight: 600; font-size: 12px; border-radius: 6px;">
+												<span class="dashicons dashicons-tag" style="font-size: 14px; width: 14px; height: 14px; margin-top: 2px;"></span>
+												<?php echo sprintf( esc_html__( '%d Stores Linked', 'hwsync' ), $price_count ); ?>
+											</button>
+										</div>
 									</td>
 								</tr>
 							<?php endforeach; ?>
@@ -1932,19 +1951,55 @@ class Admin {
 				</div>
 			</div>
 
-			<!-- JavaScript Controller for Merge and Unmerge Actions -->
+			<!-- Modal 3: Wipe Specifications Modal -->
+			<div id="modal-wipe-specs" style="display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.6); z-index: 100000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+				<div style="background: #fff; width: 500px; max-width: 95%; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); overflow: hidden;">
+					<div style="padding: 16px 20px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #fef2f2;">
+						<div style="display: flex; align-items: center; gap: 8px;">
+							<span class="dashicons dashicons-trash" style="color: #dc2626; font-size: 20px;"></span>
+							<h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #991b1b;"><?php esc_html_e( 'Wipe Technical Specifications', 'hwsync' ); ?></h3>
+						</div>
+						<button type="button" id="btn-close-wipe-specs-modal" style="background: none; border: none; font-size: 20px; color: #64748b; cursor: pointer;">&times;</button>
+					</div>
+					<div style="padding: 20px;">
+						<p style="color: #475569; font-size: 13px; margin-top: 0; line-height: 1.5;">
+							<?php esc_html_e( 'Select the scope of specifications to remove. This will ONLY clear the technical specs dictionary without removing components, vendor prices, or product photos.', 'hwsync' ); ?>
+						</p>
+						<div style="background: #f8fafc; padding: 14px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px;">
+							<label style="display: block; margin-bottom: 10px; font-weight: 600; font-size: 13px; color: #1e293b; cursor: pointer;">
+								<input type="radio" name="wipe_specs_scope" value="category" checked />
+								<?php echo sprintf( esc_html__( 'Wipe for current filtered category only (%s)', 'hwsync' ), '<strong>' . esc_html( ucfirst( $cat_filter ) ) . '</strong>' ); ?>
+							</label>
+							<label style="display: block; font-weight: 600; font-size: 13px; color: #1e293b; cursor: pointer;">
+								<input type="radio" name="wipe_specs_scope" value="all" />
+								<?php esc_html_e( 'Wipe specifications for ALL components across entire database', 'hwsync' ); ?>
+							</label>
+						</div>
+						<div style="display: flex; justify-content: flex-end; gap: 8px;">
+							<button type="button" id="btn-cancel-wipe-specs" class="button" style="height: 36px; border-radius: 6px;"><?php esc_html_e( 'Cancel', 'hwsync' ); ?></button>
+							<button type="button" id="btn-confirm-wipe-specs" class="button button-primary" style="height: 36px; border-radius: 6px; background: #dc2626; border-color: #b91c1c; font-weight: 600;"><?php esc_html_e( 'Confirm Wipe Specs', 'hwsync' ); ?></button>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- JavaScript Controller for Merge, Unmerge & Clear Specs Actions -->
 			<script>
 			document.addEventListener('DOMContentLoaded', function() {
 				var nonce = '<?php echo esc_js( $nonce ); ?>';
 				var modalPrices = document.getElementById('modal-manage-prices');
 				var modalMerge = document.getElementById('modal-manual-merge');
+				var modalWipeSpecs = document.getElementById('modal-wipe-specs');
+				var currentCategory = '<?php echo esc_js( $cat_filter ); ?>';
 				var selectedComps = [];
 
 				// Checkbox Multi-Select logic
 				var cbAll = document.getElementById('cb-select-all-comps');
 				var itemCbs = document.querySelectorAll('.cb-comp-item');
 				var bulkMergeBtn = document.getElementById('btn-bulk-merge-selected');
+				var bulkClearSpecsBtn = document.getElementById('btn-bulk-clear-specs');
 				var selCountLabel = document.getElementById('selected-comp-count');
+				var selSpecsCountLabel = document.getElementById('selected-specs-count');
 
 				function updateSelectedState() {
 					selectedComps = [];
@@ -1959,6 +2014,8 @@ class Admin {
 					});
 
 					selCountLabel.textContent = selectedComps.length;
+					if (selSpecsCountLabel) selSpecsCountLabel.textContent = selectedComps.length;
+
 					if (selectedComps.length >= 2) {
 						bulkMergeBtn.disabled = false;
 						bulkMergeBtn.style.background = '#2563eb';
@@ -1969,6 +2026,20 @@ class Admin {
 						bulkMergeBtn.style.background = '#f8fafc';
 						bulkMergeBtn.style.borderColor = '#cbd5e1';
 						bulkMergeBtn.style.color = '#64748b';
+					}
+
+					if (bulkClearSpecsBtn) {
+						if (selectedComps.length >= 1) {
+							bulkClearSpecsBtn.disabled = false;
+							bulkClearSpecsBtn.style.background = '#dc2626';
+							bulkClearSpecsBtn.style.borderColor = '#b91c1c';
+							bulkClearSpecsBtn.style.color = '#fff';
+						} else {
+							bulkClearSpecsBtn.disabled = true;
+							bulkClearSpecsBtn.style.background = '#fef2f2';
+							bulkClearSpecsBtn.style.borderColor = '#fca5a5';
+							bulkClearSpecsBtn.style.color = '#b91c1c';
+						}
 					}
 				}
 
@@ -2236,6 +2307,141 @@ class Admin {
 						alert('Error loading prices: ' + err.message);
 					});
 				}
+
+				// Clear Specs - Single Component Row
+				document.querySelectorAll('.btn-clear-comp-specs').forEach(function(clearBtn) {
+					clearBtn.addEventListener('click', function(e) {
+						e.stopPropagation();
+						var compId = this.getAttribute('data-id');
+						var compName = this.getAttribute('data-name');
+
+						if (confirm('Remove all technical specifications for "' + compName + '"?')) {
+							clearBtn.disabled = true;
+							clearBtn.textContent = 'Clearing...';
+
+							var cData = new URLSearchParams();
+							cData.append('action', 'hwsync_clear_component_specs');
+							cData.append('component_id', compId);
+							cData.append('hwsync_nonce', nonce);
+
+							fetch(ajaxurl, {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+								body: cData.toString()
+							}).then(function(res) {
+								return res.json();
+							}).then(function(json) {
+								if (json.success) {
+									clearBtn.remove();
+								} else {
+									alert('Error clearing specs: ' + (json.data && json.data.message ? json.data.message : 'Unknown error'));
+									clearBtn.disabled = false;
+									clearBtn.innerHTML = '<span class="dashicons dashicons-trash" style="font-size: 13px; line-height: 22px; width: 13px; height: 13px;"></span> Specs';
+								}
+							}).catch(function(err) {
+								alert('Network error: ' + err.message);
+								clearBtn.disabled = false;
+								clearBtn.innerHTML = '<span class="dashicons dashicons-trash" style="font-size: 13px; line-height: 22px; width: 13px; height: 13px;"></span> Specs';
+							});
+						}
+					});
+				});
+
+				// Bulk Clear Specs for Selected Components
+				if (bulkClearSpecsBtn) {
+					bulkClearSpecsBtn.addEventListener('click', function() {
+						if (selectedComps.length < 1) return;
+
+						var compIds = selectedComps.map(function(c) { return c.id; });
+						if (confirm('Remove specifications for ' + selectedComps.length + ' selected component(s)?')) {
+							bulkClearSpecsBtn.disabled = true;
+							bulkClearSpecsBtn.textContent = 'Clearing Specs...';
+
+							var bData = new URLSearchParams();
+							bData.append('action', 'hwsync_clear_component_specs');
+							compIds.forEach(function(id) { bData.append('component_ids[]', id); });
+							bData.append('hwsync_nonce', nonce);
+
+							fetch(ajaxurl, {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+								body: bData.toString()
+							}).then(function(res) {
+								return res.json();
+							}).then(function(json) {
+								if (json.success) {
+									alert(json.data && json.data.message ? json.data.message : 'Specifications cleared successfully!');
+									window.location.reload();
+								} else {
+									alert('Error clearing specs: ' + (json.data && json.data.message ? json.data.message : 'Unknown error'));
+									bulkClearSpecsBtn.disabled = false;
+									updateSelectedState();
+								}
+							}).catch(function(err) {
+								alert('Network error: ' + err.message);
+								bulkClearSpecsBtn.disabled = false;
+								updateSelectedState();
+							});
+						}
+					});
+				}
+
+				// Wipe Specs Modal Dialog Handlers
+				var openWipeSpecsBtn = document.getElementById('btn-open-wipe-specs');
+				if (openWipeSpecsBtn) {
+					openWipeSpecsBtn.addEventListener('click', function() {
+						modalWipeSpecs.style.display = 'flex';
+					});
+				}
+				document.getElementById('btn-close-wipe-specs-modal').addEventListener('click', function() {
+					modalWipeSpecs.style.display = 'none';
+				});
+				document.getElementById('btn-cancel-wipe-specs').addEventListener('click', function() {
+					modalWipeSpecs.style.display = 'none';
+				});
+
+				// Confirm Wipe Specifications
+				document.getElementById('btn-confirm-wipe-specs').addEventListener('click', function() {
+					var scopeRadio = document.querySelector('input[name="wipe_specs_scope"]:checked');
+					var scope = scopeRadio ? scopeRadio.value : 'category';
+					var targetCat = (scope === 'all') ? 'all' : currentCategory;
+					var confirmText = (scope === 'all') 
+						? 'Wipe specifications for ALL hardware components across the database?' 
+						: 'Wipe specifications for all components in category "' + currentCategory.toUpperCase() + '"?';
+
+					if (confirm(confirmText)) {
+						var confirmBtn = document.getElementById('btn-confirm-wipe-specs');
+						confirmBtn.disabled = true;
+						confirmBtn.textContent = 'Wiping...';
+
+						var wData = new URLSearchParams();
+						wData.append('action', 'hwsync_clear_component_specs');
+						wData.append('category', targetCat);
+						wData.append('hwsync_nonce', nonce);
+
+						fetch(ajaxurl, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+							body: wData.toString()
+						}).then(function(res) {
+							return res.json();
+						}).then(function(json) {
+							if (json.success) {
+								modalWipeSpecs.style.display = 'none';
+								alert(json.data && json.data.message ? json.data.message : 'Specifications wiped successfully!');
+								window.location.reload();
+							} else {
+								alert('Error wiping specs: ' + (json.data && json.data.message ? json.data.message : 'Unknown error'));
+								confirmBtn.disabled = false;
+								confirmBtn.textContent = 'Confirm Wipe Specs';
+							}
+						}).catch(function(err) {
+							alert('Network error: ' + err.message);
+							confirmBtn.disabled = false;
+							confirmBtn.textContent = 'Confirm Wipe Specs';
+						});
+					}
+				});
 
 				function escapeHtml(text) {
 					if (typeof text !== 'string') return text;
@@ -2769,6 +2975,67 @@ class Admin {
 				'logs'         => array( array( 'level' => 'warning', 'message' => 'Skipped item: ' . $e->getMessage() ) ),
 			) );
 		}
+	}
+
+	public static function handle_clear_component_specs() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		global $wpdb;
+		$comp_table = Database::get_table_name( 'components' );
+		$component_id = isset( $_POST['component_id'] ) ? intval( $_POST['component_id'] ) : 0;
+		$component_ids = isset( $_POST['component_ids'] ) ? (array) $_POST['component_ids'] : array();
+		$category = isset( $_POST['category'] ) ? sanitize_text_field( $_POST['category'] ) : '';
+
+		$cleared_count = 0;
+
+		if ( $component_id > 0 ) {
+			$comp = Component::find_by_id( $component_id );
+			if ( $comp ) {
+				$comp->specs_json = array();
+				$comp->save();
+				if ( ! empty( $comp->wp_post_id ) ) {
+					delete_post_meta( $comp->wp_post_id, '_pcspecs_specs' );
+					delete_post_meta( $comp->wp_post_id, '_hwsync_specs' );
+				}
+				$cleared_count = 1;
+			}
+		} elseif ( ! empty( $component_ids ) ) {
+			$sanitized_ids = array_map( 'intval', $component_ids );
+			$sanitized_ids = array_filter( $sanitized_ids );
+			if ( ! empty( $sanitized_ids ) ) {
+				$ids_placeholder = implode( ',', $sanitized_ids );
+				$wpdb->query( "UPDATE {$comp_table} SET specs_json = NULL WHERE id IN ({$ids_placeholder})" );
+				foreach ( $sanitized_ids as $cid ) {
+					$c = Component::find_by_id( $cid );
+					if ( $c && ! empty( $c->wp_post_id ) ) {
+						delete_post_meta( $c->wp_post_id, '_pcspecs_specs' );
+						delete_post_meta( $c->wp_post_id, '_hwsync_specs' );
+					}
+				}
+				$cleared_count = count( $sanitized_ids );
+			}
+		} elseif ( ! empty( $category ) ) {
+			$where = ( $category === 'all' ) ? "1=1" : $wpdb->prepare( "category = %s", $category );
+			$all_to_clear = $wpdb->get_results( "SELECT id, wp_post_id FROM {$comp_table} WHERE {$where}", \ARRAY_A );
+			$wpdb->query( "UPDATE {$comp_table} SET specs_json = NULL WHERE {$where}" );
+			if ( ! empty( $all_to_clear ) ) {
+				foreach ( $all_to_clear as $crow ) {
+					if ( ! empty( $crow['wp_post_id'] ) ) {
+						delete_post_meta( $crow['wp_post_id'], '_pcspecs_specs' );
+						delete_post_meta( $crow['wp_post_id'], '_hwsync_specs' );
+					}
+				}
+				$cleared_count = count( $all_to_clear );
+			}
+		}
+
+		wp_send_json_success( array(
+			'message' => sprintf( __( 'Successfully cleared specifications for %d component(s).', 'hwsync' ), $cleared_count ),
+			'cleared_count' => $cleared_count,
+		) );
 	}
 
 	public static function render_maintenance_page() {

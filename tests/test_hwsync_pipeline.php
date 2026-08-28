@@ -1010,6 +1010,69 @@ assert_test( 'The IT Depot (Journal 3 / OpenCart) Adapter Parsing & Price Extrac
 	$parsed_itdepot[0]['image_url'] === 'https://www.theitdepot.com/image/cache/catalog/asus3050.jpg'
 ) );
 
+// Test 32: Technical Specifications Extraction & Noise/Disclaimer Filtering
+$mock_specs_html = '<div id="tab-specification"><table>
+<tr><td>Product Collection</td><td>Intel® Core™ i3 Processors (14th gen)</td></tr>
+<tr><td>CPU Socket Type</td><td>LGA1700</td></tr>
+<tr><td>Total Cores</td><td>4</td></tr>
+<tr><td>Total Threads</td><td>8</td></tr>
+<tr><td>Processor Base Frequency</td><td>3.5 Ghz</td></tr>
+<tr><td>Max Turbo Frequency</td><td>4.7 GHz</td></tr>
+<tr><td>Note**</td><td>**Prices, Specifications & Features are subject to change without notice</td></tr>
+<tr><td>Standard Shipping</td><td>Delivery typically takes *3-15 business days*, depending on the delivery location.</td></tr>
+<tr><td>Wishlist</td><td>(</td></tr>
+<tr><td>Compare</td><td>(</td></tr>
+</table></div>';
+
+$extracted_clean_specs = \HWsync\Specs_Sync_Manager::parse_html_specs_section( $mock_specs_html );
+
+assert_test( 'Technical Specifications HTML Parser extracts genuine attributes & filters out shipping, notes, and UI noise', (
+	isset( $extracted_clean_specs['Product Collection'] ) &&
+	isset( $extracted_clean_specs['CPU Socket Type'] ) && $extracted_clean_specs['CPU Socket Type'] === 'LGA1700' &&
+	isset( $extracted_clean_specs['Total Cores'] ) && $extracted_clean_specs['Total Cores'] === '4' &&
+	isset( $extracted_clean_specs['Total Threads'] ) && $extracted_clean_specs['Total Threads'] === '8' &&
+	isset( $extracted_clean_specs['Processor Base Frequency'] ) && $extracted_clean_specs['Processor Base Frequency'] === '3.5 Ghz' &&
+	isset( $extracted_clean_specs['Max Turbo Frequency'] ) && $extracted_clean_specs['Max Turbo Frequency'] === '4.7 GHz' &&
+	! isset( $extracted_clean_specs['Note**'] ) &&
+	! isset( $extracted_clean_specs['Standard Shipping'] ) &&
+	! isset( $extracted_clean_specs['Wishlist'] ) &&
+	! isset( $extracted_clean_specs['Compare'] )
+) );
+
+// Test 33: Specifications Key Normalization & Merge Engine
+$normalized_specs = \HWsync\Specs_Sync_Manager::merge_and_clean_specs( 'cpu', $extracted_clean_specs, array(), 'Intel Core i3 14100F LGA1700 4 Cores 8 Threads 58W TDP' );
+
+assert_test( 'Key Normalization & Clean Dictionary Merge Engine (No internal snake_case duplicates or missing fields)', (
+	isset( $normalized_specs['CPU Socket Type'] ) && $normalized_specs['CPU Socket Type'] === 'LGA1700' &&
+	isset( $normalized_specs['Total Cores'] ) && $normalized_specs['Total Cores'] === '4' &&
+	isset( $normalized_specs['Total Threads'] ) && $normalized_specs['Total Threads'] === '8' &&
+	isset( $normalized_specs['Processor Base Power'] ) && $normalized_specs['Processor Base Power'] === '58 W' &&
+	! isset( $normalized_specs['raw_specs_table'] ) &&
+	! isset( $normalized_specs['socket'] ) &&
+	! isset( $normalized_specs['cores'] )
+) );
+
+// Test 34: Clear Component Specifications Persistence
+$comp_for_specs = new \HWsync\Models\Component( array(
+	'brand'      => 'Intel',
+	'model_name' => 'Core i3-14100F',
+	'category'   => 'cpu',
+	'specs_json' => $normalized_specs,
+) );
+$comp_for_specs->save();
+
+// Clear specs for this component
+$comp_for_specs->specs_json = array();
+$comp_for_specs->save();
+
+$refreshed_comp = \HWsync\Models\Component::find_by_id( $comp_for_specs->id );
+assert_test( 'Component Specification Clearing sets specs_json to empty/null without modifying component identity', (
+	$refreshed_comp !== null &&
+	( empty( $refreshed_comp->specs_json ) || $refreshed_comp->specs_json === array() ) &&
+	$refreshed_comp->brand === 'Intel' &&
+	$refreshed_comp->model_name === 'Core i3-14100F'
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

@@ -12,18 +12,205 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Specs_Sync_Manager {
 
 	/**
+	 * Canonical dictionary map for normalizing inconsistent hardware specification labels.
+	 */
+	protected static $key_normalization_map = array(
+		'cpusockettype'                        => 'CPU Socket Type',
+		'cpu socket type'                      => 'CPU Socket Type',
+		'socket'                               => 'CPU Socket Type',
+		'sockets supported'                    => 'CPU Socket Type',
+		'socket type'                          => 'CPU Socket Type',
+
+		'total cores'                          => 'Total Cores',
+		'cores'                                => 'Total Cores',
+		'cpu cores'                            => 'Total Cores',
+		'# of performance-cores'               => '# of Performance-cores',
+		'performance-cores'                    => '# of Performance-cores',
+		'performance cores'                    => '# of Performance-cores',
+		'# of efficient-cores'                 => '# of Efficient-cores',
+		'efficient-cores'                      => '# of Efficient-cores',
+		'efficient cores'                      => '# of Efficient-cores',
+
+		'total threads'                        => 'Total Threads',
+		'threads'                              => 'Total Threads',
+		'thread count'                         => 'Total Threads',
+
+		'processor base frequency'             => 'Processor Base Frequency',
+		'base frequency'                       => 'Processor Base Frequency',
+		'base clock'                           => 'Processor Base Frequency',
+		'performance-core base frequency'      => 'Performance-core Base Frequency',
+
+		'processor max frequency'              => 'Max Turbo Frequency',
+		'max turbo frequency'                  => 'Max Turbo Frequency',
+		'boost clock'                          => 'Max Turbo Frequency',
+		'max boost clock speed'                => 'Max Turbo Frequency',
+		'turbo frequency'                      => 'Max Turbo Frequency',
+		'performance-core max turbo frequency' => 'Performance-core Max Turbo Frequency',
+
+		'cache'                                => 'Cache',
+		'l3 cache'                             => 'L3 Cache',
+		'total l2 cache'                       => 'Total L2 Cache',
+		'l2 cache'                             => 'L2 Cache',
+		'l1 cache'                             => 'L1 Cache',
+		'intel smart cache'                    => 'Cache',
+
+		'processor base power'                 => 'Processor Base Power',
+		'tdp'                                  => 'TDP (Base Power)',
+		'maximum turbo power'                  => 'Maximum Turbo Power',
+		'power consumption'                    => 'Power Consumption',
+
+		'memory types'                         => 'Memory Types',
+		'memory support'                       => 'Memory Types',
+		'max memory size'                      => 'Max Memory Size',
+		'max memory size (dependent on memory type)' => 'Max Memory Size',
+		'max # of memory channels'             => 'Max # of Memory Channels',
+		'max memory bandwidth'                 => 'Max Memory Bandwidth',
+		'ecc memory supported'                 => 'ECC Memory Supported',
+
+		'integrated graphics'                  => 'Integrated Graphics',
+		'graphics'                             => 'Integrated Graphics',
+		'processor graphics'                   => 'Integrated Graphics',
+
+		'gpu chipset'                          => 'GPU Chipset',
+		'graphics processor'                   => 'GPU Chipset',
+		'vram'                                 => 'VRAM Size',
+		'vram size'                            => 'VRAM Size',
+		'memory bus'                           => 'Memory Bus',
+		'memory interface'                     => 'Memory Interface',
+		'recommended psu'                      => 'Recommended PSU',
+
+		'form factor'                          => 'Form Factor',
+		'chipset'                              => 'Chipset',
+		'warranty'                             => 'Warranty',
+		'manufacturer warranty period'         => 'Warranty',
+		'lithography'                          => 'Lithography',
+		'product collection'                   => 'Product Collection',
+		'code name'                            => 'Code Name',
+		'vertical segment'                     => 'Vertical Segment',
+		'use conditions'                       => 'Use Conditions',
+		'package size'                         => 'Package Size',
+		'tjunction'                            => 'TJUNCTION (Max Temp)',
+		'direct media interface (dmi) revision'=> 'DMI Revision',
+		'max # of dmi lanes'                   => 'Max DMI Lanes',
+		'pci express revision'                 => 'PCI Express Revision',
+		'pci express configurations'           => 'PCI Express Configurations',
+		'max # of pci express lanes'           => 'Max PCI Express Lanes',
+	);
+
+	/**
+	 * Validate whether a key-value pair is a genuine hardware specification,
+	 * rejecting footer disclaimers, shipping text, wishlist, notes, and paragraphs.
+	 *
+	 * @param string $key
+	 * @param string $val
+	 * @return bool
+	 */
+	public static function is_valid_spec_pair( $key, $val ) {
+		if ( empty( $key ) || empty( $val ) || ! is_scalar( $key ) || ! is_scalar( $val ) ) {
+			return false;
+		}
+
+		$k = trim( (string) $key );
+		$v = trim( (string) $val );
+
+		$k = rtrim( $k, ':' );
+		$k = trim( $k, '*' );
+
+		if ( strlen( $k ) < 2 || strlen( $k ) > 60 ) {
+			return false;
+		}
+		if ( strlen( $v ) < 1 || strlen( $v ) > 220 ) {
+			return false;
+		}
+
+		$k_lower = strtolower( $k );
+		$v_lower = strtolower( $v );
+
+		// Blacklisted keys (disclaimers, shipping, UI buttons, store policies)
+		$blacklisted_keys = array(
+			'note', 'notes', 'notice', 'disclaimer', 'terms', 'condition', 'conditions',
+			'shipping', 'delivery', 'courier', 'dispatch', 'estimated',
+			'wishlist', 'compare', 'review', 'reviews', 'rating', 'ratings', 'cart', 'buy now', 'add to',
+			'description', 'overview', 'features', 'key features', 'highlights', 'quick overview',
+			'tags', 'tax', 'gst', 'emi', 'cod', 'payment', 'in stock', 'out of stock',
+			'return', 'policy', 'cancellation', 'refund', 'replacement',
+			'standard shipping', 'fast delivery',
+		);
+
+		foreach ( $blacklisted_keys as $b ) {
+			if ( $k_lower === $b || strpos( $k_lower, $b ) !== false ) {
+				return false;
+			}
+		}
+
+		// Blacklisted symbol-only or boilerplate values
+		$symbol_values = array( '(', ')', '-', '*', '**', '***', ':', ';', 'n/a', 'na', 'null', 'none', 'undefined', 'no' );
+		if ( in_array( $v_lower, $symbol_values, true ) ) {
+			return false;
+		}
+
+		// Blacklisted phrases inside values
+		$blacklisted_phrases = array(
+			'subject to change without notice',
+			'delivery typically takes',
+			'business days',
+			'prices, specifications',
+			'all rights reserved',
+			'add to cart',
+			'add to wishlist',
+		);
+
+		foreach ( $blacklisted_phrases as $phrase ) {
+			if ( strpos( $v_lower, $phrase ) !== false ) {
+				return false;
+			}
+		}
+
+		// Reject long descriptive paragraphs
+		if ( substr_count( $v, '.' ) > 3 && strlen( $v ) > 100 ) {
+			return false;
+		}
+
+		// Reject identical key-value
+		if ( strcasecmp( $k, $v ) === 0 ) {
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Normalize a raw specification label into standardized Title Case.
+	 *
+	 * @param string $key
+	 * @return string
+	 */
+	public static function normalize_spec_key( $key ) {
+		$k = trim( (string) $key );
+		$k = rtrim( $k, ':' );
+		$k = trim( $k, '*' );
+		$clean = preg_replace( '/[\s_\-]+/', ' ', strtolower( $k ) );
+
+		if ( isset( self::$key_normalization_map[ $clean ] ) ) {
+			return self::$key_normalization_map[ $clean ];
+		}
+
+		// Clean fallback to proper title case
+		return ucwords( preg_replace( '/\s+/', ' ', $k ) );
+	}
+
+	/**
 	 * Run manual specs synchronization for existing canonical components in DB.
 	 * Visits product pages on vendor websites, extracts the specifications section,
 	 * updates database records, and updates WordPress component posts.
 	 *
-	 * @param array $options Options array: 'category', 'component_id', 'limit'.
+	 * @param array $options Options array: 'category', 'component_id', 'limit', 'offset'.
 	 * @param callable|null $logger Progress callback logger.
 	 * @return array Sync report.
 	 */
 	public function run_specs_sync( $options = array(), $logger = null ) {
 		global $wpdb;
-		$comp_table   = Database::get_table_name( 'components' );
-		$prices_table = Database::get_table_name( 'vendor_prices' );
+		$comp_table = Database::get_table_name( 'components' );
 
 		$category     = isset( $options['category'] ) ? sanitize_text_field( $options['category'] ) : 'all';
 		$component_id = isset( $options['component_id'] ) ? intval( $options['component_id'] ) : 0;
@@ -60,21 +247,15 @@ class Specs_Sync_Manager {
 			$component = new Component( $c_row );
 			$this->emit( $logger, 'info', "Syncing specs for Component #{$component->id}: [{$component->brand} {$component->model_name}] ({$component->category})..." );
 
-			// 1. Gather all linked vendor price records for this component
 			$prices = $component->get_prices();
 			if ( empty( $prices ) ) {
 				$this->emit( $logger, 'debug', "Component #{$component->id} has no linked vendor price listings. Skipping." );
 				continue;
 			}
 
-			$merged_raw_specs = is_array( $component->specs_json ) && isset( $component->specs_json['raw_specs_table'] )
-				? (array) $component->specs_json['raw_specs_table']
-				: array();
+			$clean_specs = array();
+			$collected_text = $component->brand . ' ' . $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
 
-			$collected_text = $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
-			$successful_vendor = '';
-
-			// 2. Visit linked vendor product pages to locate and extract specs section
 			foreach ( $prices as $p ) {
 				if ( empty( $p->product_url ) ) {
 					continue;
@@ -86,35 +267,35 @@ class Specs_Sync_Manager {
 				$page_specs = $this->fetch_specs_from_product_url( $p->product_url, $vendor_slug, $component->category );
 
 				if ( ! empty( $page_specs ) ) {
-					$merged_raw_specs = array_merge( $merged_raw_specs, $page_specs );
-					$successful_vendor = ucfirst( $vendor_slug );
-					$this->emit( $logger, 'match', "Extracted " . count( $page_specs ) . " specs attributes from {$successful_vendor} product specs section." );
+					$clean_specs = array_merge( $clean_specs, $page_specs );
+					$this->emit( $logger, 'match', "Extracted " . count( $page_specs ) . " clean specification attributes from " . ucfirst( $vendor_slug ) . " product page." );
 
-					// Aggregate text for domain regex extraction
 					foreach ( $page_specs as $sk => $sv ) {
 						$collected_text .= " {$sk}: {$sv}";
 					}
-					break; // Found high-fidelity specs from a primary retailer
+					break; // Pick clean specifications from primary vendor
 				}
 			}
 
-			// 3. Extract deep structured technical specifications using domain regex patterns
-			$structured_specs = self::extract_detailed_specs( $component->category, $collected_text, $component->specs_json ?: array() );
+			// Fill in any missing category standard attributes via deep domain regex
+			$final_specs = self::merge_and_clean_specs( $component->category, $clean_specs, $component->specs_json ?: array(), $collected_text );
 
-			if ( ! empty( $merged_raw_specs ) ) {
-				$structured_specs['raw_specs_table'] = $merged_raw_specs;
-			}
-
-			// 4. Save updated specs into DB table only
-			if ( ! empty( $structured_specs ) ) {
-				$component->specs_json = $structured_specs;
+			if ( ! empty( $final_specs ) ) {
+				$component->specs_json = $final_specs;
 				$component->save();
 				$report['specs_updated']++;
 
-				$spec_summary = self::format_specs_summary( $structured_specs );
+				// Update postmeta if linked
+				if ( ! empty( $component->wp_post_id ) && function_exists( 'update_post_meta' ) ) {
+					update_post_meta( $component->wp_post_id, '_pcspecs_specs', $final_specs );
+					update_post_meta( $component->wp_post_id, '_hwsync_specs', $final_specs );
+					$report['posts_refreshed']++;
+				}
+
+				$spec_summary = self::format_specs_summary( $final_specs );
 				$this->emit( $logger, 'success', "Specs Saved for #{$component->id} [{$component->model_name}]: {$spec_summary}" );
 			} else {
-				$this->emit( $logger, 'debug', "No additional specifications discovered for #{$component->id}." );
+				$this->emit( $logger, 'debug', "No technical specifications discovered for #{$component->id}." );
 			}
 		}
 
@@ -124,8 +305,7 @@ class Specs_Sync_Manager {
 	}
 
 	/**
-	 * Synchronize specifications for a small batch/chunk of components.
-	 * Designed for ultra-fast, timeout-immune AJAX requests from the Live Console.
+	 * Synchronize specifications for a small chunk of components via AJAX.
 	 *
 	 * @param array $options Options array: 'category', 'offset', 'limit'.
 	 * @return array Chunk sync report including logs.
@@ -170,11 +350,8 @@ class Specs_Sync_Manager {
 					continue;
 				}
 
-				$merged_raw_specs = is_array( $component->specs_json ) && isset( $component->specs_json['raw_specs_table'] )
-					? (array) $component->specs_json['raw_specs_table']
-					: array();
-
-				$collected_text = $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
+				$clean_specs = array();
+				$collected_text = $component->brand . ' ' . $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
 
 				foreach ( $prices as $p ) {
 					if ( empty( $p->product_url ) ) continue;
@@ -182,8 +359,8 @@ class Specs_Sync_Manager {
 					$page_specs = $this->fetch_specs_from_product_url( $p->product_url, $vendor_slug, $component->category );
 
 					if ( ! empty( $page_specs ) ) {
-						$merged_raw_specs = array_merge( $merged_raw_specs, $page_specs );
-						$logs[] = array( 'level' => 'match', 'message' => "[{$component->model_name}] Extracted " . count( $page_specs ) . " specs attributes from " . ucfirst( $vendor_slug ) . " product page." );
+						$clean_specs = array_merge( $clean_specs, $page_specs );
+						$logs[] = array( 'level' => 'match', 'message' => "[{$component->model_name}] Extracted " . count( $page_specs ) . " clean specs from " . ucfirst( $vendor_slug ) . " product page." );
 						foreach ( $page_specs as $sk => $sv ) {
 							$collected_text .= " {$sk}: {$sv}";
 						}
@@ -191,17 +368,20 @@ class Specs_Sync_Manager {
 					}
 				}
 
-				$structured_specs = self::extract_detailed_specs( $component->category, $collected_text, $component->specs_json ?: array() );
-				if ( ! empty( $merged_raw_specs ) ) {
-					$structured_specs['raw_specs_table'] = $merged_raw_specs;
-				}
+				$final_specs = self::merge_and_clean_specs( $component->category, $clean_specs, $component->specs_json ?: array(), $collected_text );
 
-				if ( ! empty( $structured_specs ) ) {
-					$component->specs_json = $structured_specs;
+				if ( ! empty( $final_specs ) ) {
+					$component->specs_json = $final_specs;
 					$component->save();
 					$updated++;
 
-					$summary = self::format_specs_summary( $structured_specs );
+					// Update postmeta if linked
+					if ( ! empty( $component->wp_post_id ) && function_exists( 'update_post_meta' ) ) {
+						update_post_meta( $component->wp_post_id, '_pcspecs_specs', $final_specs );
+						update_post_meta( $component->wp_post_id, '_hwsync_specs', $final_specs );
+					}
+
+					$summary = self::format_specs_summary( $final_specs );
 					$logs[] = array( 'level' => 'success', 'message' => "Specs Saved for #{$component->id} [{$component->model_name}]: {$summary}" );
 				}
 			} catch ( \Throwable $e ) {
@@ -229,15 +409,15 @@ class Specs_Sync_Manager {
 	 * @param string $url
 	 * @param string $vendor_slug
 	 * @param string $category
-	 * @return array Key-value dictionary of specs.
+	 * @return array Key-value dictionary of clean specs.
 	 */
 	public function fetch_specs_from_product_url( $url, $vendor_slug, $category = '' ) {
 		$specs = array();
-		if ( empty( $url ) ) {
+		if ( empty( $url ) || ! filter_var( $url, FILTER_VALIDATE_URL ) ) {
 			return $specs;
 		}
 
-		// Handle Shopify stores (EliteHubs) via product JSON or body_html
+		// Handle Shopify stores (EliteHubs) via product JSON
 		if ( $vendor_slug === 'elitehubs' || strpos( $url, 'elitehubs.com' ) !== false ) {
 			$path = parse_url( $url, PHP_URL_PATH );
 			if ( preg_match( '#/products/([^/?]+)#', $path, $m ) ) {
@@ -255,27 +435,27 @@ class Specs_Sync_Manager {
 			}
 		}
 
-		// Standard cURL fetch for WooCommerce / OpenCart product pages
+		// Standard cURL fetch for WooCommerce, OpenCart, Journal 3, Magento pages
 		$res = $this->make_http_request( $url );
 		if ( empty( $res['body'] ) ) {
 			return $specs;
 		}
 
 		$html = $res['body'];
-
-		// Locate the specifications section in the product DOM
 		$specs_html = '';
 
-		// Pattern 1: Specification / Additional Information tab panel
-		if ( preg_match( '/<(?:div|section|table)[^>]*(?:id="tab-specification"|id="tab-specs"|class="[^"]*(?:woocommerce-Tabs-panel--specification|shop_attributes|product-info-table|specification)[^"]*"|id="tab-additional_information")[^>]*>[\s\S]*?<\/(?:div|section|table)>/i', $html, $sm ) ) {
+		// Targeted Pattern 1: Dedicated specification tab container
+		if ( preg_match( '/<(?:div|section|table)[^>]*(?:id=["\']tab-specification["\']|id=["\']tab-specs["\']|class=["\'][^"\']*(?:woocommerce-Tabs-panel--specification|shop_attributes|product-attribute-specs-table|specification)[^"\']*)[^>]*>[\s\S]*?<\/(?:div|section|table)>/i', $html, $sm ) ) {
 			$specs_html = $sm[0];
 		}
-		// Pattern 2: Tables inside description tab
-		elseif ( preg_match( '/<div[^>]*id="tab-description"[^>]*>[\s\S]*?<\/div>/i', $html, $sm ) ) {
+		// Targeted Pattern 2: Attributes table within product container
+		elseif ( preg_match( '/<table[^>]*(?:class=["\'][^"\']*(?:shop_attributes|table-bordered|table-striped|data-table|table_specifications)[^"\']*|id=["\']product-attribute-specs-table["\'])[^>]*>[\s\S]*?<\/table>/i', $html, $sm ) ) {
 			$specs_html = $sm[0];
 		}
-		// Pattern 3: Full page fallback
-		else {
+		// Targeted Pattern 3: Description tab containing definition lists
+		elseif ( preg_match( '/<div[^>]*id=["\']tab-description["\'][^>]*>[\s\S]*?<\/div>/i', $html, $sm ) ) {
+			$specs_html = $sm[0];
+		} else {
 			$specs_html = $html;
 		}
 
@@ -283,7 +463,7 @@ class Specs_Sync_Manager {
 	}
 
 	/**
-	 * Parse HTML snippet (tables, lists, definition lists) into clean key-value specs dictionary.
+	 * Parse HTML snippet (tables, lists, definition lists, structured text) into clean key-value specs dictionary.
 	 *
 	 * @param string $html_snippet
 	 * @return array
@@ -294,27 +474,47 @@ class Specs_Sync_Manager {
 			return $specs;
 		}
 
-		// 1. Table rows: <tr><th>Key</th><td>Val</td></tr> or <tr><td>Key</td><td>Val</td></tr>
+		// 1. Table rows: <tr><td>Key</td><td>Val</td></tr> or <tr><th>Key</th><td>Val</td></tr>
 		if ( preg_match_all( '/<tr[^>]*>[\s\S]*?<\/tr>/i', $html_snippet, $rows ) ) {
 			foreach ( $rows[0] as $r ) {
 				if ( preg_match_all( '/<(?:th|td)[^>]*>([\s\S]*?)<\/(?:th|td)>/i', $r, $cells ) ) {
 					if ( count( $cells[1] ) >= 2 ) {
 						$k = trim( strip_tags( $cells[1][0] ) );
 						$v = trim( strip_tags( $cells[1][1] ) );
-						$k = html_entity_decode( str_replace( ':', '', $k ), ENT_QUOTES, 'UTF-8' );
+						$k = html_entity_decode( $k, ENT_QUOTES, 'UTF-8' );
 						$v = html_entity_decode( $v, ENT_QUOTES, 'UTF-8' );
 						$k = trim( preg_replace( '/\s+/', ' ', $k ) );
 						$v = trim( preg_replace( '/\s+/', ' ', $v ) );
 
-						if ( ! empty( $k ) && ! empty( $v ) && strlen( $k ) < 80 && strlen( $v ) < 300 && strcasecmp( $k, $v ) !== 0 ) {
-							$specs[ $k ] = $v;
+						if ( self::is_valid_spec_pair( $k, $v ) ) {
+							$norm_k = self::normalize_spec_key( $k );
+							$specs[ $norm_k ] = $v;
 						}
 					}
 				}
 			}
 		}
 
-		// 2. List items: <li><strong>Key:</strong> Val</li>
+		// 2. Definition Lists: <dt>Key</dt><dd>Val</dd>
+		if ( preg_match_all( '/<dt[^>]*>([\s\S]*?)<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i', $html_snippet, $dls, PREG_SET_ORDER ) ) {
+			foreach ( $dls as $dl ) {
+				$k = trim( strip_tags( $dl[1] ) );
+				$v = trim( strip_tags( $dl[2] ) );
+				$k = html_entity_decode( $k, ENT_QUOTES, 'UTF-8' );
+				$v = html_entity_decode( $v, ENT_QUOTES, 'UTF-8' );
+				$k = trim( preg_replace( '/\s+/', ' ', $k ) );
+				$v = trim( preg_replace( '/\s+/', ' ', $v ) );
+
+				if ( self::is_valid_spec_pair( $k, $v ) ) {
+					$norm_k = self::normalize_spec_key( $k );
+					if ( ! isset( $specs[ $norm_k ] ) ) {
+						$specs[ $norm_k ] = $v;
+					}
+				}
+			}
+		}
+
+		// 3. List items: <li><strong>Key:</strong> Val</li>
 		if ( preg_match_all( '/<li[^>]*>[\s\S]*?<\/li>/i', $html_snippet, $lis ) ) {
 			foreach ( $lis[0] as $li ) {
 				if ( preg_match( '/<(?:strong|b|span)[^>]*>([^<:]+)[:]?<\/(?:strong|b|span)>[\s:]*([^<]+)/i', $li, $m ) ) {
@@ -323,9 +523,30 @@ class Specs_Sync_Manager {
 					$k = trim( preg_replace( '/\s+/', ' ', $k ) );
 					$v = trim( preg_replace( '/\s+/', ' ', $v ) );
 
-					if ( ! empty( $k ) && ! empty( $v ) && strlen( $k ) < 80 && strlen( $v ) < 300 ) {
-						if ( ! isset( $specs[ $k ] ) ) {
-							$specs[ $k ] = $v;
+					if ( self::is_valid_spec_pair( $k, $v ) ) {
+						$norm_k = self::normalize_spec_key( $k );
+						if ( ! isset( $specs[ $norm_k ] ) ) {
+							$specs[ $norm_k ] = $v;
+						}
+					}
+				}
+			}
+		}
+
+		// 4. Clean text key-value lines: "Key : Value"
+		if ( empty( $specs ) ) {
+			$clean_text = strip_tags( $html_snippet );
+			$lines = explode( "\n", $clean_text );
+			foreach ( $lines as $line ) {
+				$line = trim( $line );
+				if ( strpos( $line, ':' ) !== false ) {
+					$parts = explode( ':', $line, 2 );
+					$k = trim( $parts[0] );
+					$v = trim( $parts[1] );
+					if ( self::is_valid_spec_pair( $k, $v ) ) {
+						$norm_k = self::normalize_spec_key( $k );
+						if ( ! isset( $specs[ $norm_k ] ) ) {
+							$specs[ $norm_k ] = $v;
 						}
 					}
 				}
@@ -336,7 +557,110 @@ class Specs_Sync_Manager {
 	}
 
 	/**
-	 * Extract rich category-specific specifications from title, description & raw specs.
+	 * Merge vendor extracted specs with domain regex extractions and return a clean, deduplicated dictionary.
+	 *
+	 * @param string $category
+	 * @param array $raw_specs
+	 * @param array $existing_specs
+	 * @param string $text_context
+	 * @return array
+	 */
+	public static function merge_and_clean_specs( $category, $raw_specs = array(), $existing_specs = array(), $text_context = '' ) {
+		$merged = array();
+
+		// 1. Sanitize and normalize existing specs
+		if ( is_array( $existing_specs ) ) {
+			foreach ( $existing_specs as $k => $v ) {
+				if ( $k === 'raw_specs_table' || ! is_scalar( $v ) ) {
+					continue;
+				}
+				if ( self::is_valid_spec_pair( $k, $v ) ) {
+					$norm_k = self::normalize_spec_key( $k );
+					$merged[ $norm_k ] = (string) $v;
+				}
+			}
+		}
+
+		// 2. Add newly extracted vendor specs
+		if ( is_array( $raw_specs ) ) {
+			foreach ( $raw_specs as $k => $v ) {
+				if ( self::is_valid_spec_pair( $k, $v ) ) {
+					$norm_k = self::normalize_spec_key( $k );
+					$merged[ $norm_k ] = (string) $v;
+				}
+			}
+		}
+
+		// 3. Fill in missing category-specific core hardware attributes
+		$cat = strtolower( $category );
+		$text = $text_context;
+
+		switch ( $cat ) {
+			case 'cpu':
+				if ( empty( $merged['CPU Socket Type'] ) && preg_match( '/\b(AM5|AM4|LGA1700|LGA1851|LGA1200|LGA1151|sTR5|SP5)\b/i', $text, $m ) ) {
+					$merged['CPU Socket Type'] = strtoupper( $m[1] );
+				}
+				if ( empty( $merged['Total Cores'] ) && preg_match( '/\b(\d+)\s*(?:-|\s*)?(?:core|cores)\b/i', $text, $m ) ) {
+					$merged['Total Cores'] = $m[1];
+				}
+				if ( empty( $merged['Total Threads'] ) && preg_match( '/\b(\d+)\s*(?:-|\s*)?(?:thread|threads)\b/i', $text, $m ) ) {
+					$merged['Total Threads'] = $m[1];
+				}
+				if ( empty( $merged['Max Turbo Frequency'] ) && preg_match( '/(?:up\s*to|boost|max\s*clock|turbo)?\s*(\d+(?:\.\d+)?)\s*(?:GHz)\b/i', $text, $m ) ) {
+					$merged['Max Turbo Frequency'] = $m[1] . ' GHz';
+				}
+				if ( empty( $merged['Processor Base Frequency'] ) && preg_match( '/(?:base|base\s*clock)\s*(\d+(?:\.\d+)?)\s*(?:GHz)\b/i', $text, $m ) ) {
+					$merged['Processor Base Frequency'] = $m[1] . ' GHz';
+				}
+				if ( empty( $merged['Cache'] ) && preg_match( '/(\d+)\s*(?:MB|Mb)\s*(?:L3|Cache|3D\s*V-Cache|Smart\s*Cache)/i', $text, $m ) ) {
+					$merged['Cache'] = $m[1] . ' MB';
+				}
+				if ( empty( $merged['TDP (Base Power)'] ) && empty( $merged['Processor Base Power'] ) && preg_match( '/(\d+)\s*W(?:att)?\b/i', $text, $m ) ) {
+					$merged['Processor Base Power'] = $m[1] . ' W';
+				}
+				if ( empty( $merged['Memory Types'] ) && preg_match( '/\b(DDR5(?:\s*\+\s*DDR4)?|DDR4|DDR5)\b/i', $text, $m ) ) {
+					$merged['Memory Types'] = strtoupper( $m[1] );
+				}
+				break;
+
+			case 'gpu':
+				if ( empty( $merged['VRAM Size'] ) && preg_match( '/(\d+)\s*(?:GB|G)\s*(GDDR6X|GDDR6|GDDR5X|GDDR5|HBM2e|HBM3)/i', $text, $m ) ) {
+					$merged['VRAM Size'] = $m[1] . ' GB ' . strtoupper( $m[2] );
+				} elseif ( empty( $merged['VRAM Size'] ) && preg_match( '/(\d+)\s*(?:GB|G)\b/i', $text, $m ) ) {
+					$merged['VRAM Size'] = $m[1] . ' GB';
+				}
+				if ( empty( $merged['GPU Chipset'] ) && preg_match( '/\b(RTX\s*4090|RTX\s*4080\s*Super|RTX\s*4080|RTX\s*4070\s*Ti\s*Super|RTX\s*4070\s*Ti|RTX\s*4070\s*Super|RTX\s*4070|RTX\s*4060\s*Ti|RTX\s*4060|RTX\s*3060|RX\s*7900\s*XTX|RX\s*7900\s*XT|RX\s*7800\s*XT|RX\s*7700\s*XT|RX\s*7600\s*XT|RX\s*7600|Arc\s*A770|Arc\s*A750)\b/i', $text, $m ) ) {
+					$merged['GPU Chipset'] = strtoupper( $m[1] );
+				}
+				if ( empty( $merged['Memory Bus'] ) && preg_match( '/(\d+)\s*(?:-|\s*)?bit\b/i', $text, $m ) ) {
+					$merged['Memory Bus'] = $m[1] . '-bit';
+				}
+				if ( empty( $merged['Recommended PSU'] ) && preg_match( '/(?:PSU|Power Supply|Recommended PSU|Min PSU)[^\d]*(\d{3,4})\s*W/i', $text, $m ) ) {
+					$merged['Recommended PSU'] = $m[1] . ' W';
+				}
+				break;
+
+			case 'motherboard':
+				if ( empty( $merged['CPU Socket Type'] ) && preg_match( '/\b(AM5|AM4|LGA1700|LGA1851|LGA1200|LGA1151)\b/i', $text, $m ) ) {
+					$merged['CPU Socket Type'] = strtoupper( $m[1] );
+				}
+				if ( empty( $merged['Chipset'] ) && preg_match( '/\b(X870E|X870|X670E|X670|B850|B650E|B650|A620|Z890|Z790|Z690|B760|B660|H610)\b/i', $text, $m ) ) {
+					$merged['Chipset'] = strtoupper( $m[1] );
+				}
+				if ( empty( $merged['Form Factor'] ) && preg_match( '/\b(E-ATX|Extended ATX|ATX|Micro-ATX|Micro ATX|mATX|Mini-ITX|Mini ITX|ITX)\b/i', $text, $m ) ) {
+					$merged['Form Factor'] = strtoupper( str_replace( ' ', '-', $m[1] ) );
+				}
+				if ( empty( $merged['Memory Types'] ) && preg_match( '/\b(DDR5|DDR4)\b/i', $text, $m ) ) {
+					$merged['Memory Types'] = strtoupper( $m[1] );
+				}
+				break;
+		}
+
+		return $merged;
+	}
+
+	/**
+	 * Backwards-compatible domain regex extraction helper for structured specs.
 	 *
 	 * @param string $category
 	 * @param string $text
@@ -345,212 +669,48 @@ class Specs_Sync_Manager {
 	 */
 	public static function extract_detailed_specs( $category, $text, $existing_specs = array() ) {
 		$specs = is_array( $existing_specs ) ? $existing_specs : array();
+		$cat = strtolower( $category );
 
-		switch ( strtolower( $category ) ) {
+		switch ( $cat ) {
 			case 'cpu':
-				// Socket
 				if ( preg_match( '/\b(AM5|AM4|LGA1700|LGA1851|LGA1200|LGA1151|sTR5|SP5)\b/i', $text, $m ) ) {
 					$specs['socket'] = strtoupper( $m[1] );
 				}
-				// Cores & Threads
 				if ( preg_match( '/(\d+)\s*(?:-|\s*)?(?:core|cores)\b/i', $text, $m ) ) {
 					$specs['cores'] = intval( $m[1] );
 				}
 				if ( preg_match( '/(\d+)\s*(?:-|\s*)?(?:thread|threads)\b/i', $text, $m ) ) {
 					$specs['threads'] = intval( $m[1] );
 				}
-				// Boost Clock / Max Clock
-				if ( preg_match( '/(?:up\s*to|boost|max\s*clock|freq|turbo)?\s*(\d+(?:\.\d+)?)\s*(?:GHz)\b/i', $text, $m ) ) {
+				if ( preg_match( '/(?:up\s*to|boost|max\s*clock|turbo)?\s*(\d+(?:\.\d+)?)\s*(?:GHz)\b/i', $text, $m ) ) {
 					$specs['boost_clock'] = $m[1] . ' GHz';
 				}
-				// Base Clock
 				if ( preg_match( '/(?:base|base\s*clock)\s*(\d+(?:\.\d+)?)\s*(?:GHz)\b/i', $text, $m ) ) {
 					$specs['base_clock'] = $m[1] . ' GHz';
 				}
-				// Cache
 				if ( preg_match( '/(\d+)\s*(?:MB|Mb)\s*(?:L3|Cache|3D\s*V-Cache|Smart\s*Cache)/i', $text, $m ) ) {
 					$specs['cache'] = $m[1] . 'MB';
 				}
-				// TDP
 				if ( preg_match( '/(\d+)\s*W(?:att)?\b/i', $text, $m ) ) {
 					$specs['tdp'] = $m[1] . 'W';
-				}
-				// Integrated Graphics
-				if ( preg_match( '/\b(Radeon Graphics|Intel UHD \d+|Iris Xe|No Graphics|Graphics: [^\n,]+)\b/i', $text, $m ) ) {
-					$specs['integrated_gpu'] = $m[1];
-				}
-				// Memory Support
-				if ( preg_match( '/\b(DDR5(?:\s*\+\s*DDR4)?|DDR4|DDR5)\b/i', $text, $m ) ) {
-					$specs['memory_support'] = strtoupper( $m[1] );
 				}
 				break;
 
 			case 'gpu':
-				// VRAM
 				if ( preg_match( '/(\d+)\s*(?:GB|G)\s*(GDDR6X|GDDR6|GDDR5X|GDDR5|HBM2e|HBM3)/i', $text, $m ) ) {
 					$specs['vram_size'] = $m[1] . 'GB';
 					$specs['memory_type'] = strtoupper( $m[2] );
 				} elseif ( preg_match( '/(\d+)\s*(?:GB|G)\b/i', $text, $m ) ) {
 					$specs['vram_size'] = $m[1] . 'GB';
 				}
-				// Chipset / Architecture
 				if ( preg_match( '/\b(RTX\s*4090|RTX\s*4080\s*Super|RTX\s*4080|RTX\s*4070\s*Ti\s*Super|RTX\s*4070\s*Ti|RTX\s*4070\s*Super|RTX\s*4070|RTX\s*4060\s*Ti|RTX\s*4060|RTX\s*3060|RX\s*7900\s*XTX|RX\s*7900\s*XT|RX\s*7800\s*XT|RX\s*7700\s*XT|RX\s*7600\s*XT|RX\s*7600|Arc\s*A770|Arc\s*A750)\b/i', $text, $m ) ) {
 					$specs['gpu_chipset'] = strtoupper( $m[1] );
 				}
-				// Memory Bus
 				if ( preg_match( '/(\d+)\s*(?:-|\s*)?bit\b/i', $text, $m ) ) {
 					$specs['memory_bus'] = $m[1] . '-bit';
 				}
-				// Recommended PSU
 				if ( preg_match( '/(?:PSU|Power Supply|Recommended PSU|Min PSU)[^\d]*(\d{3,4})\s*W/i', $text, $m ) ) {
 					$specs['recommended_psu'] = $m[1] . 'W';
-				}
-				// Form Factor / Slot width
-				if ( preg_match( '/\b(\d+(?:\.\d+)?)\s*(?:slot|slots)\b/i', $text, $m ) ) {
-					$specs['slot_width'] = $m[1] . ' Slot';
-				}
-				break;
-
-			case 'motherboard':
-				// Socket
-				if ( preg_match( '/\b(AM5|AM4|LGA1700|LGA1851|LGA1200|LGA1151)\b/i', $text, $m ) ) {
-					$specs['socket'] = strtoupper( $m[1] );
-				}
-				// Chipset
-				if ( preg_match( '/\b(X870E|X870|X670E|X670|B850|B650E|B650|A620|Z890|Z790|Z690|B760|B660|H610)\b/i', $text, $m ) ) {
-					$specs['chipset'] = strtoupper( $m[1] );
-				}
-				// Form Factor
-				if ( preg_match( '/\b(E-ATX|Extended ATX|ATX|Micro-ATX|Micro ATX|mATX|Mini-ITX|Mini ITX|ITX)\b/i', $text, $m ) ) {
-					$specs['form_factor'] = strtoupper( str_replace( ' ', '-', $m[1] ) );
-				}
-				// Memory Type & Slots
-				if ( preg_match( '/\b(DDR5|DDR4)\b/i', $text, $m ) ) {
-					$specs['memory_type'] = strtoupper( $m[1] );
-				}
-				if ( preg_match( '/(\d+)\s*(?:x\s*)?(?:DIMM|RAM\s*Slots|Memory\s*Slots)\b/i', $text, $m ) ) {
-					$specs['ram_slots'] = intval( $m[1] );
-				}
-				// Wi-Fi
-				if ( preg_match( '/\b(WiFi 7|WiFi 6E|WiFi 6|Wi-Fi 7|Wi-Fi 6E|Wi-Fi 6|WiFi|Wi-Fi|AX|AC)\b/i', $text, $m ) ) {
-					$specs['wireless'] = 'Built-in ' . strtoupper( $m[1] );
-				}
-				// PCIe Version
-				if ( preg_match( '/\b(PCIe\s*5\.0|PCIe\s*4\.0)\b/i', $text, $m ) ) {
-					$specs['pcie_version'] = strtoupper( $m[1] );
-				}
-				break;
-
-			case 'ram':
-				// Memory Type
-				if ( preg_match( '/\b(DDR5|DDR4|DDR3)\b/i', $text, $m ) ) {
-					$specs['memory_type'] = strtoupper( $m[1] );
-				}
-				// Total Capacity & Configuration
-				if ( preg_match( '/(\d+)\s*GB\s*\(\s*(\d+)\s*x\s*(\d+)\s*GB\s*\)/i', $text, $m ) ) {
-					$specs['capacity'] = $m[1] . 'GB';
-					$specs['kit_config'] = $m[2] . 'x' . $m[3] . 'GB';
-				} elseif ( preg_match( '/(\d+)\s*GB\s*x\s*(\d+)/i', $text, $m ) ) {
-					$specs['capacity'] = ( intval( $m[1] ) * intval( $m[2] ) ) . 'GB';
-					$specs['kit_config'] = $m[2] . 'x' . $m[1] . 'GB';
-				} elseif ( preg_match( '/(\d+)\s*GB\b/i', $text, $m ) ) {
-					$specs['capacity'] = $m[1] . 'GB';
-					$specs['kit_config'] = '1x' . $m[1] . 'GB';
-				}
-				// Speed
-				if ( preg_match( '/(\d{4})\s*(?:MHz|MT\/s|MTs)/i', $text, $m ) ) {
-					$specs['speed'] = $m[1] . ' MHz';
-				}
-				// Latency
-				if ( preg_match( '/\b(CL\s*\d{2}|C\d{2})\b/i', $text, $m ) ) {
-					$specs['latency'] = strtoupper( $m[1] );
-				}
-				// RGB
-				if ( preg_match( '/\b(RGB|ARGB)\b/i', $text ) ) {
-					$specs['lighting'] = 'RGB';
-				} else {
-					$specs['lighting'] = 'Non-RGB';
-				}
-				break;
-
-			case 'storage':
-				// Capacity
-				if ( preg_match( '/(\d+)\s*(?:TB|Tb)\b/i', $text, $m ) ) {
-					$specs['capacity'] = $m[1] . 'TB';
-				} elseif ( preg_match( '/(\d{3,4})\s*(?:GB|Gb)\b/i', $text, $m ) ) {
-					$specs['capacity'] = $m[1] . 'GB';
-				}
-				// Interface
-				if ( preg_match( '/\b(PCIe\s*5\.0|Gen5|PCIe\s*Gen\s*5)\b/i', $text ) ) {
-					$specs['interface'] = 'PCIe Gen5 x4 NVMe';
-				} elseif ( preg_match( '/\b(PCIe\s*4\.0|Gen4|PCIe\s*Gen\s*4)\b/i', $text ) ) {
-					$specs['interface'] = 'PCIe Gen4 x4 NVMe';
-				} elseif ( preg_match( '/\b(PCIe\s*3\.0|Gen3|PCIe\s*Gen\s*3)\b/i', $text ) ) {
-					$specs['interface'] = 'PCIe Gen3 x4 NVMe';
-				} elseif ( preg_match( '/\b(SATA\s*III|SATA\s*3|SATA\s*6Gb\/s)\b/i', $text ) ) {
-					$specs['interface'] = 'SATA III 6Gb/s';
-				}
-				// Form Factor
-				if ( preg_match( '/\b(M\.2\s*2280|2280|M\.2\s*2242|2\.5\s*inch|2\.5"|3\.5\s*inch|3\.5")\b/i', $text, $m ) ) {
-					$specs['form_factor'] = $m[1];
-				}
-				// Read Speed
-				if ( preg_match( '/(?:read|read\s*speed)[^\d]*(\d{3,5})\s*(?:MB\/s|MBps)/i', $text, $m ) ) {
-					$specs['read_speed'] = $m[1] . ' MB/s';
-				}
-				// Write Speed
-				if ( preg_match( '/(?:write|write\s*speed)[^\d]*(\d{3,5})\s*(?:MB\/s|MBps)/i', $text, $m ) ) {
-					$specs['write_speed'] = $m[1] . ' MB/s';
-				}
-				break;
-
-			case 'psu':
-				// Wattage
-				if ( preg_match( '/(\d{3,4})\s*(?:W|Watt|Watts)\b/i', $text, $m ) ) {
-					$specs['wattage'] = $m[1] . 'W';
-				}
-				// 80 Plus Rating
-				if ( preg_match( '/80\s*Plus\s*(Titanium|Platinum|Gold|Silver|Bronze|White|Standard)/i', $text, $m ) ) {
-					$specs['efficiency_rating'] = '80+ ' . ucfirst( strtolower( $m[1] ) );
-				}
-				// Modularity
-				if ( preg_match( '/\b(Fully\s*Modular|Full\s*Modular)\b/i', $text ) ) {
-					$specs['modularity'] = 'Fully Modular';
-				} elseif ( preg_match( '/\b(Semi\s*Modular)\b/i', $text ) ) {
-					$specs['modularity'] = 'Semi-Modular';
-				} elseif ( preg_match( '/\b(Non\s*Modular)\b/i', $text ) ) {
-					$specs['modularity'] = 'Non-Modular';
-				}
-				// PCIe 5.0 / ATX 3.0
-				if ( preg_match( '/\b(ATX\s*3\.0|ATX\s*3\.1|PCIe\s*5\.0|12VHPWR)\b/i', $text, $m ) ) {
-					$specs['pcie5_ready'] = 'Yes (' . strtoupper( $m[1] ) . ')';
-				}
-				break;
-
-			case 'cooler':
-				// Cooler Type & Radiator
-				if ( preg_match( '/(\d{3})\s*mm\s*(?:AIO|Liquid|Liquid\s*Cooler)/i', $text, $m ) ) {
-					$specs['cooler_type'] = 'AIO Liquid Cooler';
-					$specs['radiator_size'] = $m[1] . 'mm';
-				} elseif ( preg_match( '/\b(AIO|Liquid\s*Cooler)\b/i', $text ) ) {
-					$specs['cooler_type'] = 'AIO Liquid Cooler';
-				} elseif ( preg_match( '/\b(Air\s*Cooler|Dual\s*Tower|Single\s*Tower)\b/i', $text, $m ) ) {
-					$specs['cooler_type'] = 'Air Cooler (' . $m[1] . ')';
-				}
-				// Fan Lighting
-				if ( preg_match( '/\b(ARGB|RGB|Auto\s*RGB)\b/i', $text ) ) {
-					$specs['lighting'] = strtoupper( $m[1] );
-				}
-				break;
-
-			case 'cabinet':
-				// Form factor
-				if ( preg_match( '/\b(Full\s*Tower|Mid\s*Tower|Mini\s*Tower|Mini\s*ITX)\b/i', $text, $m ) ) {
-					$specs['case_type'] = ucwords( strtolower( $m[1] ) );
-				}
-				// Motherboard support
-				if ( preg_match( '/\b(E-ATX|ATX|Micro-ATX|mATX|Mini-ITX|ITX)\b/i', $text, $m ) ) {
-					$specs['mb_support'] = strtoupper( $m[1] );
 				}
 				break;
 		}
@@ -564,12 +724,8 @@ class Specs_Sync_Manager {
 		}
 		$parts = array();
 		foreach ( $specs as $k => $v ) {
-			if ( $k === 'raw_specs_table' ) {
-				continue;
-			}
 			if ( is_scalar( $v ) ) {
-				$label = ucwords( str_replace( '_', ' ', $k ) );
-				$parts[] = "{$label}: {$v}";
+				$parts[] = "{$k}: {$v}";
 			}
 		}
 		return ! empty( $parts ) ? implode( ' | ', array_slice( $parts, 0, 5 ) ) : 'Specs recorded';
