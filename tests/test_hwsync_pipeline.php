@@ -1073,6 +1073,42 @@ assert_test( 'Component Specification Clearing sets specs_json to empty/null wit
 	$refreshed_comp->model_name === 'Core i3-14100F'
 ) );
 
+// Test 35: Component Specifications Manual Edit & Key Normalization Save
+$comp_for_edit = new \HWsync\Models\Component( array(
+	'brand'      => 'AMD',
+	'model_name' => 'Ryzen 5 7600',
+	'category'   => 'cpu',
+	'specs_json' => array( 'Note**' => 'Fake note', 'CPU Socket Type' => 'AM5' ),
+) );
+$comp_for_edit->save();
+
+// Simulate manual edit: user removes Note**, edits CPU Socket Type, and adds Total Cores and Warranty
+$manual_keys = array( 'cpu socket type', 'Total Cores', 'Warranty', '' );
+$manual_vals = array( 'AM5', '6', '3 Years', '' );
+
+$edited_specs = array();
+for ( $i = 0; $i < count( $manual_keys ); $i++ ) {
+	$k = trim( $manual_keys[ $i ] );
+	$v = trim( $manual_vals[ $i ] );
+	if ( ! empty( $k ) && ! empty( $v ) ) {
+		$norm_k = \HWsync\Specs_Sync_Manager::normalize_spec_key( $k );
+		$edited_specs[ $norm_k ] = $v;
+	}
+}
+
+$comp_for_edit->specs_json = $edited_specs;
+$comp_for_edit->save();
+
+$refreshed_edited = \HWsync\Models\Component::find_by_id( $comp_for_edit->id );
+assert_test( 'Component Specifications Manual Edit persists customized attributes and removes unwanted specs', (
+	$refreshed_edited !== null &&
+	count( $refreshed_edited->specs_json ) === 3 &&
+	isset( $refreshed_edited->specs_json['CPU Socket Type'] ) && $refreshed_edited->specs_json['CPU Socket Type'] === 'AM5' &&
+	isset( $refreshed_edited->specs_json['Total Cores'] ) && $refreshed_edited->specs_json['Total Cores'] === '6' &&
+	isset( $refreshed_edited->specs_json['Warranty'] ) && $refreshed_edited->specs_json['Warranty'] === '3 Years' &&
+	! isset( $refreshed_edited->specs_json['Note**'] )
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

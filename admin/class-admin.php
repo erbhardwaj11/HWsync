@@ -33,6 +33,8 @@ class Admin {
 		add_action( 'wp_ajax_hwsync_stream_image_sync', array( __CLASS__, 'handle_stream_image_sync' ) );
 		add_action( 'wp_ajax_hwsync_sync_image_chunk', array( __CLASS__, 'handle_sync_image_chunk' ) );
 		add_action( 'wp_ajax_hwsync_clear_component_specs', array( __CLASS__, 'handle_clear_component_specs' ) );
+		add_action( 'wp_ajax_hwsync_get_component_specs', array( __CLASS__, 'handle_get_component_specs' ) );
+		add_action( 'wp_ajax_hwsync_save_component_specs', array( __CLASS__, 'handle_save_component_specs' ) );
 	}
 
 	public static function register_admin_menu() {
@@ -1742,7 +1744,7 @@ class Admin {
 							<th style="font-weight: 600; color: #334155; width: 130px;"><?php esc_html_e( 'Category', 'hwsync' ); ?></th>
 							<th style="font-weight: 600; color: #334155; width: 140px;"><?php esc_html_e( 'MPN / SKU', 'hwsync' ); ?></th>
 							<th style="font-weight: 600; color: #334155; width: 160px;"><?php esc_html_e( 'Lowest Live Price', 'hwsync' ); ?></th>
-							<th style="font-weight: 600; color: #334155; width: 240px; text-align: right;"><?php esc_html_e( 'Linked Stores & Actions', 'hwsync' ); ?></th>
+							<th style="font-weight: 600; color: #334155; width: 280px; text-align: right;"><?php esc_html_e( 'Linked Stores & Actions', 'hwsync' ); ?></th>
 						</tr>
 					</thead>
 					<tbody>
@@ -1797,13 +1799,21 @@ class Admin {
 									</td>
 									<td style="vertical-align: middle; text-align: right;">
 										<div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
+											<button type="button" class="button btn-edit-comp-specs"
+												data-id="<?php echo esc_attr( $comp->id ); ?>"
+												data-name="<?php echo esc_attr( $comp->brand . ' ' . $comp->model_name ); ?>"
+												data-category="<?php echo esc_attr( $comp->category ); ?>"
+												style="background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; font-size: 11.5px; padding: 0 8px; border-radius: 4px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"
+												title="<?php esc_attr_e( 'Edit specifications (add, modify, or remove attributes)', 'hwsync' ); ?>">
+												<span class="dashicons dashicons-edit" style="font-size: 13px; line-height: 22px; width: 13px; height: 13px;"></span> <?php esc_html_e( 'Specs', 'hwsync' ); ?>
+											</button>
 											<?php if ( $has_specs ) : ?>
 												<button type="button" class="button btn-clear-comp-specs"
 													data-id="<?php echo esc_attr( $comp->id ); ?>"
 													data-name="<?php echo esc_attr( $comp->brand . ' ' . $comp->model_name ); ?>"
 													style="background: #fff1f2; border-color: #fecdd3; color: #be123c; font-size: 11px; padding: 0 6px; border-radius: 4px; font-weight: 600;"
-													title="<?php esc_attr_e( 'Remove specifications for this component', 'hwsync' ); ?>">
-													<span class="dashicons dashicons-trash" style="font-size: 13px; line-height: 22px; width: 13px; height: 13px;"></span> <?php esc_html_e( 'Specs', 'hwsync' ); ?>
+													title="<?php esc_attr_e( 'Remove all specifications for this component', 'hwsync' ); ?>">
+													<span class="dashicons dashicons-trash" style="font-size: 13px; line-height: 22px; width: 13px; height: 13px;"></span>
 												</button>
 											<?php endif; ?>
 											<button type="button" class="button btn-view-comp-prices"
@@ -1980,6 +1990,78 @@ class Admin {
 							<button type="button" id="btn-confirm-wipe-specs" class="button button-primary" style="height: 36px; border-radius: 6px; background: #dc2626; border-color: #b91c1c; font-weight: 600;"><?php esc_html_e( 'Confirm Wipe Specs', 'hwsync' ); ?></button>
 						</div>
 					</div>
+				</div>
+			</div>
+
+			<!-- Modal 4: Edit Specifications Modal -->
+			<div id="modal-edit-specs" style="display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.6); z-index: 100000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+				<div style="background: #fff; width: 740px; max-width: 95%; max-height: 90vh; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); overflow: hidden; display: flex; flex-direction: column;">
+					
+					<div style="padding: 16px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc;">
+						<div style="display: flex; align-items: center; gap: 10px;">
+							<div style="background: #eff6ff; color: #2563eb; width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+								<span class="dashicons dashicons-edit" style="font-size: 20px; width: 20px; height: 20px;"></span>
+							</div>
+							<div>
+								<h2 id="modal-edit-specs-title" style="margin: 0; font-size: 16px; font-weight: 700; color: #0f172a;">Edit Specifications</h2>
+								<div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
+									<span id="modal-edit-specs-cat" style="display: inline-block; font-size: 10.5px; font-weight: 700; background: #e0f2fe; color: #0369a1; padding: 1px 6px; border-radius: 10px; text-transform: uppercase;"></span>
+									<span id="modal-edit-specs-id" style="font-size: 11px; color: #64748b;"></span>
+								</div>
+							</div>
+						</div>
+						<button type="button" id="btn-close-edit-specs-modal" style="background: none; border: none; font-size: 24px; line-height: 1; color: #64748b; cursor: pointer; padding: 0 4px;">&times;</button>
+					</div>
+
+					<div style="padding: 20px 24px; flex: 1; overflow-y: auto;">
+						<div id="edit-specs-loading" style="display: none; padding: 40px; text-align: center;">
+							<span class="spinner is-active" style="float: none; margin: 0 auto 10px; display: inline-block;"></span>
+							<p style="color: #64748b; margin: 0; font-size: 13px; font-weight: 500;">Loading specifications...</p>
+						</div>
+
+						<div id="edit-specs-content" style="display: none;">
+							<div style="margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+								<p style="margin: 0; font-size: 13px; color: #475569; line-height: 1.4;">
+									<?php esc_html_e( 'Review and edit technical specifications. Delete incorrect entries, edit values, or add new specification attributes.', 'hwsync' ); ?>
+								</p>
+								<button type="button" id="btn-add-spec-row" class="button" style="border-color: #2563eb; color: #2563eb; font-size: 12px; font-weight: 600; background: #eff6ff; display: inline-flex; align-items: center; gap: 4px; border-radius: 6px;">
+									<span class="dashicons dashicons-plus-alt2" style="font-size: 14px; width: 14px; height: 14px; margin-top: 1px;"></span> <?php esc_html_e( 'Add Attribute', 'hwsync' ); ?>
+								</button>
+							</div>
+
+							<div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-bottom: 16px; background: #fff;">
+								<table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+									<thead>
+										<tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #334155; font-weight: 600;">
+											<th style="padding: 10px 12px; width: 42%;"><?php esc_html_e( 'Specification Attribute (Key)', 'hwsync' ); ?></th>
+											<th style="padding: 10px 12px; width: 48%;"><?php esc_html_e( 'Specification Value', 'hwsync' ); ?></th>
+											<th style="padding: 10px 12px; width: 10%; text-align: center;"><?php esc_html_e( 'Remove', 'hwsync' ); ?></th>
+										</tr>
+									</thead>
+									<tbody id="edit-specs-tbody">
+										<!-- Dynamic Rows -->
+									</tbody>
+								</table>
+							</div>
+
+							<div id="edit-specs-suggestions-box" style="margin-bottom: 16px; background: #f8fafc; padding: 12px 14px; border-radius: 8px; border: 1px dashed #cbd5e1;">
+								<small style="font-weight: 700; color: #475569; display: block; margin-bottom: 8px;"><?php esc_html_e( 'Suggested attributes for this category (click to add):', 'hwsync' ); ?></small>
+								<div id="edit-specs-pills" style="display: flex; gap: 6px; flex-wrap: wrap;">
+									<!-- Dynamic Category Pills -->
+								</div>
+							</div>
+
+							<div id="edit-specs-alert-box" style="display: none; padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; font-weight: 600;"></div>
+						</div>
+					</div>
+
+					<div style="padding: 14px 24px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc;">
+						<button type="button" id="btn-cancel-edit-specs" class="button" style="height: 36px; border-radius: 6px;"><?php esc_html_e( 'Cancel', 'hwsync' ); ?></button>
+						<button type="button" id="btn-save-comp-specs" class="button button-primary" style="height: 36px; border-radius: 6px; background: #2563eb; border-color: #1d4ed8; font-weight: 600; padding: 0 20px; display: inline-flex; align-items: center; gap: 6px;">
+							<span class="dashicons dashicons-saved"></span> <?php esc_html_e( 'Save Specifications', 'hwsync' ); ?>
+						</button>
+					</div>
+
 				</div>
 			</div>
 
@@ -2441,6 +2523,215 @@ class Admin {
 							confirmBtn.textContent = 'Confirm Wipe Specs';
 						});
 					}
+				});
+
+				// Modal 4: Edit Specifications Controller
+				var modalEditSpecs = document.getElementById('modal-edit-specs');
+				var editSpecsTbody = document.getElementById('edit-specs-tbody');
+				var editSpecsAlert = document.getElementById('edit-specs-alert-box');
+				var editSpecsPills = document.getElementById('edit-specs-pills');
+				var editSpecsLoading = document.getElementById('edit-specs-loading');
+				var editSpecsContent = document.getElementById('edit-specs-content');
+				var currentEditCompId = null;
+				var currentEditCompCat = '';
+
+				var catSpecSuggestions = {
+					'cpu': ['CPU Socket Type', 'Total Cores', 'Total Threads', 'Processor Base Frequency', 'Max Turbo Frequency', 'Cache', 'Processor Base Power', 'Memory Types', 'Warranty'],
+					'gpu': ['GPU Chipset', 'VRAM Size', 'Memory Type', 'Memory Bus', 'Recommended PSU', 'Outputs', 'Dimensions', 'Warranty'],
+					'motherboard': ['CPU Socket Type', 'Chipset', 'Form Factor', 'Memory Types', 'Memory Slots', 'PCIe Slots', 'M.2 Slots', 'SATA Ports', 'Warranty'],
+					'ram': ['Memory Capacity', 'Memory Type', 'Memory Speed', 'Tested Latency', 'Tested Voltage', 'Heat Spreader', 'Warranty'],
+					'storage': ['Capacity', 'Form Factor', 'Interface', 'Sequential Read', 'Sequential Write', 'Endurance (TBW)', 'Warranty'],
+					'psu': ['Total Power', 'Efficiency Rating', 'Modularity', 'Form Factor', 'Fan Size', 'Warranty'],
+					'cooler': ['Cooler Type', 'Fan Size', 'Fan Speed', 'Noise Level', 'Supported Sockets', 'Warranty'],
+					'cabinet': ['Case Type', 'Supported Motherboards', 'Max GPU Length', 'Max CPU Cooler Height', 'Drive Bays', 'Included Fans', 'Warranty']
+				};
+
+				function createSpecRow(key, val) {
+					var tr = document.createElement('tr');
+					tr.style.borderBottom = '1px solid #f1f5f9';
+
+					tr.innerHTML = 
+						'<td style="padding: 6px 10px;">' +
+							'<input type="text" class="spec-input-key" value="' + escapeHtml(key || '') + '" placeholder="e.g. CPU Socket Type" style="width: 100%; height: 32px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 0 8px; font-size: 13px;" />' +
+						'</td>' +
+						'<td style="padding: 6px 10px;">' +
+							'<input type="text" class="spec-input-val" value="' + escapeHtml(val || '') + '" placeholder="e.g. LGA1700" style="width: 100%; height: 32px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 0 8px; font-size: 13px;" />' +
+						'</td>' +
+						'<td style="padding: 6px 10px; text-align: center;">' +
+							'<button type="button" class="button btn-remove-spec-row" style="color: #dc2626; border-color: #fecaca; background: #fff; padding: 0 6px; height: 30px; border-radius: 4px;" title="Remove this attribute">' +
+								'<span class="dashicons dashicons-trash" style="margin-top: 4px; font-size: 15px; width: 15px; height: 15px;"></span>' +
+							'</button>' +
+						'</td>';
+
+					tr.querySelector('.btn-remove-spec-row').addEventListener('click', function() {
+						tr.remove();
+						if (editSpecsTbody.children.length === 0) {
+							createSpecRow('', '');
+						}
+					});
+
+					editSpecsTbody.appendChild(tr);
+					return tr;
+				}
+
+				// Click Edit Specs on Component Row
+				document.querySelectorAll('.btn-edit-comp-specs').forEach(function(editBtn) {
+					editBtn.addEventListener('click', function() {
+						var compId = this.getAttribute('data-id');
+						var compName = this.getAttribute('data-name');
+						var compCat = this.getAttribute('data-category') || '';
+
+						currentEditCompId = compId;
+						currentEditCompCat = compCat.toLowerCase();
+
+						document.getElementById('modal-edit-specs-title').textContent = compName;
+						document.getElementById('modal-edit-specs-cat').textContent = compCat;
+						document.getElementById('modal-edit-specs-id').textContent = '(ID #' + compId + ')';
+
+						editSpecsAlert.style.display = 'none';
+						editSpecsLoading.style.display = 'block';
+						editSpecsContent.style.display = 'none';
+						editSpecsTbody.innerHTML = '';
+						editSpecsPills.innerHTML = '';
+						modalEditSpecs.style.display = 'flex';
+
+						// Render suggested pills
+						var suggestions = catSpecSuggestions[currentEditCompCat] || ['CPU Socket Type', 'Chipset', 'VRAM Size', 'Memory Types', 'Total Cores', 'Warranty'];
+						suggestions.forEach(function(sKey) {
+							var pill = document.createElement('button');
+							pill.type = 'button';
+							pill.className = 'button';
+							pill.style.fontSize = '11px';
+							pill.style.padding = '1px 8px';
+							pill.style.height = '24px';
+							pill.style.borderRadius = '12px';
+							pill.style.background = '#fff';
+							pill.style.borderColor = '#cbd5e1';
+							pill.textContent = '+ ' + sKey;
+
+							pill.addEventListener('click', function() {
+								var existingInputs = editSpecsTbody.querySelectorAll('.spec-input-key');
+								var found = false;
+								existingInputs.forEach(function(inp) {
+									if (inp.value.trim().toLowerCase() === sKey.toLowerCase()) {
+										found = true;
+										inp.focus();
+									}
+								});
+								if (!found) {
+									var newRow = createSpecRow(sKey, '');
+									var valInp = newRow.querySelector('.spec-input-val');
+									if (valInp) valInp.focus();
+								}
+							});
+							editSpecsPills.appendChild(pill);
+						});
+
+						// Fetch specs via AJAX
+						var postData = new URLSearchParams();
+						postData.append('action', 'hwsync_get_component_specs');
+						postData.append('component_id', compId);
+						postData.append('hwsync_nonce', nonce);
+
+						fetch(ajaxurl, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+							body: postData.toString()
+						}).then(function(res) {
+							return res.json();
+						}).then(function(json) {
+							editSpecsLoading.style.display = 'none';
+							editSpecsContent.style.display = 'block';
+
+							if (json.success && json.data && json.data.specs && json.data.specs.length > 0) {
+								json.data.specs.forEach(function(item) {
+									createSpecRow(item.key, item.value);
+								});
+							} else {
+								createSpecRow('', '');
+								createSpecRow('', '');
+							}
+						}).catch(function(err) {
+							editSpecsLoading.style.display = 'none';
+							editSpecsContent.style.display = 'block';
+							createSpecRow('', '');
+						});
+					});
+				});
+
+				// Add Spec Row Button
+				document.getElementById('btn-add-spec-row').addEventListener('click', function() {
+					var row = createSpecRow('', '');
+					var keyInp = row.querySelector('.spec-input-key');
+					if (keyInp) keyInp.focus();
+				});
+
+				// Close / Cancel Edit Specs Modal
+				document.getElementById('btn-close-edit-specs-modal').addEventListener('click', function() {
+					modalEditSpecs.style.display = 'none';
+				});
+				document.getElementById('btn-cancel-edit-specs').addEventListener('click', function() {
+					modalEditSpecs.style.display = 'none';
+				});
+
+				// Save Specifications Button
+				document.getElementById('btn-save-comp-specs').addEventListener('click', function() {
+					if (!currentEditCompId) return;
+
+					var saveBtn = document.getElementById('btn-save-comp-specs');
+					saveBtn.disabled = true;
+					saveBtn.textContent = 'Saving...';
+
+					var keyInputs = editSpecsTbody.querySelectorAll('.spec-input-key');
+					var valInputs = editSpecsTbody.querySelectorAll('.spec-input-val');
+
+					var postData = new URLSearchParams();
+					postData.append('action', 'hwsync_save_component_specs');
+					postData.append('component_id', currentEditCompId);
+					postData.append('hwsync_nonce', nonce);
+
+					for (var i = 0; i < keyInputs.length; i++) {
+						var k = keyInputs[i].value.trim();
+						var v = valInputs[i].value.trim();
+						if (k && v) {
+							postData.append('keys[]', k);
+							postData.append('values[]', v);
+						}
+					}
+
+					fetch(ajaxurl, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+						body: postData.toString()
+					}).then(function(res) {
+						return res.json();
+					}).then(function(json) {
+						saveBtn.disabled = false;
+						saveBtn.innerHTML = '<span class="dashicons dashicons-saved"></span> <?php esc_html_e( "Save Specifications", "hwsync" ); ?>';
+
+						if (json.success) {
+							editSpecsAlert.style.display = 'block';
+							editSpecsAlert.style.background = '#dcfce7';
+							editSpecsAlert.style.color = '#15803d';
+							editSpecsAlert.textContent = (json.data && json.data.message) ? json.data.message : 'Specifications saved successfully!';
+							setTimeout(function() {
+								modalEditSpecs.style.display = 'none';
+								window.location.reload();
+							}, 800);
+						} else {
+							editSpecsAlert.style.display = 'block';
+							editSpecsAlert.style.background = '#fee2e2';
+							editSpecsAlert.style.color = '#dc2626';
+							editSpecsAlert.textContent = (json.data && json.data.message) ? json.data.message : 'Error saving specifications.';
+						}
+					}).catch(function(err) {
+						saveBtn.disabled = false;
+						saveBtn.innerHTML = '<span class="dashicons dashicons-saved"></span> <?php esc_html_e( "Save Specifications", "hwsync" ); ?>';
+						editSpecsAlert.style.display = 'block';
+						editSpecsAlert.style.background = '#fee2e2';
+						editSpecsAlert.style.color = '#dc2626';
+						editSpecsAlert.textContent = 'Network error: ' + err.message;
+					});
 				});
 
 				function escapeHtml(text) {
@@ -3035,6 +3326,91 @@ class Admin {
 		wp_send_json_success( array(
 			'message' => sprintf( __( 'Successfully cleared specifications for %d component(s).', 'hwsync' ), $cleared_count ),
 			'cleared_count' => $cleared_count,
+		) );
+	}
+
+	public static function handle_get_component_specs() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$component_id = isset( $_POST['component_id'] ) ? intval( $_POST['component_id'] ) : 0;
+		$comp = Component::find_by_id( $component_id );
+		if ( ! $comp ) {
+			wp_send_json_error( array( 'message' => __( 'Component not found.', 'hwsync' ) ) );
+		}
+
+		$specs = $comp->get_specs();
+		$flat_specs = array();
+		if ( is_array( $specs ) ) {
+			foreach ( $specs as $k => $v ) {
+				if ( $k === 'raw_specs_table' || ! is_scalar( $v ) ) {
+					continue;
+				}
+				$flat_specs[] = array(
+					'key'   => (string) $k,
+					'value' => (string) $v,
+				);
+			}
+		}
+
+		wp_send_json_success( array(
+			'component_id' => $comp->id,
+			'title'        => $comp->brand . ' ' . $comp->model_name,
+			'category'     => $comp->category,
+			'specs'        => $flat_specs,
+		) );
+	}
+
+	public static function handle_save_component_specs() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$component_id = isset( $_POST['component_id'] ) ? intval( $_POST['component_id'] ) : 0;
+		$comp = Component::find_by_id( $component_id );
+		if ( ! $comp ) {
+			wp_send_json_error( array( 'message' => __( 'Component not found.', 'hwsync' ) ) );
+		}
+
+		$keys   = isset( $_POST['keys'] ) ? (array) $_POST['keys'] : array();
+		$values = isset( $_POST['values'] ) ? (array) $_POST['values'] : array();
+
+		$clean_specs = array();
+		$count = max( count( $keys ), count( $values ) );
+
+		for ( $i = 0; $i < $count; $i++ ) {
+			$k = isset( $keys[ $i ] ) ? sanitize_text_field( wp_unslash( $keys[ $i ] ) ) : '';
+			$v = isset( $values[ $i ] ) ? sanitize_text_field( wp_unslash( $values[ $i ] ) ) : '';
+
+			$k = trim( $k );
+			$v = trim( $v );
+
+			if ( ! empty( $k ) && ! empty( $v ) ) {
+				$norm_k = Specs_Sync_Manager::normalize_spec_key( $k );
+				$clean_specs[ $norm_k ] = $v;
+			}
+		}
+
+		$comp->specs_json = $clean_specs;
+		$comp->save();
+
+		if ( ! empty( $comp->wp_post_id ) ) {
+			if ( ! empty( $clean_specs ) ) {
+				update_post_meta( $comp->wp_post_id, '_pcspecs_specs', $clean_specs );
+				update_post_meta( $comp->wp_post_id, '_hwsync_specs', $clean_specs );
+			} else {
+				delete_post_meta( $comp->wp_post_id, '_pcspecs_specs' );
+				delete_post_meta( $comp->wp_post_id, '_hwsync_specs' );
+			}
+		}
+
+		wp_send_json_success( array(
+			'message'     => sprintf( __( 'Specifications successfully updated (%d attributes).', 'hwsync' ), count( $clean_specs ) ),
+			'specs_count' => count( $clean_specs ),
+			'specs'       => $clean_specs,
 		) );
 	}
 
