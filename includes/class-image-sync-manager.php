@@ -12,7 +12,41 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Image_Sync_Manager {
 
 	/**
+	 * Check if an image URL is hosted locally on this WordPress installation.
+	 *
+	 * @param string $url Image URL to check.
+	 * @return bool True if local, false if external link to web.
+	 */
+	public static function is_local_image_url( $url ) {
+		if ( empty( $url ) || ! is_string( $url ) ) {
+			return false;
+		}
+
+		if ( strpos( $url, '/wp-content/uploads/' ) !== false ) {
+			return true;
+		}
+
+		if ( function_exists( 'wp_upload_dir' ) ) {
+			$upload_dir = wp_upload_dir();
+			$baseurl = $upload_dir['baseurl'] ?? '';
+			if ( ! empty( $baseurl ) && strpos( $url, $baseurl ) === 0 ) {
+				return true;
+			}
+		}
+
+		if ( function_exists( 'site_url' ) ) {
+			$siteurl = site_url();
+			if ( ! empty( $siteurl ) && strpos( $url, $siteurl ) === 0 ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Audit image status across canonical components in database.
+	 * Components with local images are counted as already synced.
 	 *
 	 * @param string $category Hardware category slug or 'all'.
 	 * @return array Array with total, already_synced, needing_sync counts.
@@ -28,7 +62,16 @@ class Image_Sync_Manager {
 		$where_sql = implode( ' AND ', $where_clauses );
 
 		$total = intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$comp_table} WHERE {$where_sql}" ) );
-		$already_synced = intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$comp_table} WHERE {$where_sql} AND image_url IS NOT NULL AND image_url != ''" ) );
+		$all_comps = $wpdb->get_results( "SELECT id, image_url FROM {$comp_table} WHERE {$where_sql}", \ARRAY_A );
+
+		$already_synced = 0;
+		if ( ! empty( $all_comps ) ) {
+			foreach ( $all_comps as $c ) {
+				if ( ! empty( $c['image_url'] ) && self::is_local_image_url( $c['image_url'] ) ) {
+					$already_synced++;
+				}
+			}
+		}
 		$needing_sync = max( 0, $total - $already_synced );
 
 		return array(
@@ -40,8 +83,8 @@ class Image_Sync_Manager {
 
 	/**
 	 * Run product image synchronization for existing canonical components in DB.
-	 * First performs an internal check: components with images already synced are skipped,
-	 * and only the remaining components without images are synced.
+	 * First performs an internal check: components with local images already saved are skipped,
+	 * and only components without local images are downloaded and saved to disk.
 	 *
 	 * @param array $options Sync options ('category', 'component_id', 'limit', 'offset', 'force').
 	 * @param callable|null $logger Progress callback logger.
@@ -61,7 +104,7 @@ class Image_Sync_Manager {
 		// 1. Upfront Internal Check / Audit on initial step
 		if ( $offset === 0 ) {
 			$audit = self::audit_image_status( $category );
-			$this->emit( $logger, 'info', "Image Pre-Check: Found {$audit['total']} total components ({$audit['already_synced']} already synced with photos, {$audit['needing_sync']} left to sync)." );
+			$this->emit( $logger, 'info', "Image Pre-Check: Found {$audit['total']} total components ({$audit['already_synced']} local photos saved, {$audit['needing_sync']} left to download)." );
 		}
 
 		$where_clauses = array( "1=1" );
@@ -94,9 +137,9 @@ class Image_Sync_Manager {
 			$component = new Component( $c_row );
 			$comp_name = trim( $component->brand . ' ' . $component->model_name );
 
-			// 2. INTERNAL CHECK: If component already has an image, do NOT sync again
-			if ( ! $force && ! empty( $component->image_url ) ) {
-				$this->emit( $logger, 'debug', "Component #{$component->id} [{$comp_name}] already has image. Skipping." );
+			// 2. INTERNAL CHECK: If component already has a local image saved, do NOT download again unless forced
+			if ( ! $force && ! empty( $component->image_url ) && self::is_local_image_url( $component->image_url ) ) {
+				$this->emit( $logger, 'debug', "Component #{$component->id} [{$comp_name}] already has local image. Skipping." );
 				$report['skipped']++;
 				continue;
 			}
@@ -136,7 +179,7 @@ class Image_Sync_Manager {
 						$image_downloaded = true;
 						$report['images_saved']++;
 
-						$this->emit( $logger, 'success', "Attached 1 photo for [{$comp_name}] -> {$save_res['file_name']}" );
+						$this->emit( $logger, 'success', "Downloaded & Saved 1 local photo for [{$comp_name}] -> {$save_res['file_name']}" );
 						break; // STRICTLY 1 PHOTO PER PRODUCT
 					}
 				}
@@ -165,7 +208,7 @@ class Image_Sync_Manager {
 						$image_downloaded = true;
 						$report['images_saved']++;
 
-						$this->emit( $logger, 'success', "Attached 1 photo for [{$comp_name}] -> {$save_res['file_name']}" );
+						$this->emit( $logger, 'success', "Downloaded & Saved 1 local photo for [{$comp_name}] -> {$save_res['file_name']}" );
 						break; // STRICTLY 1 PHOTO PER PRODUCT
 					}
 				}
@@ -331,36 +374,72 @@ class Image_Sync_Manager {
 	}
 
 	/**
-	 * Download remote image, rename to component name, save to uploads, and attach to component / post.
+	 * Download remote image, rename to component name, save to local files, and attach to component / post.
 	 *
 	 * @param Component $component Hardware component.
 	 * @param string $remote_url Remote image URL.
 	 * @return array|null Result with local URL and filename.
 	 */
 	public function download_and_attach_image( Component $component, $remote_url ) {
-		$remote_url = trim( $remote_url );
+		$remote_url = trim( (string) $remote_url );
 		if ( empty( $remote_url ) ) {
 			return null;
 		}
 
 		try {
-			$response = wp_remote_get( $remote_url, array(
-				'timeout'    => 12,
-				'user-agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 HWsync/0.0.1.7',
-				'sslverify'  => false,
-			) );
+			$image_data = null;
+			$content_type = '';
 
-			if ( is_wp_error( $response ) ) {
-				return null;
+			// 1. Try cURL first for speed & reliability
+			if ( function_exists( 'curl_init' ) ) {
+				$ch = curl_init();
+				curl_setopt_array( $ch, array(
+					CURLOPT_URL            => $remote_url,
+					CURLOPT_RETURNTRANSFER => true,
+					CURLOPT_FOLLOWLOCATION => true,
+					CURLOPT_MAXREDIRS      => 5,
+					CURLOPT_TIMEOUT        => 15,
+					CURLOPT_SSL_VERIFYPEER => false,
+					CURLOPT_SSL_VERIFYHOST => 0,
+					CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 HWsync/0.0.1.7',
+					CURLOPT_HTTPHEADER     => array(
+						'Accept: image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+						'Accept-Language: en-US,en;q=0.9',
+					),
+				) );
+				$body = curl_exec( $ch );
+				$code = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+				$content_type = (string) curl_getinfo( $ch, CURLINFO_CONTENT_TYPE );
+				curl_close( $ch );
+
+				if ( $code >= 200 && $code < 400 && ! empty( $body ) && strlen( $body ) >= 300 ) {
+					$image_data = $body;
+				}
 			}
 
-			$image_data = wp_remote_retrieve_body( $response );
-			if ( empty( $image_data ) || strlen( $image_data ) < 500 ) {
+			// 2. Fallback to wp_remote_get
+			if ( empty( $image_data ) && function_exists( 'wp_remote_get' ) ) {
+				$response = wp_remote_get( $remote_url, array(
+					'timeout'    => 15,
+					'user-agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 HWsync/0.0.1.7',
+					'sslverify'  => false,
+				) );
+
+				if ( ! is_wp_error( $response ) ) {
+					$code = wp_remote_retrieve_response_code( $response );
+					$body = wp_remote_retrieve_body( $response );
+					if ( $code >= 200 && $code < 400 && ! empty( $body ) && strlen( $body ) >= 300 ) {
+						$image_data = $body;
+						$content_type = (string) wp_remote_retrieve_header( $response, 'content-type' );
+					}
+				}
+			}
+
+			if ( empty( $image_data ) ) {
 				return null;
 			}
 
 			// Determine file extension
-			$content_type = wp_remote_retrieve_header( $response, 'content-type' );
 			$ext = 'jpg';
 			if ( stripos( $content_type, 'png' ) !== false || preg_match( '/\.png($|\?)/i', $remote_url ) ) {
 				$ext = 'png';
@@ -368,35 +447,67 @@ class Image_Sync_Manager {
 				$ext = 'webp';
 			}
 
-			// Generate clean, SEO-friendly file name based on canonical component
-			$comp_title = trim( $component->brand . '-' . $component->model_name );
-			$file_name = sanitize_file_name( sanitize_title( $comp_title ) . '.' . $ext );
-			if ( empty( $file_name ) || $file_name === '.' . $ext ) {
-				$file_name = 'component-' . $component->id . '.' . $ext;
+			// Generate clean, SEO-friendly file name based exactly on canonical component name
+			$brand_name = trim( (string) $component->brand );
+			$model_name = trim( (string) $component->model_name );
+			if ( ! empty( $brand_name ) && stripos( $model_name, $brand_name ) === false ) {
+				$comp_full_name = $brand_name . ' ' . $model_name;
+			} else {
+				$comp_full_name = $model_name ?: ( $brand_name ?: 'component' );
 			}
 
-			// Upload to WordPress uploads directory
-			$upload = wp_upload_bits( $file_name, null, $image_data );
-			if ( ! empty( $upload['error'] ) ) {
+			$slug = function_exists( 'sanitize_title' ) ? sanitize_title( $comp_full_name ) : preg_replace( '/[^a-z0-9]+/i', '-', strtolower( $comp_full_name ) );
+			$slug = trim( (string) $slug, '-' );
+			if ( empty( $slug ) ) {
+				$slug = 'component-' . $component->id;
+			}
+
+			$file_name = sanitize_file_name( $slug . '.' . $ext );
+
+			// Save to local uploads directory (wp-content/uploads/hwsync/)
+			$local_file_path = '';
+			$local_url       = '';
+
+			if ( function_exists( 'wp_upload_dir' ) ) {
+				$upload_dir = wp_upload_dir();
+				$hwsync_dir = trailingslashit( $upload_dir['basedir'] ) . 'hwsync';
+				$hwsync_url = trailingslashit( $upload_dir['baseurl'] ) . 'hwsync';
+
+				if ( function_exists( 'wp_mkdir_p' ) ) {
+					wp_mkdir_p( $hwsync_dir );
+				} elseif ( ! file_exists( $hwsync_dir ) ) {
+					@mkdir( $hwsync_dir, 0755, true );
+				}
+
+				$local_file_path = $hwsync_dir . '/' . $file_name;
+				$local_url       = $hwsync_url . '/' . $file_name;
+
+				@file_put_contents( $local_file_path, $image_data );
+			} elseif ( function_exists( 'wp_upload_bits' ) ) {
+				$upload = wp_upload_bits( $file_name, null, $image_data );
+				if ( empty( $upload['error'] ) ) {
+					$local_file_path = $upload['file'];
+					$local_url       = $upload['url'];
+				}
+			}
+
+			if ( empty( $local_file_path ) || empty( $local_url ) ) {
 				return null;
 			}
 
-			$local_file_path = $upload['file'];
-			$local_url       = $upload['url'];
-
 			// Register in Media Library safely
 			$attachment_id = 0;
-			if ( function_exists( 'wp_insert_attachment' ) ) {
+			if ( function_exists( 'wp_insert_attachment' ) && file_exists( $local_file_path ) ) {
 				if ( defined( 'ABSPATH' ) && file_exists( ABSPATH . 'wp-admin/includes/image.php' ) ) {
 					require_once ABSPATH . 'wp-admin/includes/image.php';
 					require_once ABSPATH . 'wp-admin/includes/file.php';
 					require_once ABSPATH . 'wp-admin/includes/media.php';
 				}
 
-				$wp_filetype = wp_check_filetype( $file_name, null );
+				$wp_filetype = function_exists( 'wp_check_filetype' ) ? wp_check_filetype( $file_name, null ) : array( 'type' => 'image/' . $ext );
 				$attachment = array(
 					'post_mime_type' => $wp_filetype['type'] ?: 'image/jpeg',
-					'post_title'     => trim( $component->brand . ' ' . $component->model_name ),
+					'post_title'     => $comp_full_name,
 					'post_content'   => '',
 					'post_status'    => 'inherit',
 				);
@@ -406,7 +517,7 @@ class Image_Sync_Manager {
 					if ( function_exists( 'wp_generate_attachment_metadata' ) ) {
 						try {
 							$attach_data = @wp_generate_attachment_metadata( $attachment_id, $local_file_path );
-							if ( is_array( $attach_data ) ) {
+							if ( is_array( $attach_data ) && function_exists( 'wp_update_attachment_metadata' ) ) {
 								wp_update_attachment_metadata( $attachment_id, $attach_data );
 							}
 						} catch ( \Throwable $t ) {
@@ -419,6 +530,12 @@ class Image_Sync_Manager {
 						set_post_thumbnail( $component->wp_post_id, $attachment_id );
 					}
 				}
+			}
+
+			// Update postmeta for _pcspecs_image_url and _hwsync_image_url
+			if ( ! empty( $component->wp_post_id ) && function_exists( 'update_post_meta' ) ) {
+				update_post_meta( $component->wp_post_id, '_pcspecs_image_url', $local_url );
+				update_post_meta( $component->wp_post_id, '_hwsync_image_url', $local_url );
 			}
 
 			return array(
