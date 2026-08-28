@@ -126,7 +126,7 @@ class Specs_Sync_Manager {
 		$k_lower = strtolower( $k );
 		$v_lower = strtolower( $v );
 
-		// Blacklisted keys (disclaimers, shipping, UI buttons, store policies)
+		// Blacklisted keys (disclaimers, shipping, UI buttons, store policies, bot verification dictionaries)
 		$blacklisted_keys = array(
 			'note', 'notes', 'notice', 'disclaimer', 'terms', 'condition', 'conditions',
 			'shipping', 'delivery', 'courier', 'dispatch', 'estimated',
@@ -135,21 +135,24 @@ class Specs_Sync_Manager {
 			'tags', 'tax', 'gst', 'emi', 'cod', 'payment', 'in stock', 'out of stock',
 			'return', 'policy', 'cancellation', 'refund', 'replacement',
 			'standard shipping', 'fast delivery',
+			// Cloudflare / Bot verification dictionary keys
+			'title', 'content-title', 'content_title', 'challenge', 'turnstile', 'cf_chl', 'cloudflare', 'captcha',
+			'cs', 'da', 'de', 'el', 'es', 'fi', 'fr', 'he', 'hi', 'hr', 'hu', 'id', 'it', 'ja', 'ko', 'lt', 'lv', 'nb', 'nl', 'pl', 'pt', 'ro', 'ru', 'sk', 'sl', 'sv', 'th', 'tr', 'uk', 'vi', 'zh',
 		);
 
 		foreach ( $blacklisted_keys as $b ) {
-			if ( $k_lower === $b || strpos( $k_lower, $b ) !== false ) {
+			if ( $k_lower === $b || ( strlen( $b ) > 3 && strpos( $k_lower, $b ) !== false ) ) {
 				return false;
 			}
 		}
 
 		// Blacklisted symbol-only or boilerplate values
-		$symbol_values = array( '(', ')', '-', '*', '**', '***', ':', ';', 'n/a', 'na', 'null', 'none', 'undefined', 'no' );
+		$symbol_values = array( '(', ')', '{', '}', '[', ']', '-', '*', '**', '***', ':', ';', 'n/a', 'na', 'null', 'none', 'undefined', 'no' );
 		if ( in_array( $v_lower, $symbol_values, true ) ) {
 			return false;
 		}
 
-		// Blacklisted phrases inside values
+		// Blacklisted phrases inside values (including Cloudflare challenge messages)
 		$blacklisted_phrases = array(
 			'subject to change without notice',
 			'delivery typically takes',
@@ -158,6 +161,11 @@ class Specs_Sync_Manager {
 			'all rights reserved',
 			'add to cart',
 			'add to wishlist',
+			'vaše připojení',
+			'připojení se ověřuje',
+			'just a moment',
+			'checking your browser',
+			'turnstile',
 		);
 
 		foreach ( $blacklisted_phrases as $phrase ) {
@@ -442,24 +450,73 @@ class Specs_Sync_Manager {
 		}
 
 		$html = $res['body'];
+
+		// If Cloudflare or anti-bot challenge is triggered, reject immediately
+		if ( self::is_bot_challenge_html( $html ) ) {
+			return $specs;
+		}
+
+		// Strip scripts, styles, noscript, svg, iframes before any section extraction
+		$clean_html = preg_replace( '#<(script|style|noscript|svg|iframe)[^>]*>[\s\S]*?</\1>#i', ' ', $html );
 		$specs_html = '';
 
 		// Targeted Pattern 1: Dedicated specification tab container
-		if ( preg_match( '/<(?:div|section|table)[^>]*(?:id=["\']tab-specification["\']|id=["\']tab-specs["\']|class=["\'][^"\']*(?:woocommerce-Tabs-panel--specification|shop_attributes|product-attribute-specs-table|specification)[^"\']*)[^>]*>[\s\S]*?<\/(?:div|section|table)>/i', $html, $sm ) ) {
+		if ( preg_match( '/<(?:div|section|table)[^>]*(?:id=["\']tab-specification["\']|id=["\']tab-specs["\']|class=["\'][^"\']*(?:woocommerce-Tabs-panel--specification|shop_attributes|product-attribute-specs-table|specification)[^"\']*)[^>]*>[\s\S]*?<\/(?:div|section|table)>/i', $clean_html, $sm ) ) {
 			$specs_html = $sm[0];
 		}
 		// Targeted Pattern 2: Attributes table within product container
-		elseif ( preg_match( '/<table[^>]*(?:class=["\'][^"\']*(?:shop_attributes|table-bordered|table-striped|data-table|table_specifications)[^"\']*|id=["\']product-attribute-specs-table["\'])[^>]*>[\s\S]*?<\/table>/i', $html, $sm ) ) {
+		elseif ( preg_match( '/<table[^>]*(?:class=["\'][^"\']*(?:shop_attributes|table-bordered|table-striped|data-table|table_specifications)[^"\']*|id=["\']product-attribute-specs-table["\'])[^>]*>[\s\S]*?<\/table>/i', $clean_html, $sm ) ) {
 			$specs_html = $sm[0];
 		}
 		// Targeted Pattern 3: Description tab containing definition lists
-		elseif ( preg_match( '/<div[^>]*id=["\']tab-description["\'][^>]*>[\s\S]*?<\/div>/i', $html, $sm ) ) {
+		elseif ( preg_match( '/<div[^>]*id=["\']tab-description["\'][^>]*>[\s\S]*?<\/div>/i', $clean_html, $sm ) ) {
+			$specs_html = $sm[0];
+		}
+		// Targeted Pattern 4: General product details / entry content container
+		elseif ( preg_match( '/<(?:div|section)[^>]*(?:class=["\'][^"\']*(?:product-description|product-specifications|woocommerce-product-details__short-description|entry-content)[^"\']*)[^>]*>[\s\S]*?<\/(?:div|section)>/i', $clean_html, $sm ) ) {
 			$specs_html = $sm[0];
 		} else {
-			$specs_html = $html;
+			$specs_html = '';
+		}
+
+		if ( empty( $specs_html ) ) {
+			return $specs;
 		}
 
 		return self::parse_html_specs_section( $specs_html );
+	}
+
+	/**
+	 * Detect if an HTML payload is a Cloudflare / Bot Management interstitial challenge.
+	 *
+	 * @param string $html
+	 * @return bool
+	 */
+	public static function is_bot_challenge_html( $html ) {
+		if ( empty( $html ) || ! is_string( $html ) ) {
+			return false;
+		}
+		$markers = array(
+			'just a moment...',
+			'cf-browser-verification',
+			'cf_chl_',
+			'__cf_chl_opt',
+			'challenge-platform',
+			'attention required! | cloudflare',
+			'security check | cloudflare',
+			'turnstile',
+			'ray id:',
+			'checking your browser',
+			'ddos protection by cloudflare',
+			'enable javascript and cookies to continue',
+		);
+		$lower = strtolower( $html );
+		foreach ( $markers as $m ) {
+			if ( strpos( $lower, $m ) !== false ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -473,6 +530,13 @@ class Specs_Sync_Manager {
 		if ( empty( $html_snippet ) ) {
 			return $specs;
 		}
+
+		if ( self::is_bot_challenge_html( $html_snippet ) ) {
+			return $specs;
+		}
+
+		// Strip scripts, styles, noscript, svg, iframes so inline JSON dictionaries are never processed
+		$html_snippet = preg_replace( '#<(script|style|noscript|svg|iframe)[^>]*>[\s\S]*?</\1>#i', ' ', $html_snippet );
 
 		// 1. Table rows: <tr><td>Key</td><td>Val</td></tr> or <tr><th>Key</th><td>Val</td></tr>
 		if ( preg_match_all( '/<tr[^>]*>[\s\S]*?<\/tr>/i', $html_snippet, $rows ) ) {

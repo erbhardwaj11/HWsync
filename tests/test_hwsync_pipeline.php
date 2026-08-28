@@ -1109,6 +1109,17 @@ assert_test( 'Component Specifications Manual Edit persists customized attribute
 	! isset( $refreshed_edited->specs_json['Note**'] )
 ) );
 
+// Test 36: Cloudflare Bot Challenge Interstitial Detection & Script Stripping
+$mock_cf_challenge = '<!DOCTYPE html><html><head><title>Just a moment...</title><script>window._cf_chl_opt = { cs: { title: "Vaše připojení se ověřuje...", "content-title": "Než budete moct pokračovat" }, da: { title: "Omdirigerer..." } };</script></head><body><div id="challenge-running">Checking your browser before accessing retailer.com</div></body></html>';
+
+$is_cf_detected = \HWsync\Specs_Sync_Manager::is_bot_challenge_html( $mock_cf_challenge );
+$cf_extracted_specs = \HWsync\Specs_Sync_Manager::parse_html_specs_section( $mock_cf_challenge );
+
+assert_test( 'Cloudflare / Anti-Bot Interstitial Challenge is detected and rejected without saving multilingual script noise', (
+	$is_cf_detected === true &&
+	empty( $cf_extracted_specs )
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";
