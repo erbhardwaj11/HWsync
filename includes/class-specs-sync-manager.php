@@ -12,90 +12,835 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Specs_Sync_Manager {
 
 	/**
-	 * Canonical dictionary map for normalizing inconsistent hardware specification labels.
+	 * Exact allowed specification attributes per category.
+	 * Only these specifications will be synced and stored for each hardware category.
 	 */
-	protected static $key_normalization_map = array(
-		'cpusockettype'                        => 'CPU Socket Type',
-		'cpu socket type'                      => 'CPU Socket Type',
-		'socket'                               => 'CPU Socket Type',
-		'sockets supported'                    => 'CPU Socket Type',
-		'socket type'                          => 'CPU Socket Type',
-
-		'total cores'                          => 'Total Cores',
-		'cores'                                => 'Total Cores',
-		'cpu cores'                            => 'Total Cores',
-		'# of performance-cores'               => '# of Performance-cores',
-		'performance-cores'                    => '# of Performance-cores',
-		'performance cores'                    => '# of Performance-cores',
-		'# of efficient-cores'                 => '# of Efficient-cores',
-		'efficient-cores'                      => '# of Efficient-cores',
-		'efficient cores'                      => '# of Efficient-cores',
-
-		'total threads'                        => 'Total Threads',
-		'threads'                              => 'Total Threads',
-		'thread count'                         => 'Total Threads',
-
-		'processor base frequency'             => 'Processor Base Frequency',
-		'base frequency'                       => 'Processor Base Frequency',
-		'base clock'                           => 'Processor Base Frequency',
-		'performance-core base frequency'      => 'Performance-core Base Frequency',
-
-		'processor max frequency'              => 'Max Turbo Frequency',
-		'max turbo frequency'                  => 'Max Turbo Frequency',
-		'boost clock'                          => 'Max Turbo Frequency',
-		'max boost clock speed'                => 'Max Turbo Frequency',
-		'turbo frequency'                      => 'Max Turbo Frequency',
-		'performance-core max turbo frequency' => 'Performance-core Max Turbo Frequency',
-
-		'cache'                                => 'Cache',
-		'l3 cache'                             => 'L3 Cache',
-		'total l2 cache'                       => 'Total L2 Cache',
-		'l2 cache'                             => 'L2 Cache',
-		'l1 cache'                             => 'L1 Cache',
-		'intel smart cache'                    => 'Cache',
-
-		'processor base power'                 => 'Processor Base Power',
-		'tdp'                                  => 'TDP (Base Power)',
-		'maximum turbo power'                  => 'Maximum Turbo Power',
-		'power consumption'                    => 'Power Consumption',
-
-		'memory types'                         => 'Memory Types',
-		'memory support'                       => 'Memory Types',
-		'max memory size'                      => 'Max Memory Size',
-		'max memory size (dependent on memory type)' => 'Max Memory Size',
-		'max # of memory channels'             => 'Max # of Memory Channels',
-		'max memory bandwidth'                 => 'Max Memory Bandwidth',
-		'ecc memory supported'                 => 'ECC Memory Supported',
-
-		'integrated graphics'                  => 'Integrated Graphics',
-		'graphics'                             => 'Integrated Graphics',
-		'processor graphics'                   => 'Integrated Graphics',
-
-		'gpu chipset'                          => 'GPU Chipset',
-		'graphics processor'                   => 'GPU Chipset',
-		'vram'                                 => 'VRAM Size',
-		'vram size'                            => 'VRAM Size',
-		'memory bus'                           => 'Memory Bus',
-		'memory interface'                     => 'Memory Interface',
-		'recommended psu'                      => 'Recommended PSU',
-
-		'form factor'                          => 'Form Factor',
-		'chipset'                              => 'Chipset',
-		'warranty'                             => 'Warranty',
-		'manufacturer warranty period'         => 'Warranty',
-		'lithography'                          => 'Lithography',
-		'product collection'                   => 'Product Collection',
-		'code name'                            => 'Code Name',
-		'vertical segment'                     => 'Vertical Segment',
-		'use conditions'                       => 'Use Conditions',
-		'package size'                         => 'Package Size',
-		'tjunction'                            => 'TJUNCTION (Max Temp)',
-		'direct media interface (dmi) revision'=> 'DMI Revision',
-		'max # of dmi lanes'                   => 'Max DMI Lanes',
-		'pci express revision'                 => 'PCI Express Revision',
-		'pci express configurations'           => 'PCI Express Configurations',
-		'max # of pci express lanes'           => 'Max PCI Express Lanes',
+	public static $allowed_specs_by_category = array(
+		'gpu' => array(
+			'GPU Name',
+			'Architecture',
+			'Shading Units',
+			'TMUs',
+			'ROPs',
+			'Compute Units',
+			'Matrix Cores',
+			'RT Cores',
+			'Base Clock',
+			'Game Clock',
+			'Boost Clock',
+			'Memory Clock',
+			'Memory Size',
+			'Memory Type',
+			'Memory Bus',
+			'Bandwidth',
+			'Slot Width',
+			'TDP',
+			'Suggested PSU',
+			'Outputs',
+			'Power Connectors',
+		),
+		'cpu' => array(
+			'Socket',
+			'Frequency',
+			'Turbo Clock',
+			'Number of Cores',
+			'Number of Threads',
+			'Integrated Graphics',
+			'Codename',
+			'Generation',
+			'Memory Support',
+			'Rated Speed',
+			'Memory Bus',
+			'Memory Bandwidth',
+			'TDP',
+			'PPT',
+			'ECC Memory',
+			'PCI-Express',
+			'Chipsets',
+			'Cache L1',
+			'Cache L2',
+			'Cache L3',
+			'Features',
+		),
+		'motherboard' => array(
+			'Platform',
+			'Socket',
+			'Cpu Type',
+			'Chipset',
+			'Memory Speed',
+			'Max Memory Support',
+			'Supported Memory Type',
+			'Channel Supported',
+			'Memory Feature',
+			'Graphics Port',
+			'Expansion Slots',
+			'Back Panel I/O Ports',
+			'Internal I/O Connector',
+			'Form Factor',
+			'Warranty',
+		),
+		'cooler' => array(
+			'Cooling Type',
+			'Socket Support',
+			'Fan Size',
+			'PWM Controller',
+			'Radiator Size',
+			'Lighting',
+			'Warranty',
+		),
+		'ram' => array(
+			'Model',
+			'Product Series',
+			'Memory Type',
+			'Capacity',
+			'Lighting',
+			'Kit Type',
+			'Speed',
+			'Tested Latency',
+			'Tested Voltage',
+			'Dimm Type',
+			'Profile Type',
+			'Warranty',
+		),
+		'psu' => array(
+			'Wattage',
+			'Series',
+			'Certification',
+			'Modular',
+			'PCIe Connector (6+2)',
+			'SATA Connector',
+			'Peripheral (4-Pin)',
+			'Warranty',
+		),
+		'cabinet' => array(
+			'Cabinet Size',
+			'Color',
+			'Material',
+			'Expansion Slots',
+			'Motherboard Size',
+			'Max CPU Cooler Height',
+			'Max PSU Length',
+			'Max Gpu Length',
+			'Max 3.5" HDD',
+			'Max 2.5" SSD',
+			'Dust Filters',
+			'Pre Installed Fans',
+			'Max Fan Support',
+			'Radiator Support',
+			'I/O Panel',
+			'Warranty',
+		),
+		'storage' => array(
+			'Category',
+			'Series',
+			'Capacity',
+			'Form Factor',
+			'NVMe',
+			'Interface',
+			'Write Speed',
+			'Read Speed',
+			'TBW',
+			'Warranty',
+		),
 	);
+
+	/**
+	 * Synonym dictionaries mapping vendor variations into canonical schema keys.
+	 */
+	public static $category_synonyms_map = array(
+		'cpu' => array(
+			'cpu socket'                            => 'Socket',
+			'cpu socket type'                       => 'Socket',
+			'socket type'                           => 'Socket',
+			'sockets supported'                     => 'Socket',
+			'socket'                                => 'Socket',
+			'package'                               => 'Socket',
+
+			'processor base frequency'              => 'Frequency',
+			'base clock'                            => 'Frequency',
+			'base frequency'                        => 'Frequency',
+			'cpu base clock'                        => 'Frequency',
+			'clock speed'                           => 'Frequency',
+			'frequency'                             => 'Frequency',
+
+			'max turbo frequency'                   => 'Turbo Clock',
+			'boost clock'                           => 'Turbo Clock',
+			'turbo frequency'                       => 'Turbo Clock',
+			'max boost clock'                       => 'Turbo Clock',
+			'max boost clock speed'                 => 'Turbo Clock',
+			'processor max frequency'               => 'Turbo Clock',
+			'turbo clock'                           => 'Turbo Clock',
+			'intel turbo boost max technology 3.0 frequency' => 'Turbo Clock',
+
+			'total cores'                           => 'Number of Cores',
+			'cpu cores'                             => 'Number of Cores',
+			'processor cores'                       => 'Number of Cores',
+			'core count'                            => 'Number of Cores',
+			'cores'                                 => 'Number of Cores',
+			'no of cores'                           => 'Number of Cores',
+			'# of cores'                            => 'Number of Cores',
+			'number of cores'                       => 'Number of Cores',
+			'# of performance-cores'                => 'Number of Cores',
+
+			'total threads'                         => 'Number of Threads',
+			'threads'                               => 'Number of Threads',
+			'thread count'                          => 'Number of Threads',
+			'# of threads'                          => 'Number of Threads',
+			'no of threads'                         => 'Number of Threads',
+			'number of threads'                     => 'Number of Threads',
+
+			'processor graphics'                    => 'Integrated Graphics',
+			'graphics'                              => 'Integrated Graphics',
+			'integrated graphics'                   => 'Integrated Graphics',
+			'integrated gpu'                        => 'Integrated Graphics',
+			'on-chip graphics'                      => 'Integrated Graphics',
+			'gpu'                                   => 'Integrated Graphics',
+
+			'code name'                             => 'Codename',
+			'codename'                              => 'Codename',
+			'architecture codename'                 => 'Codename',
+			'products formerly'                     => 'Codename',
+
+			'product collection'                    => 'Generation',
+			'cpu generation'                        => 'Generation',
+			'processor generation'                  => 'Generation',
+			'generation'                            => 'Generation',
+			'series'                                => 'Generation',
+
+			'memory types'                          => 'Memory Support',
+			'supported memory'                      => 'Memory Support',
+			'memory type'                           => 'Memory Support',
+			'dram support'                          => 'Memory Support',
+			'memory support'                        => 'Memory Support',
+
+			'max memory speed'                      => 'Rated Speed',
+			'supported memory speed'                => 'Rated Speed',
+			'rated speed'                           => 'Rated Speed',
+
+			'memory channels'                       => 'Memory Bus',
+			'max # of memory channels'              => 'Memory Bus',
+			'max memory channels'                   => 'Memory Bus',
+			'memory bus'                            => 'Memory Bus',
+
+			'max memory bandwidth'                  => 'Memory Bandwidth',
+			'memory bandwidth'                      => 'Memory Bandwidth',
+
+			'processor base power'                  => 'TDP',
+			'tdp (base power)'                      => 'TDP',
+			'thermal design power'                  => 'TDP',
+			'base power'                            => 'TDP',
+			'tdp'                                   => 'TDP',
+
+			'maximum turbo power'                   => 'PPT',
+			'package power tracking'                => 'PPT',
+			'max turbo power'                       => 'PPT',
+			'turbo power'                           => 'PPT',
+			'ppt'                                   => 'PPT',
+
+			'ecc memory supported'                  => 'ECC Memory',
+			'ecc support'                           => 'ECC Memory',
+			'ecc memory'                            => 'ECC Memory',
+
+			'pci express revision'                  => 'PCI-Express',
+			'pcie version'                          => 'PCI-Express',
+			'pci express configurations'            => 'PCI-Express',
+			'max # of pci express lanes'            => 'PCI-Express',
+			'pcie lanes'                            => 'PCI-Express',
+			'pci-express'                           => 'PCI-Express',
+
+			'chipset support'                       => 'Chipsets',
+			'supported chipsets'                    => 'Chipsets',
+			'compatible chipsets'                   => 'Chipsets',
+			'chipsets'                              => 'Chipsets',
+
+			'l1 cache'                              => 'Cache L1',
+			'total l1 cache'                        => 'Cache L1',
+			'cache l1'                              => 'Cache L1',
+
+			'l2 cache'                              => 'Cache L2',
+			'total l2 cache'                        => 'Cache L2',
+			'cache l2'                              => 'Cache L2',
+
+			'l3 cache'                              => 'Cache L3',
+			'cache'                                 => 'Cache L3',
+			'intel smart cache'                     => 'Cache L3',
+			'amd 3d v-cache'                        => 'Cache L3',
+			'total l3 cache'                        => 'Cache L3',
+			'cache l3'                              => 'Cache L3',
+
+			'technologies supported'                => 'Features',
+			'advanced technologies'                 => 'Features',
+			'instruction set'                       => 'Features',
+			'features'                              => 'Features',
+		),
+
+		'gpu' => array(
+			'gpu chipset'                           => 'GPU Name',
+			'graphics processor'                    => 'GPU Name',
+			'gpu engine'                            => 'GPU Name',
+			'chipset'                               => 'GPU Name',
+			'gpu model'                             => 'GPU Name',
+			'gpu name'                              => 'GPU Name',
+			'gpu'                                   => 'GPU Name',
+
+			'gpu architecture'                      => 'Architecture',
+			'microarchitecture'                     => 'Architecture',
+			'architecture'                          => 'Architecture',
+			'arch'                                  => 'Architecture',
+
+			'cuda cores'                            => 'Shading Units',
+			'stream processors'                     => 'Shading Units',
+			'shaders'                               => 'Shading Units',
+			'shader cores'                          => 'Shading Units',
+			'sp'                                    => 'Shading Units',
+			'shading units'                         => 'Shading Units',
+			'cuda core count'                       => 'Shading Units',
+
+			'texture mapping units'                 => 'TMUs',
+			'tmu'                                   => 'TMUs',
+			'tmus'                                  => 'TMUs',
+
+			'render output units'                   => 'ROPs',
+			'render output processors'              => 'ROPs',
+			'rop'                                   => 'ROPs',
+			'rops'                                  => 'ROPs',
+
+			'compute units'                         => 'Compute Units',
+			'cu'                                    => 'Compute Units',
+			'sm'                                    => 'Compute Units',
+			'streaming multiprocessors'             => 'Compute Units',
+
+			'tensor cores'                          => 'Matrix Cores',
+			'matrix cores'                          => 'Matrix Cores',
+			'matrix processors'                     => 'Matrix Cores',
+			'ai cores'                              => 'Matrix Cores',
+			'xmx'                                   => 'Matrix Cores',
+
+			'ray tracing cores'                     => 'RT Cores',
+			'rt cores'                              => 'RT Cores',
+			'ray accelerators'                      => 'RT Cores',
+
+			'core clock'                            => 'Base Clock',
+			'engine clock'                          => 'Base Clock',
+			'base frequency'                        => 'Base Clock',
+			'gpu base clock'                        => 'Base Clock',
+			'base clock'                            => 'Base Clock',
+
+			'gaming clock'                          => 'Game Clock',
+			'game frequency'                        => 'Game Clock',
+			'game clock'                            => 'Game Clock',
+
+			'max clock'                             => 'Boost Clock',
+			'boost frequency'                       => 'Boost Clock',
+			'gpu boost clock'                       => 'Boost Clock',
+			'turbo clock'                           => 'Boost Clock',
+			'boost clock'                           => 'Boost Clock',
+
+			'memory speed'                          => 'Memory Clock',
+			'memory frequency'                      => 'Memory Clock',
+			'effective memory clock'                => 'Memory Clock',
+			'memory clock'                          => 'Memory Clock',
+
+			'vram'                                  => 'Memory Size',
+			'vram size'                             => 'Memory Size',
+			'memory capacity'                       => 'Memory Size',
+			'graphics memory size'                  => 'Memory Size',
+			'video memory'                          => 'Memory Size',
+			'memory size'                           => 'Memory Size',
+
+			'vram type'                             => 'Memory Type',
+			'memory interface type'                 => 'Memory Type',
+			'gddr type'                             => 'Memory Type',
+			'graphics memory type'                  => 'Memory Type',
+			'memory type'                           => 'Memory Type',
+
+			'memory interface'                      => 'Memory Bus',
+			'bus width'                             => 'Memory Bus',
+			'memory bus width'                      => 'Memory Bus',
+			'bus interface'                         => 'Memory Bus',
+			'memory bus'                            => 'Memory Bus',
+
+			'memory bandwidth'                      => 'Bandwidth',
+			'max memory bandwidth'                  => 'Bandwidth',
+			'bandwidth'                             => 'Bandwidth',
+
+			'slot size'                             => 'Slot Width',
+			'slots'                                 => 'Slot Width',
+			'card dimension (slots)'                => 'Slot Width',
+			'slot width'                            => 'Slot Width',
+			'dimensions (slots)'                    => 'Slot Width',
+
+			'power consumption'                     => 'TDP',
+			'board power'                           => 'TDP',
+			'total graphics power'                  => 'TDP',
+			'tgp'                                   => 'TDP',
+			'power draw'                            => 'TDP',
+			'tdp'                                   => 'TDP',
+
+			'recommended psu'                       => 'Suggested PSU',
+			'minimum psu'                           => 'Suggested PSU',
+			'power requirement'                     => 'Suggested PSU',
+			'recommended power supply'              => 'Suggested PSU',
+			'min system power'                      => 'Suggested PSU',
+			'suggested psu'                         => 'Suggested PSU',
+
+			'display outputs'                       => 'Outputs',
+			'display ports'                         => 'Outputs',
+			'i/o ports'                             => 'Outputs',
+			'video output ports'                    => 'Outputs',
+			'connectors'                            => 'Outputs',
+			'ports'                                 => 'Outputs',
+			'outputs'                               => 'Outputs',
+
+			'power connector'                       => 'Power Connectors',
+			'supplementary power connectors'        => 'Power Connectors',
+			'power input'                           => 'Power Connectors',
+			'power connectors'                      => 'Power Connectors',
+		),
+
+		'motherboard' => array(
+			'cpu platform'                          => 'Platform',
+			'platform type'                         => 'Platform',
+			'supported platform'                    => 'Platform',
+			'cpu family'                            => 'Platform',
+			'platform'                              => 'Platform',
+
+			'cpu socket'                            => 'Socket',
+			'socket type'                           => 'Socket',
+			'cpu socket type'                       => 'Socket',
+			'supported socket'                      => 'Socket',
+			'socket'                                => 'Socket',
+
+			'supported cpu'                         => 'Cpu Type',
+			'cpu support'                           => 'Cpu Type',
+			'processor support'                     => 'Cpu Type',
+			'supported processors'                  => 'Cpu Type',
+			'cpu type'                              => 'Cpu Type',
+
+			'motherboard chipset'                   => 'Chipset',
+			'chipset model'                         => 'Chipset',
+			'system chipset'                        => 'Chipset',
+			'chipset'                               => 'Chipset',
+
+			'supported memory speed'                => 'Memory Speed',
+			'memory frequency'                      => 'Memory Speed',
+			'memory clock'                          => 'Memory Speed',
+			'memory oc speed'                       => 'Memory Speed',
+			'memory speed'                          => 'Memory Speed',
+
+			'max memory capacity'                   => 'Max Memory Support',
+			'max memory'                            => 'Max Memory Support',
+			'maximum memory'                        => 'Max Memory Support',
+			'max ram'                               => 'Max Memory Support',
+			'max memory size'                       => 'Max Memory Support',
+			'max memory support'                    => 'Max Memory Support',
+
+			'memory type'                           => 'Supported Memory Type',
+			'memory types'                          => 'Supported Memory Type',
+			'dram standard'                         => 'Supported Memory Type',
+			'ddr support'                           => 'Supported Memory Type',
+			'supported memory type'                 => 'Supported Memory Type',
+
+			'memory channel'                        => 'Channel Supported',
+			'channel architecture'                  => 'Channel Supported',
+			'memory channels'                       => 'Channel Supported',
+			'channel supported'                     => 'Channel Supported',
+
+			'memory slots'                          => 'Memory Feature',
+			'ecc support'                           => 'Memory Feature',
+			'xmp support'                           => 'Memory Feature',
+			'expo support'                          => 'Memory Feature',
+			'dimm slots'                            => 'Memory Feature',
+			'memory feature'                        => 'Memory Feature',
+			'memory features'                       => 'Memory Feature',
+
+			'video outputs'                         => 'Graphics Port',
+			'onboard graphics output'               => 'Graphics Port',
+			'display outputs'                       => 'Graphics Port',
+			'hdmi / displayport'                    => 'Graphics Port',
+			'graphics port'                         => 'Graphics Port',
+
+			'pcie slots'                            => 'Expansion Slots',
+			'expansion slot'                        => 'Expansion Slots',
+			'pci express slots'                     => 'Expansion Slots',
+			'pcie x16'                              => 'Expansion Slots',
+			'expansion slots'                       => 'Expansion Slots',
+
+			'rear i/o ports'                        => 'Back Panel I/O Ports',
+			'back panel ports'                      => 'Back Panel I/O Ports',
+			'rear panel ports'                      => 'Back Panel I/O Ports',
+			'rear i/o'                              => 'Back Panel I/O Ports',
+			'back panel i/o ports'                  => 'Back Panel I/O Ports',
+
+			'internal connectors'                   => 'Internal I/O Connector',
+			'internal headers'                      => 'Internal I/O Connector',
+			'front panel headers'                   => 'Internal I/O Connector',
+			'm.2 slots'                             => 'Internal I/O Connector',
+			'sata ports'                            => 'Internal I/O Connector',
+			'internal i/o connector'                => 'Internal I/O Connector',
+
+			'board form factor'                     => 'Form Factor',
+			'motherboard form factor'               => 'Form Factor',
+			'dimension form factor'                 => 'Form Factor',
+			'form factor'                           => 'Form Factor',
+
+			'warranty period'                       => 'Warranty',
+			'manufacturer warranty'                 => 'Warranty',
+			'warranty terms'                        => 'Warranty',
+			'warranty'                              => 'Warranty',
+		),
+
+		'cooler' => array(
+			'cooler type'                           => 'Cooling Type',
+			'type'                                  => 'Cooling Type',
+			'air cooler / aio'                      => 'Cooling Type',
+			'radiator type'                         => 'Cooling Type',
+			'cooling type'                          => 'Cooling Type',
+
+			'supported sockets'                     => 'Socket Support',
+			'cpu socket support'                    => 'Socket Support',
+			'compatibility'                         => 'Socket Support',
+			'socket compatibility'                  => 'Socket Support',
+			'cpu socket'                            => 'Socket Support',
+			'socket support'                        => 'Socket Support',
+
+			'fan dimensions'                        => 'Fan Size',
+			'fan diameter'                          => 'Fan Size',
+			'fans size'                             => 'Fan Size',
+			'fan size'                              => 'Fan Size',
+
+			'pwm support'                           => 'PWM Controller',
+			'pwm mode'                              => 'PWM Controller',
+			'fan control'                           => 'PWM Controller',
+			'pwm controller'                        => 'PWM Controller',
+			'pwm'                                   => 'PWM Controller',
+
+			'radiator dimensions'                   => 'Radiator Size',
+			'radiator length'                       => 'Radiator Size',
+			'radiator thickness'                    => 'Radiator Size',
+			'size'                                  => 'Radiator Size',
+			'radiator size'                         => 'Radiator Size',
+
+			'led type'                              => 'Lighting',
+			'rgb lighting'                          => 'Lighting',
+			'argb'                                  => 'Lighting',
+			'lighting type'                         => 'Lighting',
+			'led'                                   => 'Lighting',
+			'lighting'                              => 'Lighting',
+
+			'warranty period'                       => 'Warranty',
+			'manufacturer warranty'                 => 'Warranty',
+			'warranty'                              => 'Warranty',
+		),
+
+		'ram' => array(
+			'model number'                          => 'Model',
+			'part number'                           => 'Model',
+			'mpn'                                   => 'Model',
+			'sku'                                   => 'Model',
+			'model name'                            => 'Model',
+			'model'                                 => 'Model',
+
+			'series'                                => 'Product Series',
+			'family'                                => 'Product Series',
+			'line'                                  => 'Product Series',
+			'product line'                          => 'Product Series',
+			'product series'                        => 'Product Series',
+
+			'ddr type'                              => 'Memory Type',
+			'dram type'                             => 'Memory Type',
+			'memory standard'                       => 'Memory Type',
+			'memory type'                           => 'Memory Type',
+
+			'memory capacity'                       => 'Capacity',
+			'size'                                  => 'Capacity',
+			'total capacity'                        => 'Capacity',
+			'kit capacity'                          => 'Capacity',
+			'capacity'                              => 'Capacity',
+
+			'rgb'                                   => 'Lighting',
+			'argb'                                  => 'Lighting',
+			'rgb lighting'                          => 'Lighting',
+			'led'                                   => 'Lighting',
+			'led lighting'                          => 'Lighting',
+			'lighting'                              => 'Lighting',
+
+			'single / dual kit'                     => 'Kit Type',
+			'channel configuration'                 => 'Kit Type',
+			'kit configuration'                     => 'Kit Type',
+			'module type'                           => 'Kit Type',
+			'kit type'                              => 'Kit Type',
+
+			'memory speed'                          => 'Speed',
+			'tested speed'                          => 'Speed',
+			'frequency'                             => 'Speed',
+			'clock speed'                           => 'Speed',
+			'rated speed'                           => 'Speed',
+			'speed'                                 => 'Speed',
+
+			'latency'                               => 'Tested Latency',
+			'cas latency'                           => 'Tested Latency',
+			'timings'                               => 'Tested Latency',
+			'tested timings'                        => 'Tested Latency',
+			'cl'                                    => 'Tested Latency',
+			'tested latency'                        => 'Tested Latency',
+
+			'voltage'                               => 'Tested Voltage',
+			'operating voltage'                     => 'Tested Voltage',
+			'tested operating voltage'              => 'Tested Voltage',
+			'tested voltage'                        => 'Tested Voltage',
+
+			'module dimension'                      => 'Dimm Type',
+			'pin count'                             => 'Dimm Type',
+			'dimm'                                  => 'Dimm Type',
+			'dimm type'                             => 'Dimm Type',
+
+			'xmp / expo'                            => 'Profile Type',
+			'intel xmp'                             => 'Profile Type',
+			'amd expo'                              => 'Profile Type',
+			'performance profile'                   => 'Profile Type',
+			'memory profile'                        => 'Profile Type',
+			'profile type'                          => 'Profile Type',
+
+			'warranty period'                       => 'Warranty',
+			'manufacturer warranty'                 => 'Warranty',
+			'limited lifetime warranty'             => 'Warranty',
+			'warranty'                              => 'Warranty',
+		),
+
+		'psu' => array(
+			'total power'                           => 'Wattage',
+			'max power'                             => 'Wattage',
+			'power output'                          => 'Wattage',
+			'continuous power'                      => 'Wattage',
+			'power'                                 => 'Wattage',
+			'watt'                                  => 'Wattage',
+			'wattage'                               => 'Wattage',
+
+			'product series'                        => 'Series',
+			'model series'                          => 'Series',
+			'family'                                => 'Series',
+			'series'                                => 'Series',
+
+			'80 plus rating'                        => 'Certification',
+			'80 plus certification'                 => 'Certification',
+			'efficiency certification'              => 'Certification',
+			'efficiency rating'                     => 'Certification',
+			'80+'                                   => 'Certification',
+			'certification'                         => 'Certification',
+
+			'modularity'                            => 'Modular',
+			'cable type'                            => 'Modular',
+			'modular type'                          => 'Modular',
+			'full / semi modular'                   => 'Modular',
+			'modular'                               => 'Modular',
+
+			'pcie connectors'                       => 'PCIe Connector (6+2)',
+			'pcie 8 pin'                            => 'PCIe Connector (6+2)',
+			'pcie 6+2 pin'                          => 'PCIe Connector (6+2)',
+			'pcie 5.0 12vhpwr'                      => 'PCIe Connector (6+2)',
+			'pcie connector (6+2)'                  => 'PCIe Connector (6+2)',
+			'pcie'                                  => 'PCIe Connector (6+2)',
+
+			'sata power connectors'                 => 'SATA Connector',
+			'sata ports'                            => 'SATA Connector',
+			'sata connectors'                       => 'SATA Connector',
+			'sata'                                  => 'SATA Connector',
+			'sata connector'                        => 'SATA Connector',
+
+			'molex connectors'                      => 'Peripheral (4-Pin)',
+			'molex 4-pin'                           => 'Peripheral (4-Pin)',
+			'peripheral connectors'                 => 'Peripheral (4-Pin)',
+			'floppy connectors'                     => 'Peripheral (4-Pin)',
+			'molex'                                 => 'Peripheral (4-Pin)',
+			'peripheral (4-pin)'                    => 'Peripheral (4-Pin)',
+
+			'warranty period'                       => 'Warranty',
+			'manufacturer warranty'                 => 'Warranty',
+			'warranty'                              => 'Warranty',
+		),
+
+		'cabinet' => array(
+			'case type'                             => 'Cabinet Size',
+			'form factor'                           => 'Cabinet Size',
+			'chassis type'                          => 'Cabinet Size',
+			'case size'                             => 'Cabinet Size',
+			'tower type'                            => 'Cabinet Size',
+			'mid tower'                             => 'Cabinet Size',
+			'full tower'                            => 'Cabinet Size',
+			'cabinet size'                          => 'Cabinet Size',
+
+			'case color'                            => 'Color',
+			'chassis color'                         => 'Color',
+			'exterior color'                        => 'Color',
+			'colors'                                => 'Color',
+			'color'                                 => 'Color',
+
+			'case material'                         => 'Material',
+			'chassis material'                      => 'Material',
+			'side panel material'                   => 'Material',
+			'materials'                             => 'Material',
+			'tempered glass'                        => 'Material',
+			'material'                              => 'Material',
+
+			'pci slots'                             => 'Expansion Slots',
+			'expansion slot count'                  => 'Expansion Slots',
+			'slots'                                 => 'Expansion Slots',
+			'expansion slots'                       => 'Expansion Slots',
+
+			'supported motherboards'                => 'Motherboard Size',
+			'motherboard support'                   => 'Motherboard Size',
+			'mb support'                            => 'Motherboard Size',
+			'form factor support'                   => 'Motherboard Size',
+			'motherboard size'                      => 'Motherboard Size',
+
+			'cpu cooler clearance'                  => 'Max CPU Cooler Height',
+			'maximum cpu cooler height'             => 'Max CPU Cooler Height',
+			'cpu cooler limit'                      => 'Max CPU Cooler Height',
+			'max cpu cooler height'                 => 'Max CPU Cooler Height',
+
+			'psu clearance'                         => 'Max PSU Length',
+			'maximum psu length'                    => 'Max PSU Length',
+			'psu limit'                             => 'Max PSU Length',
+			'max psu length'                        => 'Max PSU Length',
+
+			'gpu clearance'                         => 'Max Gpu Length',
+			'maximum gpu length'                    => 'Max Gpu Length',
+			'vga length'                            => 'Max Gpu Length',
+			'max vga length'                        => 'Max Gpu Length',
+			'graphic card clearance'                => 'Max Gpu Length',
+			'max gpu length'                        => 'Max Gpu Length',
+
+			'3.5" drive bays'                       => 'Max 3.5" HDD',
+			'3.5 inch bays'                         => 'Max 3.5" HDD',
+			'hdd bays'                              => 'Max 3.5" HDD',
+			'3.5 hdd'                               => 'Max 3.5" HDD',
+			'max 3.5" hdd'                          => 'Max 3.5" HDD',
+
+			'2.5" drive bays'                       => 'Max 2.5" SSD',
+			'2.5 inch bays'                         => 'Max 2.5" SSD',
+			'ssd bays'                              => 'Max 2.5" SSD',
+			'2.5 ssd'                               => 'Max 2.5" SSD',
+			'max 2.5" ssd'                          => 'Max 2.5" SSD',
+
+			'filter'                                => 'Dust Filters',
+			'filters'                               => 'Dust Filters',
+			'dust filter location'                  => 'Dust Filters',
+			'removable dust filter'                 => 'Dust Filters',
+			'dust filters'                          => 'Dust Filters',
+
+			'included fans'                         => 'Pre Installed Fans',
+			'fan included'                          => 'Pre Installed Fans',
+			'installed fans'                        => 'Pre Installed Fans',
+			'front/rear fans included'              => 'Pre Installed Fans',
+			'pre installed fans'                    => 'Pre Installed Fans',
+
+			'fan support'                           => 'Max Fan Support',
+			'fan mounting locations'                => 'Max Fan Support',
+			'total fan support'                     => 'Max Fan Support',
+			'max fan support'                       => 'Max Fan Support',
+
+			'supported radiators'                   => 'Radiator Support',
+			'radiator mounting'                     => 'Radiator Support',
+			'water cooling support'                 => 'Radiator Support',
+			'radiator support'                      => 'Radiator Support',
+
+			'front i/o ports'                       => 'I/O Panel',
+			'front panel ports'                     => 'I/O Panel',
+			'top i/o ports'                         => 'I/O Panel',
+			'i/o ports'                             => 'I/O Panel',
+			'front panel connectors'                => 'I/O Panel',
+			'i/o panel'                             => 'I/O Panel',
+
+			'warranty period'                       => 'Warranty',
+			'manufacturer warranty'                 => 'Warranty',
+			'warranty'                              => 'Warranty',
+		),
+
+		'storage' => array(
+			'drive type'                            => 'Category',
+			'storage type'                          => 'Category',
+			'ssd type'                              => 'Category',
+			'product type'                          => 'Category',
+			'category'                              => 'Category',
+
+			'product series'                        => 'Series',
+			'model series'                          => 'Series',
+			'family'                                => 'Series',
+			'line'                                  => 'Series',
+			'series'                                => 'Series',
+
+			'storage capacity'                      => 'Capacity',
+			'size'                                  => 'Capacity',
+			'total capacity'                        => 'Capacity',
+			'usable capacity'                       => 'Capacity',
+			'capacity'                              => 'Capacity',
+
+			'drive form factor'                     => 'Form Factor',
+			'module size'                           => 'Form Factor',
+			'm.2 2280'                              => 'Form Factor',
+			'2.5 inch'                              => 'Form Factor',
+			'form factor'                           => 'Form Factor',
+
+			'nvme version'                          => 'NVMe',
+			'protocol'                              => 'NVMe',
+			'nvme support'                          => 'NVMe',
+			'nvme express'                          => 'NVMe',
+			'nvme'                                  => 'NVMe',
+
+			'bus interface'                         => 'Interface',
+			'host interface'                        => 'Interface',
+			'pcie gen'                              => 'Interface',
+			'sata 6gb/s'                            => 'Interface',
+			'pcie 4.0 x4'                           => 'Interface',
+			'pcie 5.0 x4'                           => 'Interface',
+			'interface'                             => 'Interface',
+
+			'sequential write'                      => 'Write Speed',
+			'max write speed'                       => 'Write Speed',
+			'sequential write speed'                => 'Write Speed',
+			'write speed'                           => 'Write Speed',
+
+			'sequential read'                       => 'Read Speed',
+			'max read speed'                        => 'Read Speed',
+			'sequential read speed'                 => 'Read Speed',
+			'read speed'                            => 'Read Speed',
+
+			'terabytes written'                     => 'TBW',
+			'endurance'                             => 'TBW',
+			'endurance (tbw)'                       => 'TBW',
+			'lifetime write'                        => 'TBW',
+			'tbw'                                   => 'TBW',
+
+			'warranty period'                       => 'Warranty',
+			'manufacturer warranty'                 => 'Warranty',
+			'limited warranty'                      => 'Warranty',
+			'warranty'                              => 'Warranty',
+		),
+	);
+
+	/**
+	 * Canonical category slug resolver.
+	 */
+	public static function normalize_category_slug( $category ) {
+		$c = strtolower( trim( (string) $category ) );
+		if ( in_array( $c, array( 'smps', 'power_supply', 'power-supply' ), true ) ) {
+			return 'psu';
+		}
+		if ( in_array( $c, array( 'case', 'chassis', 'cabinets' ), true ) ) {
+			return 'cabinet';
+		}
+		if ( in_array( $c, array( 'ssd', 'hdd', 'hard_drive', 'hard-drive', 'nvme' ), true ) ) {
+			return 'storage';
+		}
+		if ( in_array( $c, array( 'motherboards', 'mobo', 'mother_board' ), true ) ) {
+			return 'motherboard';
+		}
+		if ( in_array( $c, array( 'coolers', 'aio', 'cpu_cooler', 'liquid_cooler' ), true ) ) {
+			return 'cooler';
+		}
+		return $c;
+	}
 
 	/**
 	 * Validate whether a key-value pair is a genuine hardware specification,
@@ -116,7 +861,7 @@ class Specs_Sync_Manager {
 		$k = rtrim( $k, ':' );
 		$k = trim( $k, '*' );
 
-		if ( strlen( $k ) < 2 || strlen( $k ) > 60 ) {
+		if ( strlen( $k ) < 2 || strlen( $k ) > 80 ) {
 			return false;
 		}
 		if ( strlen( $v ) < 1 || strlen( $v ) > 220 ) {
@@ -175,7 +920,7 @@ class Specs_Sync_Manager {
 		}
 
 		// Reject long descriptive paragraphs
-		if ( substr_count( $v, '.' ) > 3 && strlen( $v ) > 100 ) {
+		if ( substr_count( $v, '.' ) > 3 && strlen( $v ) > 120 ) {
 			return false;
 		}
 
@@ -188,23 +933,53 @@ class Specs_Sync_Manager {
 	}
 
 	/**
-	 * Normalize a raw specification label into standardized Title Case.
+	 * Normalize a raw specification label into canonical category schema key.
 	 *
 	 * @param string $key
-	 * @return string
+	 * @param string $category
+	 * @return string|null Canonical key name or Title Case string.
 	 */
-	public static function normalize_spec_key( $key ) {
+	public static function normalize_spec_key( $key, $category = '' ) {
 		$k = trim( (string) $key );
 		$k = rtrim( $k, ':' );
 		$k = trim( $k, '*' );
-		$clean = preg_replace( '/[\s_\-]+/', ' ', strtolower( $k ) );
+		$k_clean = strtolower( preg_replace( '/[^a-zA-Z0-9#"+\/.\s-]/', '', $k ) );
+		$k_clean = preg_replace( '/\s+/', ' ', $k_clean );
 
-		if ( isset( self::$key_normalization_map[ $clean ] ) ) {
-			return self::$key_normalization_map[ $clean ];
+		$cat = self::normalize_category_slug( $category );
+
+		// Category-specific synonym dictionary match
+		if ( ! empty( $cat ) && isset( self::$category_synonyms_map[ $cat ] ) ) {
+			if ( isset( self::$category_synonyms_map[ $cat ][ $k_clean ] ) ) {
+				return self::$category_synonyms_map[ $cat ][ $k_clean ];
+			}
+
+			// Substring / fuzzy synonym matching
+			foreach ( self::$category_synonyms_map[ $cat ] as $syn => $target ) {
+				if ( $k_clean === $syn || ( strlen( $syn ) >= 4 && strpos( $k_clean, $syn ) !== false ) ) {
+					return $target;
+				}
+			}
+
+			// Direct match against category allowed list
+			if ( isset( self::$allowed_specs_by_category[ $cat ] ) ) {
+				foreach ( self::$allowed_specs_by_category[ $cat ] as $allowed_k ) {
+					if ( strtolower( $allowed_k ) === $k_clean ) {
+						return $allowed_k;
+					}
+				}
+			}
 		}
 
-		// Clean fallback to proper title case
-		return ucwords( preg_replace( '/\s+/', ' ', $k ) );
+		// Cross-category fallback synonyms check
+		foreach ( self::$category_synonyms_map as $c => $map ) {
+			if ( isset( $map[ $k_clean ] ) ) {
+				return $map[ $k_clean ];
+			}
+		}
+
+		// Standardize unknown keys to Title Case
+		return ucwords( strtolower( $k ) );
 	}
 
 	/**
@@ -269,131 +1044,104 @@ class Specs_Sync_Manager {
 					continue;
 				}
 
-				$vendor_slug = ! empty( $p->vendor_slug ) ? $p->vendor_slug : '';
-				$this->emit( $logger, 'debug', "Visiting product page on " . ucfirst( $vendor_slug ) . ": {$p->product_url}..." );
+				$vendor = Vendor::find_by_id( $p->vendor_id );
+				$vendor_slug = $vendor ? $vendor->vendor_slug : '';
 
-				$page_specs = $this->fetch_specs_from_product_url( $p->product_url, $vendor_slug, $component->category );
-
-				if ( ! empty( $page_specs ) ) {
-					$clean_specs = array_merge( $clean_specs, $page_specs );
-					$this->emit( $logger, 'match', "Extracted " . count( $page_specs ) . " clean specification attributes from " . ucfirst( $vendor_slug ) . " product page." );
-
-					foreach ( $page_specs as $sk => $sv ) {
-						$collected_text .= " {$sk}: {$sv}";
-					}
-					break; // Pick clean specifications from primary vendor
+				$fetched_specs = $this->fetch_specs_from_product_url( $p->product_url, $vendor_slug, $component->category );
+				if ( ! empty( $fetched_specs ) ) {
+					$clean_specs = array_merge( $clean_specs, $fetched_specs );
+					$this->emit( $logger, 'info', "Extracted " . count( $fetched_specs ) . " clean specs from " . ( $vendor ? $vendor->vendor_name : 'retailer' ) . " product page." );
+					break; // Found good specs table from primary store
 				}
 			}
 
-			// Fill in any missing category standard attributes via deep domain regex
-			$final_specs = self::merge_and_clean_specs( $component->category, $clean_specs, $component->specs_json ?: array(), $collected_text );
+			// Clean, normalize, and merge specs according to exact category schema
+			$merged_specs = self::merge_and_clean_specs( $component->category, $clean_specs, $component->get_specs(), $collected_text );
 
-			if ( ! empty( $final_specs ) ) {
-				$component->specs_json = $final_specs;
+			if ( ! empty( $merged_specs ) ) {
+				$component->specs_json = $merged_specs;
 				$component->save();
-				$report['specs_updated']++;
 
-				// Update postmeta if linked
-				if ( ! empty( $component->wp_post_id ) && function_exists( 'update_post_meta' ) ) {
-					update_post_meta( $component->wp_post_id, '_pcspecs_specs', $final_specs );
-					update_post_meta( $component->wp_post_id, '_hwsync_specs', $final_specs );
+				if ( ! empty( $component->wp_post_id ) ) {
+					update_post_meta( $component->wp_post_id, '_pcspecs_specs', $merged_specs );
+					update_post_meta( $component->wp_post_id, '_hwsync_specs', $merged_specs );
 					$report['posts_refreshed']++;
 				}
 
-				$spec_summary = self::format_specs_summary( $final_specs );
-				$this->emit( $logger, 'success', "Specs Saved for #{$component->id} [{$component->model_name}]: {$spec_summary}" );
+				$report['specs_updated']++;
+				$this->emit( $logger, 'success', "Specs Saved for #{$component->id} [{$component->brand} {$component->model_name}]: " . self::format_specs_summary( $merged_specs ) );
 			} else {
-				$this->emit( $logger, 'debug', "No technical specifications discovered for #{$component->id}." );
+				$this->emit( $logger, 'warning', "No valid category specifications found for Component #{$component->id}." );
 			}
 		}
 
-		$this->emit( $logger, 'finish', "Specifications Sync Completed! Updated {$report['specs_updated']} components in database." );
-
+		$this->emit( $logger, 'success', "Technical Specifications Sync complete. Updated specs for {$report['specs_updated']} components." );
 		return $report;
 	}
 
 	/**
-	 * Synchronize specifications for a small chunk of components via AJAX.
-	 *
-	 * @param array $options Options array: 'category', 'offset', 'limit'.
-	 * @return array Chunk sync report including logs.
+	 * Sync specifications in fast chunked mode (for AJAX step progression).
 	 */
-	public function sync_specs_chunk( $options = array() ) {
+	public function sync_specs_chunk( $options = array(), $logger = null ) {
 		global $wpdb;
-		$comp_table   = Database::get_table_name( 'components' );
-		$category     = isset( $options['category'] ) ? sanitize_text_field( $options['category'] ) : 'all';
-		$offset       = isset( $options['offset'] ) ? intval( $options['offset'] ) : 0;
-		$limit        = isset( $options['limit'] ) ? intval( $options['limit'] ) : 5;
+		$comp_table = Database::get_table_name( 'components' );
+
+		$category = isset( $options['category'] ) ? sanitize_text_field( $options['category'] ) : 'all';
+		$offset   = isset( $options['offset'] ) ? intval( $options['offset'] ) : 0;
+		$limit    = isset( $options['limit'] ) ? intval( $options['limit'] ) : 2;
 
 		$where_clauses = array( "1=1" );
 		if ( $category !== 'all' && ! empty( $category ) ) {
 			$where_clauses[] = $wpdb->prepare( "category = %s", $category );
 		}
-
 		$where_sql = implode( ' AND ', $where_clauses );
+
 		$total_count = intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$comp_table} WHERE {$where_sql}" ) );
-		$components_raw = $wpdb->get_results( "SELECT * FROM {$comp_table} WHERE {$where_sql} ORDER BY id ASC LIMIT {$offset}, {$limit}", \ARRAY_A );
+		$components_raw = $wpdb->get_results( "SELECT * FROM {$comp_table} WHERE {$where_sql} ORDER BY id ASC LIMIT {$limit} OFFSET {$offset}", \ARRAY_A );
 
 		$logs = array();
 		$updated = 0;
 
-		if ( empty( $components_raw ) ) {
-			return array(
-				'success'          => true,
-				'has_more'         => false,
-				'processed'        => 0,
-				'total_components' => $total_count,
-				'next_offset'      => $offset,
-				'logs'             => array( array( 'level' => 'info', 'message' => "All components in DB have been analyzed." ) ),
-			);
-		}
-
 		foreach ( $components_raw as $c_row ) {
-			try {
-				$component = new Component( $c_row );
-				$prices = $component->get_prices();
+			$component = new Component( $c_row );
+			$prices = $component->get_prices();
+			$clean_specs = array();
+			$collected_text = $component->brand . ' ' . $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
 
-				if ( empty( $prices ) ) {
-					$logs[] = array( 'level' => 'debug', 'message' => "Component #{$component->id} has no linked price listings. Skipping." );
+			foreach ( $prices as $p ) {
+				if ( empty( $p->product_url ) ) {
 					continue;
 				}
+				$vendor = Vendor::find_by_id( $p->vendor_id );
+				$vendor_slug = $vendor ? $vendor->vendor_slug : '';
 
-				$clean_specs = array();
-				$collected_text = $component->brand . ' ' . $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
+				$fetched = $this->fetch_specs_from_product_url( $p->product_url, $vendor_slug, $component->category );
+				if ( ! empty( $fetched ) ) {
+					$clean_specs = array_merge( $clean_specs, $fetched );
+					$logs[] = array(
+						'level'   => 'match',
+						'message' => "[{$component->brand} {$component->model_name}] Extracted " . count( $fetched ) . " clean specs from " . ( $vendor ? $vendor->vendor_name : 'vendor' ) . " product page.",
+					);
+					break;
+				}
+			}
 
-				foreach ( $prices as $p ) {
-					if ( empty( $p->product_url ) ) continue;
-					$vendor_slug = ! empty( $p->vendor_slug ) ? $p->vendor_slug : '';
-					$page_specs = $this->fetch_specs_from_product_url( $p->product_url, $vendor_slug, $component->category );
+			$merged_specs = self::merge_and_clean_specs( $component->category, $clean_specs, $component->get_specs(), $collected_text );
 
-					if ( ! empty( $page_specs ) ) {
-						$clean_specs = array_merge( $clean_specs, $page_specs );
-						$logs[] = array( 'level' => 'match', 'message' => "[{$component->model_name}] Extracted " . count( $page_specs ) . " clean specs from " . ucfirst( $vendor_slug ) . " product page." );
-						foreach ( $page_specs as $sk => $sv ) {
-							$collected_text .= " {$sk}: {$sv}";
-						}
-						break;
-					}
+			if ( ! empty( $merged_specs ) ) {
+				$component->specs_json = $merged_specs;
+				$component->save();
+
+				if ( ! empty( $component->wp_post_id ) ) {
+					update_post_meta( $component->wp_post_id, '_pcspecs_specs', $merged_specs );
+					update_post_meta( $component->wp_post_id, '_hwsync_specs', $merged_specs );
 				}
 
-				$final_specs = self::merge_and_clean_specs( $component->category, $clean_specs, $component->specs_json ?: array(), $collected_text );
-
-				if ( ! empty( $final_specs ) ) {
-					$component->specs_json = $final_specs;
-					$component->save();
-					$updated++;
-
-					// Update postmeta if linked
-					if ( ! empty( $component->wp_post_id ) && function_exists( 'update_post_meta' ) ) {
-						update_post_meta( $component->wp_post_id, '_pcspecs_specs', $final_specs );
-						update_post_meta( $component->wp_post_id, '_hwsync_specs', $final_specs );
-					}
-
-					$summary = self::format_specs_summary( $final_specs );
-					$logs[] = array( 'level' => 'success', 'message' => "Specs Saved for #{$component->id} [{$component->model_name}]: {$summary}" );
-				}
-			} catch ( \Throwable $e ) {
-				$logs[] = array( 'level' => 'warning', 'message' => "Error syncing specs for component #{$c_row['id']}: " . $e->getMessage() );
+				$updated++;
+				$logs[] = array(
+					'level'   => 'success',
+					'message' => "Specs Saved for #{$component->id} [{$component->brand} {$component->model_name}]: " . self::format_specs_summary( $merged_specs ),
+				);
 			}
 		}
 
@@ -434,7 +1182,7 @@ class Specs_Sync_Manager {
 				if ( ! empty( $json_res['body'] ) ) {
 					$data = json_decode( $json_res['body'], true );
 					if ( isset( $data['product']['body_html'] ) ) {
-						$specs = self::parse_html_specs_section( $data['product']['body_html'] );
+						$specs = self::parse_html_specs_section( $data['product']['body_html'], $category );
 						if ( ! empty( $specs ) ) {
 							return $specs;
 						}
@@ -483,7 +1231,7 @@ class Specs_Sync_Manager {
 			return $specs;
 		}
 
-		return self::parse_html_specs_section( $specs_html );
+		return self::parse_html_specs_section( $specs_html, $category );
 	}
 
 	/**
@@ -523,9 +1271,10 @@ class Specs_Sync_Manager {
 	 * Parse HTML snippet (tables, lists, definition lists, structured text) into clean key-value specs dictionary.
 	 *
 	 * @param string $html_snippet
+	 * @param string $category
 	 * @return array
 	 */
-	public static function parse_html_specs_section( $html_snippet ) {
+	public static function parse_html_specs_section( $html_snippet, $category = '' ) {
 		$specs = array();
 		if ( empty( $html_snippet ) ) {
 			return $specs;
@@ -537,6 +1286,9 @@ class Specs_Sync_Manager {
 
 		// Strip scripts, styles, noscript, svg, iframes so inline JSON dictionaries are never processed
 		$html_snippet = preg_replace( '#<(script|style|noscript|svg|iframe)[^>]*>[\s\S]*?</\1>#i', ' ', $html_snippet );
+
+		$cat = self::normalize_category_slug( $category );
+		$allowed = ( ! empty( $cat ) && isset( self::$allowed_specs_by_category[ $cat ] ) ) ? self::$allowed_specs_by_category[ $cat ] : null;
 
 		// 1. Table rows: <tr><td>Key</td><td>Val</td></tr> or <tr><th>Key</th><td>Val</td></tr>
 		if ( preg_match_all( '/<tr[^>]*>[\s\S]*?<\/tr>/i', $html_snippet, $rows ) ) {
@@ -551,8 +1303,10 @@ class Specs_Sync_Manager {
 						$v = trim( preg_replace( '/\s+/', ' ', $v ) );
 
 						if ( self::is_valid_spec_pair( $k, $v ) ) {
-							$norm_k = self::normalize_spec_key( $k );
-							$specs[ $norm_k ] = $v;
+							$norm_k = self::normalize_spec_key( $k, $category );
+							if ( empty( $allowed ) || in_array( $norm_k, $allowed, true ) ) {
+								$specs[ $norm_k ] = $v;
+							}
 						}
 					}
 				}
@@ -570,9 +1324,11 @@ class Specs_Sync_Manager {
 				$v = trim( preg_replace( '/\s+/', ' ', $v ) );
 
 				if ( self::is_valid_spec_pair( $k, $v ) ) {
-					$norm_k = self::normalize_spec_key( $k );
-					if ( ! isset( $specs[ $norm_k ] ) ) {
-						$specs[ $norm_k ] = $v;
+					$norm_k = self::normalize_spec_key( $k, $category );
+					if ( empty( $allowed ) || in_array( $norm_k, $allowed, true ) ) {
+						if ( ! isset( $specs[ $norm_k ] ) ) {
+							$specs[ $norm_k ] = $v;
+						}
 					}
 				}
 			}
@@ -582,15 +1338,19 @@ class Specs_Sync_Manager {
 		if ( preg_match_all( '/<li[^>]*>[\s\S]*?<\/li>/i', $html_snippet, $lis ) ) {
 			foreach ( $lis[0] as $li ) {
 				if ( preg_match( '/<(?:strong|b|span)[^>]*>([^<:]+)[:]?<\/(?:strong|b|span)>[\s:]*([^<]+)/i', $li, $m ) ) {
-					$k = html_entity_decode( trim( strip_tags( $m[1] ) ), ENT_QUOTES, 'UTF-8' );
-					$v = html_entity_decode( trim( strip_tags( $m[2] ) ), ENT_QUOTES, 'UTF-8' );
+					$k = trim( strip_tags( $m[1] ) );
+					$v = trim( strip_tags( $m[2] ) );
+					$k = html_entity_decode( $k, ENT_QUOTES, 'UTF-8' );
+					$v = html_entity_decode( $v, ENT_QUOTES, 'UTF-8' );
 					$k = trim( preg_replace( '/\s+/', ' ', $k ) );
 					$v = trim( preg_replace( '/\s+/', ' ', $v ) );
 
 					if ( self::is_valid_spec_pair( $k, $v ) ) {
-						$norm_k = self::normalize_spec_key( $k );
-						if ( ! isset( $specs[ $norm_k ] ) ) {
-							$specs[ $norm_k ] = $v;
+						$norm_k = self::normalize_spec_key( $k, $category );
+						if ( empty( $allowed ) || in_array( $norm_k, $allowed, true ) ) {
+							if ( ! isset( $specs[ $norm_k ] ) ) {
+								$specs[ $norm_k ] = $v;
+							}
 						}
 					}
 				}
@@ -608,9 +1368,11 @@ class Specs_Sync_Manager {
 					$k = trim( $parts[0] );
 					$v = trim( $parts[1] );
 					if ( self::is_valid_spec_pair( $k, $v ) ) {
-						$norm_k = self::normalize_spec_key( $k );
-						if ( ! isset( $specs[ $norm_k ] ) ) {
-							$specs[ $norm_k ] = $v;
+						$norm_k = self::normalize_spec_key( $k, $category );
+						if ( empty( $allowed ) || in_array( $norm_k, $allowed, true ) ) {
+							if ( ! isset( $specs[ $norm_k ] ) ) {
+								$specs[ $norm_k ] = $v;
+							}
 						}
 					}
 				}
@@ -621,16 +1383,18 @@ class Specs_Sync_Manager {
 	}
 
 	/**
-	 * Merge vendor extracted specs with domain regex extractions and return a clean, deduplicated dictionary.
+	 * Merge vendor extracted specs with category schema rules and domain regex extraction.
 	 *
 	 * @param string $category
 	 * @param array $raw_specs
 	 * @param array $existing_specs
 	 * @param string $text_context
-	 * @return array
+	 * @return array Clean dictionary conforming strictly to the category schema.
 	 */
 	public static function merge_and_clean_specs( $category, $raw_specs = array(), $existing_specs = array(), $text_context = '' ) {
 		$merged = array();
+		$cat = self::normalize_category_slug( $category );
+		$allowed = isset( self::$allowed_specs_by_category[ $cat ] ) ? self::$allowed_specs_by_category[ $cat ] : null;
 
 		// 1. Sanitize and normalize existing specs
 		if ( is_array( $existing_specs ) ) {
@@ -639,8 +1403,10 @@ class Specs_Sync_Manager {
 					continue;
 				}
 				if ( self::is_valid_spec_pair( $k, $v ) ) {
-					$norm_k = self::normalize_spec_key( $k );
-					$merged[ $norm_k ] = (string) $v;
+					$norm_k = self::normalize_spec_key( $k, $category );
+					if ( empty( $allowed ) || in_array( $norm_k, $allowed, true ) ) {
+						$merged[ $norm_k ] = (string) $v;
+					}
 				}
 			}
 		}
@@ -649,64 +1415,71 @@ class Specs_Sync_Manager {
 		if ( is_array( $raw_specs ) ) {
 			foreach ( $raw_specs as $k => $v ) {
 				if ( self::is_valid_spec_pair( $k, $v ) ) {
-					$norm_k = self::normalize_spec_key( $k );
-					$merged[ $norm_k ] = (string) $v;
+					$norm_k = self::normalize_spec_key( $k, $category );
+					if ( empty( $allowed ) || in_array( $norm_k, $allowed, true ) ) {
+						$merged[ $norm_k ] = (string) $v;
+					}
 				}
 			}
 		}
 
-		// 3. Fill in missing category-specific core hardware attributes
-		$cat = strtolower( $category );
+		// 3. Regex Auto-Fill for Missing Schema Attributes based on text context
 		$text = $text_context;
 
 		switch ( $cat ) {
 			case 'cpu':
-				if ( empty( $merged['CPU Socket Type'] ) && preg_match( '/\b(AM5|AM4|LGA1700|LGA1851|LGA1200|LGA1151|sTR5|SP5)\b/i', $text, $m ) ) {
-					$merged['CPU Socket Type'] = strtoupper( $m[1] );
+				if ( empty( $merged['Socket'] ) && preg_match( '/\b(AM5|AM4|LGA1700|LGA1851|LGA1200|LGA1151|sTR5|SP5)\b/i', $text, $m ) ) {
+					$merged['Socket'] = strtoupper( $m[1] );
 				}
-				if ( empty( $merged['Total Cores'] ) && preg_match( '/\b(\d+)\s*(?:-|\s*)?(?:core|cores)\b/i', $text, $m ) ) {
-					$merged['Total Cores'] = $m[1];
+				if ( empty( $merged['Number of Cores'] ) && preg_match( '/\b(\d+)\s*(?:-|\s*)?(?:core|cores)\b/i', $text, $m ) ) {
+					$merged['Number of Cores'] = $m[1];
 				}
-				if ( empty( $merged['Total Threads'] ) && preg_match( '/\b(\d+)\s*(?:-|\s*)?(?:thread|threads)\b/i', $text, $m ) ) {
-					$merged['Total Threads'] = $m[1];
+				if ( empty( $merged['Number of Threads'] ) && preg_match( '/\b(\d+)\s*(?:-|\s*)?(?:thread|threads)\b/i', $text, $m ) ) {
+					$merged['Number of Threads'] = $m[1];
 				}
-				if ( empty( $merged['Max Turbo Frequency'] ) && preg_match( '/(?:up\s*to|boost|max\s*clock|turbo)?\s*(\d+(?:\.\d+)?)\s*(?:GHz)\b/i', $text, $m ) ) {
-					$merged['Max Turbo Frequency'] = $m[1] . ' GHz';
+				if ( empty( $merged['Turbo Clock'] ) && preg_match( '/(?:up\s*to|boost|max\s*clock|turbo)?\s*(\d+(?:\.\d+)?)\s*(?:GHz)\b/i', $text, $m ) ) {
+					$merged['Turbo Clock'] = $m[1] . ' GHz';
 				}
-				if ( empty( $merged['Processor Base Frequency'] ) && preg_match( '/(?:base|base\s*clock)\s*(\d+(?:\.\d+)?)\s*(?:GHz)\b/i', $text, $m ) ) {
-					$merged['Processor Base Frequency'] = $m[1] . ' GHz';
+				if ( empty( $merged['Frequency'] ) && preg_match( '/(?:base|base\s*clock)\s*(\d+(?:\.\d+)?)\s*(?:GHz)\b/i', $text, $m ) ) {
+					$merged['Frequency'] = $m[1] . ' GHz';
 				}
-				if ( empty( $merged['Cache'] ) && preg_match( '/(\d+)\s*(?:MB|Mb)\s*(?:L3|Cache|3D\s*V-Cache|Smart\s*Cache)/i', $text, $m ) ) {
-					$merged['Cache'] = $m[1] . ' MB';
+				if ( empty( $merged['Cache L3'] ) && preg_match( '/(\d+)\s*(?:MB|Mb)\s*(?:L3|Cache|3D\s*V-Cache|Smart\s*Cache)/i', $text, $m ) ) {
+					$merged['Cache L3'] = $m[1] . ' MB';
 				}
-				if ( empty( $merged['TDP (Base Power)'] ) && empty( $merged['Processor Base Power'] ) && preg_match( '/(\d+)\s*W(?:att)?\b/i', $text, $m ) ) {
-					$merged['Processor Base Power'] = $m[1] . ' W';
+				if ( empty( $merged['TDP'] ) && preg_match( '/(\d+)\s*W(?:att)?\b/i', $text, $m ) ) {
+					$merged['TDP'] = $m[1] . ' W';
 				}
-				if ( empty( $merged['Memory Types'] ) && preg_match( '/\b(DDR5(?:\s*\+\s*DDR4)?|DDR4|DDR5)\b/i', $text, $m ) ) {
-					$merged['Memory Types'] = strtoupper( $m[1] );
+				if ( empty( $merged['Memory Support'] ) && preg_match( '/\b(DDR5(?:\s*\+\s*DDR4)?|DDR4|DDR5)\b/i', $text, $m ) ) {
+					$merged['Memory Support'] = strtoupper( $m[1] );
+				}
+				if ( empty( $merged['Integrated Graphics'] ) && preg_match( '/\b(Intel\s*UHD\s*Graphics\s*\d+|Radeon\s*Graphics|Vega\s*\d+|Intel\s*Graphics)\b/i', $text, $m ) ) {
+					$merged['Integrated Graphics'] = $m[1];
 				}
 				break;
 
 			case 'gpu':
-				if ( empty( $merged['VRAM Size'] ) && preg_match( '/(\d+)\s*(?:GB|G)\s*(GDDR6X|GDDR6|GDDR5X|GDDR5|HBM2e|HBM3)/i', $text, $m ) ) {
-					$merged['VRAM Size'] = $m[1] . ' GB ' . strtoupper( $m[2] );
-				} elseif ( empty( $merged['VRAM Size'] ) && preg_match( '/(\d+)\s*(?:GB|G)\b/i', $text, $m ) ) {
-					$merged['VRAM Size'] = $m[1] . ' GB';
+				if ( empty( $merged['Memory Size'] ) && preg_match( '/(\d+)\s*(?:GB|G)\s*(GDDR6X|GDDR6|GDDR5X|GDDR5|HBM2e|HBM3)/i', $text, $m ) ) {
+					$merged['Memory Size'] = $m[1] . ' GB';
+					if ( empty( $merged['Memory Type'] ) ) {
+						$merged['Memory Type'] = strtoupper( $m[2] );
+					}
+				} elseif ( empty( $merged['Memory Size'] ) && preg_match( '/(\d+)\s*(?:GB|G)\b/i', $text, $m ) ) {
+					$merged['Memory Size'] = $m[1] . ' GB';
 				}
-				if ( empty( $merged['GPU Chipset'] ) && preg_match( '/\b(RTX\s*4090|RTX\s*4080\s*Super|RTX\s*4080|RTX\s*4070\s*Ti\s*Super|RTX\s*4070\s*Ti|RTX\s*4070\s*Super|RTX\s*4070|RTX\s*4060\s*Ti|RTX\s*4060|RTX\s*3060|RX\s*7900\s*XTX|RX\s*7900\s*XT|RX\s*7800\s*XT|RX\s*7700\s*XT|RX\s*7600\s*XT|RX\s*7600|Arc\s*A770|Arc\s*A750)\b/i', $text, $m ) ) {
-					$merged['GPU Chipset'] = strtoupper( $m[1] );
+				if ( empty( $merged['GPU Name'] ) && preg_match( '/\b(RTX\s*4090|RTX\s*4080\s*Super|RTX\s*4080|RTX\s*4070\s*Ti\s*Super|RTX\s*4070\s*Ti|RTX\s*4070\s*Super|RTX\s*4070|RTX\s*4060\s*Ti|RTX\s*4060|RTX\s*3060|RX\s*7900\s*XTX|RX\s*7900\s*XT|RX\s*7800\s*XT|RX\s*7700\s*XT|RX\s*7600\s*XT|RX\s*7600|Arc\s*A770|Arc\s*A750)\b/i', $text, $m ) ) {
+					$merged['GPU Name'] = strtoupper( $m[1] );
 				}
 				if ( empty( $merged['Memory Bus'] ) && preg_match( '/(\d+)\s*(?:-|\s*)?bit\b/i', $text, $m ) ) {
 					$merged['Memory Bus'] = $m[1] . '-bit';
 				}
-				if ( empty( $merged['Recommended PSU'] ) && preg_match( '/(?:PSU|Power Supply|Recommended PSU|Min PSU)[^\d]*(\d{3,4})\s*W/i', $text, $m ) ) {
-					$merged['Recommended PSU'] = $m[1] . ' W';
+				if ( empty( $merged['Suggested PSU'] ) && preg_match( '/(?:PSU|Power Supply|Recommended PSU|Min PSU)[^\d]*(\d{3,4})\s*W/i', $text, $m ) ) {
+					$merged['Suggested PSU'] = $m[1] . ' W';
 				}
 				break;
 
 			case 'motherboard':
-				if ( empty( $merged['CPU Socket Type'] ) && preg_match( '/\b(AM5|AM4|LGA1700|LGA1851|LGA1200|LGA1151)\b/i', $text, $m ) ) {
-					$merged['CPU Socket Type'] = strtoupper( $m[1] );
+				if ( empty( $merged['Socket'] ) && preg_match( '/\b(AM5|AM4|LGA1700|LGA1851|LGA1200|LGA1151)\b/i', $text, $m ) ) {
+					$merged['Socket'] = strtoupper( $m[1] );
 				}
 				if ( empty( $merged['Chipset'] ) && preg_match( '/\b(X870E|X870|X670E|X670|B850|B650E|B650|A620|Z890|Z790|Z690|B760|B660|H610)\b/i', $text, $m ) ) {
 					$merged['Chipset'] = strtoupper( $m[1] );
@@ -714,10 +1487,83 @@ class Specs_Sync_Manager {
 				if ( empty( $merged['Form Factor'] ) && preg_match( '/\b(E-ATX|Extended ATX|ATX|Micro-ATX|Micro ATX|mATX|Mini-ITX|Mini ITX|ITX)\b/i', $text, $m ) ) {
 					$merged['Form Factor'] = strtoupper( str_replace( ' ', '-', $m[1] ) );
 				}
-				if ( empty( $merged['Memory Types'] ) && preg_match( '/\b(DDR5|DDR4)\b/i', $text, $m ) ) {
-					$merged['Memory Types'] = strtoupper( $m[1] );
+				if ( empty( $merged['Supported Memory Type'] ) && preg_match( '/\b(DDR5|DDR4)\b/i', $text, $m ) ) {
+					$merged['Supported Memory Type'] = strtoupper( $m[1] );
 				}
 				break;
+
+			case 'ram':
+				if ( empty( $merged['Memory Type'] ) && preg_match( '/\b(DDR5|DDR4|DDR3)\b/i', $text, $m ) ) {
+					$merged['Memory Type'] = strtoupper( $m[1] );
+				}
+				if ( empty( $merged['Capacity'] ) && preg_match( '/\b(\d+GB(?:\s*\(\d+x\d+GB\))?|\d+\s*GB)\b/i', $text, $m ) ) {
+					$merged['Capacity'] = strtoupper( $m[1] );
+				}
+				if ( empty( $merged['Speed'] ) && preg_match( '/(\d{4,5})\s*(?:MHz|MT\/s)/i', $text, $m ) ) {
+					$merged['Speed'] = $m[1] . ' MHz';
+				}
+				if ( empty( $merged['Tested Latency'] ) && preg_match( '/\b(CL\s*\d{2}(?:-\d{2}-\d{2}-\d{2})?)\b/i', $text, $m ) ) {
+					$merged['Tested Latency'] = strtoupper( $m[1] );
+				}
+				break;
+
+			case 'psu':
+				if ( empty( $merged['Wattage'] ) && preg_match( '/\b(\d{3,4})\s*W(?:att)?\b/i', $text, $m ) ) {
+					$merged['Wattage'] = $m[1] . ' W';
+				}
+				if ( empty( $merged['Certification'] ) && preg_match( '/(80\s*Plus\s*(?:Titanium|Platinum|Gold|Silver|Bronze|White|Standard)|80\+?\s*Gold)/i', $text, $m ) ) {
+					$merged['Certification'] = ucwords( $m[1] );
+				}
+				if ( empty( $merged['Modular'] ) && preg_match( '/(Fully\s*Modular|Full\s*Modular|Semi-Modular|Semi\s*Modular|Non-Modular)/i', $text, $m ) ) {
+					$merged['Modular'] = ucwords( $m[1] );
+				}
+				break;
+
+			case 'cooler':
+				if ( empty( $merged['Radiator Size'] ) && preg_match( '/\b(360|280|240|120|420)\s*(?:mm)?\b/i', $text, $m ) ) {
+					$merged['Radiator Size'] = $m[1] . ' mm';
+					if ( empty( $merged['Cooling Type'] ) ) {
+						$merged['Cooling Type'] = 'Liquid / AIO Cooler';
+					}
+				}
+				if ( empty( $merged['Cooling Type'] ) && preg_match( '/(AIO|Liquid\s*Cooler|Water\s*Cooler)/i', $text ) ) {
+					$merged['Cooling Type'] = 'Liquid / AIO Cooler';
+				} elseif ( empty( $merged['Cooling Type'] ) && preg_match( '/(Air\s*Cooler|Tower\s*Cooler)/i', $text ) ) {
+					$merged['Cooling Type'] = 'Air Cooler';
+				}
+				break;
+
+			case 'storage':
+				if ( empty( $merged['Capacity'] ) && preg_match( '/\b(\d+\s*(?:TB|GB))\b/i', $text, $m ) ) {
+					$merged['Capacity'] = strtoupper( $m[1] );
+				}
+				if ( empty( $merged['Form Factor'] ) && preg_match( '/(M\.2\s*2280|M\.2|2\.5\s*inch|2\.5")/i', $text, $m ) ) {
+					$merged['Form Factor'] = 'M.2 2280';
+				}
+				if ( empty( $merged['Interface'] ) && preg_match( '/(PCIe\s*5\.0(?:\s*x4)?|PCIe\s*4\.0(?:\s*x4)?|Gen4|Gen5|SATA\s*III|SATA\s*6Gb\/s)/i', $text, $m ) ) {
+					$merged['Interface'] = strtoupper( $m[1] );
+				}
+				break;
+
+			case 'cabinet':
+				if ( empty( $merged['Cabinet Size'] ) && preg_match( '/(Mid\s*Tower|Full\s*Tower|Mini\s*Tower|Micro\s*ATX|Mini\s*ITX|SFF)/i', $text, $m ) ) {
+					$merged['Cabinet Size'] = ucwords( $m[1] );
+				}
+				if ( empty( $merged['Motherboard Size'] ) && preg_match( '/(E-ATX|ATX|Micro-ATX|Mini-ITX)/i', $text, $m ) ) {
+					$merged['Motherboard Size'] = strtoupper( $m[1] );
+				}
+				break;
+		}
+
+		// Final strict filter: if allowed list is defined, discard any non-schema key
+		if ( ! empty( $allowed ) ) {
+			$filtered = array();
+			foreach ( $allowed as $allowed_key ) {
+				if ( isset( $merged[ $allowed_key ] ) && $merged[ $allowed_key ] !== '' ) {
+					$filtered[ $allowed_key ] = $merged[ $allowed_key ];
+				}
+			}
+			return $filtered;
 		}
 
 		return $merged;

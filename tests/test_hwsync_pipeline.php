@@ -1010,12 +1010,11 @@ assert_test( 'The IT Depot (Journal 3 / OpenCart) Adapter Parsing & Price Extrac
 	$parsed_itdepot[0]['image_url'] === 'https://www.theitdepot.com/image/cache/catalog/asus3050.jpg'
 ) );
 
-// Test 32: Technical Specifications Extraction & Noise/Disclaimer Filtering
+// Test 32: Technical Specifications HTML Extraction & Noise/Disclaimer Filtering
 $mock_specs_html = '<div id="tab-specification"><table>
-<tr><td>Product Collection</td><td>Intel® Core™ i3 Processors (14th gen)</td></tr>
-<tr><td>CPU Socket Type</td><td>LGA1700</td></tr>
-<tr><td>Total Cores</td><td>4</td></tr>
-<tr><td>Total Threads</td><td>8</td></tr>
+<tr><td>CPU Cores</td><td>4</td></tr>
+<tr><td>Thread Count</td><td>8</td></tr>
+<tr><td>Sockets Supported</td><td>LGA1700</td></tr>
 <tr><td>Processor Base Frequency</td><td>3.5 Ghz</td></tr>
 <tr><td>Max Turbo Frequency</td><td>4.7 GHz</td></tr>
 <tr><td>Note**</td><td>**Prices, Specifications & Features are subject to change without notice</td></tr>
@@ -1024,32 +1023,31 @@ $mock_specs_html = '<div id="tab-specification"><table>
 <tr><td>Compare</td><td>(</td></tr>
 </table></div>';
 
-$extracted_clean_specs = \HWsync\Specs_Sync_Manager::parse_html_specs_section( $mock_specs_html );
+$extracted_clean_specs = \HWsync\Specs_Sync_Manager::parse_html_specs_section( $mock_specs_html, 'cpu' );
 
 assert_test( 'Technical Specifications HTML Parser extracts genuine attributes & filters out shipping, notes, and UI noise', (
-	isset( $extracted_clean_specs['Product Collection'] ) &&
-	isset( $extracted_clean_specs['CPU Socket Type'] ) && $extracted_clean_specs['CPU Socket Type'] === 'LGA1700' &&
-	isset( $extracted_clean_specs['Total Cores'] ) && $extracted_clean_specs['Total Cores'] === '4' &&
-	isset( $extracted_clean_specs['Total Threads'] ) && $extracted_clean_specs['Total Threads'] === '8' &&
-	isset( $extracted_clean_specs['Processor Base Frequency'] ) && $extracted_clean_specs['Processor Base Frequency'] === '3.5 Ghz' &&
-	isset( $extracted_clean_specs['Max Turbo Frequency'] ) && $extracted_clean_specs['Max Turbo Frequency'] === '4.7 GHz' &&
+	isset( $extracted_clean_specs['Socket'] ) && $extracted_clean_specs['Socket'] === 'LGA1700' &&
+	isset( $extracted_clean_specs['Number of Cores'] ) && $extracted_clean_specs['Number of Cores'] === '4' &&
+	isset( $extracted_clean_specs['Number of Threads'] ) && $extracted_clean_specs['Number of Threads'] === '8' &&
+	isset( $extracted_clean_specs['Frequency'] ) && $extracted_clean_specs['Frequency'] === '3.5 Ghz' &&
+	isset( $extracted_clean_specs['Turbo Clock'] ) && $extracted_clean_specs['Turbo Clock'] === '4.7 GHz' &&
 	! isset( $extracted_clean_specs['Note**'] ) &&
 	! isset( $extracted_clean_specs['Standard Shipping'] ) &&
 	! isset( $extracted_clean_specs['Wishlist'] ) &&
 	! isset( $extracted_clean_specs['Compare'] )
 ) );
 
-// Test 33: Specifications Key Normalization & Merge Engine
+// Test 33: Specifications Key Normalization & Merge Engine conforming to exact Category Schema
 $normalized_specs = \HWsync\Specs_Sync_Manager::merge_and_clean_specs( 'cpu', $extracted_clean_specs, array(), 'Intel Core i3 14100F LGA1700 4 Cores 8 Threads 58W TDP' );
 
-assert_test( 'Key Normalization & Clean Dictionary Merge Engine (No internal snake_case duplicates or missing fields)', (
-	isset( $normalized_specs['CPU Socket Type'] ) && $normalized_specs['CPU Socket Type'] === 'LGA1700' &&
-	isset( $normalized_specs['Total Cores'] ) && $normalized_specs['Total Cores'] === '4' &&
-	isset( $normalized_specs['Total Threads'] ) && $normalized_specs['Total Threads'] === '8' &&
-	isset( $normalized_specs['Processor Base Power'] ) && $normalized_specs['Processor Base Power'] === '58 W' &&
+assert_test( 'Key Normalization & Clean Dictionary Merge Engine conforms strictly to category schema', (
+	isset( $normalized_specs['Socket'] ) && $normalized_specs['Socket'] === 'LGA1700' &&
+	isset( $normalized_specs['Number of Cores'] ) && $normalized_specs['Number of Cores'] === '4' &&
+	isset( $normalized_specs['Number of Threads'] ) && $normalized_specs['Number of Threads'] === '8' &&
+	isset( $normalized_specs['TDP'] ) && $normalized_specs['TDP'] === '58 W' &&
 	! isset( $normalized_specs['raw_specs_table'] ) &&
-	! isset( $normalized_specs['socket'] ) &&
-	! isset( $normalized_specs['cores'] )
+	! isset( $normalized_specs['CPU Socket Type'] ) &&
+	! isset( $normalized_specs['Total Cores'] )
 ) );
 
 // Test 34: Clear Component Specifications Persistence
@@ -1078,20 +1076,20 @@ $comp_for_edit = new \HWsync\Models\Component( array(
 	'brand'      => 'AMD',
 	'model_name' => 'Ryzen 5 7600',
 	'category'   => 'cpu',
-	'specs_json' => array( 'Note**' => 'Fake note', 'CPU Socket Type' => 'AM5' ),
+	'specs_json' => array( 'Note**' => 'Fake note', 'Socket' => 'AM5' ),
 ) );
 $comp_for_edit->save();
 
-// Simulate manual edit: user removes Note**, edits CPU Socket Type, and adds Total Cores and Warranty
-$manual_keys = array( 'cpu socket type', 'Total Cores', 'Warranty', '' );
-$manual_vals = array( 'AM5', '6', '3 Years', '' );
+// Simulate manual edit: user removes Note**, edits Socket, and adds Number of Cores and TDP
+$manual_keys = array( 'cpu socket type', 'Processor Cores', 'TDP', '' );
+$manual_vals = array( 'AM5', '6', '65 W', '' );
 
 $edited_specs = array();
 for ( $i = 0; $i < count( $manual_keys ); $i++ ) {
 	$k = trim( $manual_keys[ $i ] );
 	$v = trim( $manual_vals[ $i ] );
 	if ( ! empty( $k ) && ! empty( $v ) ) {
-		$norm_k = \HWsync\Specs_Sync_Manager::normalize_spec_key( $k );
+		$norm_k = \HWsync\Specs_Sync_Manager::normalize_spec_key( $k, 'cpu' );
 		$edited_specs[ $norm_k ] = $v;
 	}
 }
@@ -1103,9 +1101,9 @@ $refreshed_edited = \HWsync\Models\Component::find_by_id( $comp_for_edit->id );
 assert_test( 'Component Specifications Manual Edit persists customized attributes and removes unwanted specs', (
 	$refreshed_edited !== null &&
 	count( $refreshed_edited->specs_json ) === 3 &&
-	isset( $refreshed_edited->specs_json['CPU Socket Type'] ) && $refreshed_edited->specs_json['CPU Socket Type'] === 'AM5' &&
-	isset( $refreshed_edited->specs_json['Total Cores'] ) && $refreshed_edited->specs_json['Total Cores'] === '6' &&
-	isset( $refreshed_edited->specs_json['Warranty'] ) && $refreshed_edited->specs_json['Warranty'] === '3 Years' &&
+	isset( $refreshed_edited->specs_json['Socket'] ) && $refreshed_edited->specs_json['Socket'] === 'AM5' &&
+	isset( $refreshed_edited->specs_json['Number of Cores'] ) && $refreshed_edited->specs_json['Number of Cores'] === '6' &&
+	isset( $refreshed_edited->specs_json['TDP'] ) && $refreshed_edited->specs_json['TDP'] === '65 W' &&
 	! isset( $refreshed_edited->specs_json['Note**'] )
 ) );
 
@@ -1113,11 +1111,36 @@ assert_test( 'Component Specifications Manual Edit persists customized attribute
 $mock_cf_challenge = '<!DOCTYPE html><html><head><title>Just a moment...</title><script>window._cf_chl_opt = { cs: { title: "Vaše připojení se ověřuje...", "content-title": "Než budete moct pokračovat" }, da: { title: "Omdirigerer..." } };</script></head><body><div id="challenge-running">Checking your browser before accessing retailer.com</div></body></html>';
 
 $is_cf_detected = \HWsync\Specs_Sync_Manager::is_bot_challenge_html( $mock_cf_challenge );
-$cf_extracted_specs = \HWsync\Specs_Sync_Manager::parse_html_specs_section( $mock_cf_challenge );
+$cf_extracted_specs = \HWsync\Specs_Sync_Manager::parse_html_specs_section( $mock_cf_challenge, 'cpu' );
 
 assert_test( 'Cloudflare / Anti-Bot Interstitial Challenge is detected and rejected without saving multilingual script noise', (
 	$is_cf_detected === true &&
 	empty( $cf_extracted_specs )
+) );
+
+// Test 37: Category-Specific Synonyms & Strict Whitelist Filter across GPU, RAM, PSU, Cabinet, Storage
+$raw_gpu_specs = array(
+	'CUDA Cores' => '7680',
+	'Stream Processors' => '7680',
+	'Graphics Processor' => 'GeForce RTX 4070 Ti SUPER',
+	'VRAM' => '16 GB',
+	'Memory Interface Type' => 'GDDR6X',
+	'Bus Width' => '256-bit',
+	'Recommended Power Supply' => '750 W',
+	'Random Non-Spec Extra' => 'Invalid Data',
+);
+
+$cleaned_gpu_specs = \HWsync\Specs_Sync_Manager::merge_and_clean_specs( 'gpu', $raw_gpu_specs );
+
+assert_test( 'Category-Specific Synonyms & Strict Whitelisting (GPU Name, Shading Units, Memory Size, Suggested PSU, discarding random keys)', (
+	isset( $cleaned_gpu_specs['GPU Name'] ) && $cleaned_gpu_specs['GPU Name'] === 'GeForce RTX 4070 Ti SUPER' &&
+	isset( $cleaned_gpu_specs['Shading Units'] ) && $cleaned_gpu_specs['Shading Units'] === '7680' &&
+	isset( $cleaned_gpu_specs['Memory Size'] ) && $cleaned_gpu_specs['Memory Size'] === '16 GB' &&
+	isset( $cleaned_gpu_specs['Memory Type'] ) && $cleaned_gpu_specs['Memory Type'] === 'GDDR6X' &&
+	isset( $cleaned_gpu_specs['Memory Bus'] ) && $cleaned_gpu_specs['Memory Bus'] === '256-bit' &&
+	isset( $cleaned_gpu_specs['Suggested PSU'] ) && $cleaned_gpu_specs['Suggested PSU'] === '750 W' &&
+	! isset( $cleaned_gpu_specs['Random Non-Spec Extra'] ) &&
+	! isset( $cleaned_gpu_specs['CUDA Cores'] )
 ) );
 
 echo "\n---------------------------------------------\n";

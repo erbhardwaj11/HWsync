@@ -2536,14 +2536,14 @@ class Admin {
 				var currentEditCompCat = '';
 
 				var catSpecSuggestions = {
-					'cpu': ['CPU Socket Type', 'Total Cores', 'Total Threads', 'Processor Base Frequency', 'Max Turbo Frequency', 'Cache', 'Processor Base Power', 'Memory Types', 'Warranty'],
-					'gpu': ['GPU Chipset', 'VRAM Size', 'Memory Type', 'Memory Bus', 'Recommended PSU', 'Outputs', 'Dimensions', 'Warranty'],
-					'motherboard': ['CPU Socket Type', 'Chipset', 'Form Factor', 'Memory Types', 'Memory Slots', 'PCIe Slots', 'M.2 Slots', 'SATA Ports', 'Warranty'],
-					'ram': ['Memory Capacity', 'Memory Type', 'Memory Speed', 'Tested Latency', 'Tested Voltage', 'Heat Spreader', 'Warranty'],
-					'storage': ['Capacity', 'Form Factor', 'Interface', 'Sequential Read', 'Sequential Write', 'Endurance (TBW)', 'Warranty'],
-					'psu': ['Total Power', 'Efficiency Rating', 'Modularity', 'Form Factor', 'Fan Size', 'Warranty'],
-					'cooler': ['Cooler Type', 'Fan Size', 'Fan Speed', 'Noise Level', 'Supported Sockets', 'Warranty'],
-					'cabinet': ['Case Type', 'Supported Motherboards', 'Max GPU Length', 'Max CPU Cooler Height', 'Drive Bays', 'Included Fans', 'Warranty']
+					'gpu': ['GPU Name', 'Architecture', 'Shading Units', 'TMUs', 'ROPs', 'Compute Units', 'Matrix Cores', 'RT Cores', 'Base Clock', 'Game Clock', 'Boost Clock', 'Memory Clock', 'Memory Size', 'Memory Type', 'Memory Bus', 'Bandwidth', 'Slot Width', 'TDP', 'Suggested PSU', 'Outputs', 'Power Connectors'],
+					'cpu': ['Socket', 'Frequency', 'Turbo Clock', 'Number of Cores', 'Number of Threads', 'Integrated Graphics', 'Codename', 'Generation', 'Memory Support', 'Rated Speed', 'Memory Bus', 'Memory Bandwidth', 'TDP', 'PPT', 'ECC Memory', 'PCI-Express', 'Chipsets', 'Cache L1', 'Cache L2', 'Cache L3', 'Features'],
+					'motherboard': ['Platform', 'Socket', 'Cpu Type', 'Chipset', 'Memory Speed', 'Max Memory Support', 'Supported Memory Type', 'Channel Supported', 'Memory Feature', 'Graphics Port', 'Expansion Slots', 'Back Panel I/O Ports', 'Internal I/O Connector', 'Form Factor', 'Warranty'],
+					'cooler': ['Cooling Type', 'Socket Support', 'Fan Size', 'PWM Controller', 'Radiator Size', 'Lighting', 'Warranty'],
+					'ram': ['Model', 'Product Series', 'Memory Type', 'Capacity', 'Lighting', 'Kit Type', 'Speed', 'Tested Latency', 'Tested Voltage', 'Dimm Type', 'Profile Type', 'Warranty'],
+					'psu': ['Wattage', 'Series', 'Certification', 'Modular', 'PCIe Connector (6+2)', 'SATA Connector', 'Peripheral (4-Pin)', 'Warranty'],
+					'cabinet': ['Cabinet Size', 'Color', 'Material', 'Expansion Slots', 'Motherboard Size', 'Max CPU Cooler Height', 'Max PSU Length', 'Max Gpu Length', 'Max 3.5" HDD', 'Max 2.5" SSD', 'Dust Filters', 'Pre Installed Fans', 'Max Fan Support', 'Radiator Support', 'I/O Panel', 'Warranty'],
+					'storage': ['Category', 'Series', 'Capacity', 'Form Factor', 'NVMe', 'Interface', 'Write Speed', 'Read Speed', 'TBW', 'Warranty']
 				};
 
 				function createSpecRow(key, val) {
