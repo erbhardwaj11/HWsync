@@ -1193,7 +1193,7 @@ $price_amazon = new \HWsync\Models\Vendor_Price( array(
 	'vendor_id'    => $vendor_amazon_id,
 	'product_url'  => 'https://www.amazon.in/dp/B0BTZB7F88',
 	'price'        => 36999.00,
-	'sku'          => 'B0BTZB7F88',
+	'vendor_sku'   => 'B0BTZB7F88',
 	'stock_status' => 'in_stock',
 ) );
 $price_amazon->save();
@@ -1215,7 +1215,7 @@ $refreshed_price = \HWsync\Models\Vendor_Price::find_by_id( $price_amazon->id );
 assert_test( 'Amazon Products CSV Bulk Link Updater updates stored product_url with affiliate tracking link', (
 	$refreshed_price !== null &&
 	$refreshed_price->product_url === 'https://www.amazon.in/dp/B0BTZB7F88?tag=mycustomtag-21' &&
-	$refreshed_price->sku === 'B0BTZB7F88' &&
+	$refreshed_price->vendor_sku === 'B0BTZB7F88' &&
 	$refreshed_price->price == 36999.00
 ) );
 

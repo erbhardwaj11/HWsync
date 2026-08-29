@@ -3779,7 +3779,7 @@ class Admin {
 		$amazon_vendor = Vendor::find_by_slug( 'amazon-in' );
 		$vendor_id = $amazon_vendor ? intval( $amazon_vendor->id ) : 0;
 
-		$sql = "SELECT p.id as price_id, p.component_id, c.brand, c.model_name, c.category, p.sku as asin, p.price, p.product_url, p.stock_status, p.updated_at
+		$sql = "SELECT p.id as price_id, p.component_id, c.brand, c.model_name, c.category, p.vendor_sku as asin, p.price, p.product_url, p.stock_status, p.updated_at
 				FROM {$prices_table} p
 				LEFT JOIN {$comp_table} c ON p.component_id = c.id
 				WHERE (p.vendor_id = %d OR p.product_url LIKE %s)
@@ -3939,7 +3939,7 @@ class Admin {
 					),
 					array(
 						'component_id' => $component_id,
-						'sku'          => $asin,
+						'vendor_sku'   => $asin,
 					)
 				);
 				if ( $res !== false ) {

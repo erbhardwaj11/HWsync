@@ -33,7 +33,11 @@ class Vendor_Price {
 	public function __construct( $data = array() ) {
 		if ( ! empty( $data ) ) {
 			foreach ( $data as $key => $value ) {
-				$this->$key = $value;
+				if ( $key === 'sku' && empty( $data['vendor_sku'] ) ) {
+					$this->vendor_sku = $value;
+				} else {
+					$this->$key = $value;
+				}
 			}
 			if ( ! empty( $this->raw_data_json ) && is_string( $this->raw_data_json ) ) {
 				$decoded = json_decode( $this->raw_data_json, true );
@@ -42,6 +46,28 @@ class Vendor_Price {
 				}
 			}
 		}
+	}
+
+	public function __get( $name ) {
+		if ( $name === 'sku' ) {
+			return $this->vendor_sku;
+		}
+		return null;
+	}
+
+	public function __set( $name, $value ) {
+		if ( $name === 'sku' ) {
+			$this->vendor_sku = $value;
+		} else {
+			$this->$name = $value;
+		}
+	}
+
+	public function __isset( $name ) {
+		if ( $name === 'sku' ) {
+			return isset( $this->vendor_sku );
+		}
+		return isset( $this->$name );
 	}
 
 	public static function find_by_id( $id ) {
