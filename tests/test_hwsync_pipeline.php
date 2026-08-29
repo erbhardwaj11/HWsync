@@ -1371,6 +1371,28 @@ assert_test( 'Bulk Component Deletion permanently removes component record and a
 	empty( $prices_deleted_check )
 ) );
 
+// Test 42: Automated Scheduling for Price, Specs, and Image Sync Events
+\HWsync\Cron::update_schedule( true, 'every_six_hours', '02:30' );
+\HWsync\Cron::update_specs_schedule( true, 'daily', '04:15' );
+\HWsync\Cron::update_image_schedule( true, 'twicedaily', '06:00' );
+
+$price_cron_scheduled = wp_next_scheduled( \HWsync\Cron::CRON_HOOK );
+$specs_cron_scheduled = wp_next_scheduled( \HWsync\Cron::CRON_SPECS_HOOK );
+$image_cron_scheduled = wp_next_scheduled( \HWsync\Cron::CRON_IMAGE_HOOK );
+
+$price_opt = get_option( 'hwsync_schedule_frequency' );
+$specs_opt = get_option( 'hwsync_schedule_specs_frequency' );
+$image_opt = get_option( 'hwsync_schedule_image_frequency' );
+
+assert_test( 'Automated Scheduling configures and registers Cron events for Price, Specs, and Image sync runners independently', (
+	$price_cron_scheduled !== false &&
+	$specs_cron_scheduled !== false &&
+	$image_cron_scheduled !== false &&
+	$price_opt === 'every_six_hours' &&
+	$specs_opt === 'daily' &&
+	$image_opt === 'twicedaily'
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

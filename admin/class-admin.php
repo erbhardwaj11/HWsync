@@ -3777,11 +3777,26 @@ class Admin {
 		$count  = isset( $_GET['count'] ) ? intval( $_GET['count'] ) : 0;
 		$deleted= isset( $_GET['deleted'] ) ? intval( $_GET['deleted'] ) : 0;
 
+		// 1. Price Sync Schedule
 		$schedule_enabled = get_option( 'hwsync_schedule_enabled', 1 );
 		$schedule_freq    = get_option( 'hwsync_schedule_frequency', 'daily' );
 		$schedule_time    = get_option( 'hwsync_schedule_time', '03:00' );
-		$next_timestamp   = wp_next_scheduled( Cron::CRON_HOOK );
-		$next_run_str     = $next_timestamp ? get_date_from_gmt( date( 'Y-m-d H:i:s', $next_timestamp ), 'd-m-Y H:i:s' ) . ' (Local Time)' : \__( 'Not Scheduled', 'hwsync' );
+		$next_price_ts    = wp_next_scheduled( Cron::CRON_HOOK );
+		$next_price_str   = $next_price_ts ? get_date_from_gmt( date( 'Y-m-d H:i:s', $next_price_ts ), 'd-m-Y H:i:s' ) . ' (Local Time)' : __( 'Not Scheduled', 'hwsync' );
+
+		// 2. Specs Sync Schedule
+		$schedule_specs_enabled = get_option( 'hwsync_schedule_specs_enabled', 0 );
+		$schedule_specs_freq    = get_option( 'hwsync_schedule_specs_frequency', 'daily' );
+		$schedule_specs_time    = get_option( 'hwsync_schedule_specs_time', '04:00' );
+		$next_specs_ts          = wp_next_scheduled( Cron::CRON_SPECS_HOOK );
+		$next_specs_str         = $next_specs_ts ? get_date_from_gmt( date( 'Y-m-d H:i:s', $next_specs_ts ), 'd-m-Y H:i:s' ) . ' (Local Time)' : __( 'Not Scheduled', 'hwsync' );
+
+		// 3. Image Sync Schedule
+		$schedule_image_enabled = get_option( 'hwsync_schedule_image_enabled', 0 );
+		$schedule_image_freq    = get_option( 'hwsync_schedule_image_frequency', 'daily' );
+		$schedule_image_time    = get_option( 'hwsync_schedule_image_time', '05:00' );
+		$next_image_ts          = wp_next_scheduled( Cron::CRON_IMAGE_HOOK );
+		$next_image_str         = $next_image_ts ? get_date_from_gmt( date( 'Y-m-d H:i:s', $next_image_ts ), 'd-m-Y H:i:s' ) . ' (Local Time)' : __( 'Not Scheduled', 'hwsync' );
 		?>
 		<div class="wrap">
 			<h1><span class="dashicons dashicons-admin-tools" style="font-size: 30px; width: 30px; height: 30px;"></span> <?php esc_html_e( 'HWsync - Backup, Restore & Maintenance', 'hwsync' ); ?></h1>
@@ -3846,55 +3861,121 @@ class Admin {
 					</form>
 				</div>
 
-				<!-- Card 3: Automated Scheduled Main Sync (Delta / Incremental Update) -->
+				<!-- Card 3: Automated Scheduled Background Syncs (Prices, Specs, Images) -->
 				<div style="background: #fff; padding: 22px; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; grid-column: 1 / -1;">
 					<div>
-						<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-							<h2 style="margin: 0; font-size: 18px; color: #1e293b; display: flex; align-items: center; gap: 8px;">
-								<span class="dashicons dashicons-clock" style="color: #6366f1;"></span>
-								<?php esc_html_e( 'Automated Scheduled Main Sync (Incremental / Delta Updates)', 'hwsync' ); ?>
-							</h2>
-							<span style="background: <?php echo $schedule_enabled ? '#dcfce7; color: #15803d;' : '#f1f5f9; color: #64748b;'; ?> font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px;">
-								<?php echo $schedule_enabled ? esc_html__( 'Active', 'hwsync' ) : esc_html__( 'Disabled', 'hwsync' ); ?>
-							</span>
-						</div>
-						<p style="color: #64748b; font-size: 13px; line-height: 1.6;">
-							<?php esc_html_e( 'Schedule the main synchronization engine to run automatically at a specific time of day. Scheduled sync operates in lightweight Delta Mode: it only creates newly discovered listings and updates prices/stock for existing components without full catalog re-writes.', 'hwsync' ); ?>
+						<h2 style="margin: 0 0 6px 0; font-size: 18px; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+							<span class="dashicons dashicons-clock" style="color: #6366f1;"></span>
+							<?php esc_html_e( 'Automated Scheduled Background Jobs', 'hwsync' ); ?>
+						</h2>
+						<p style="color: #64748b; font-size: 13px; line-height: 1.6; margin-top: 0;">
+							<?php esc_html_e( 'Configure automated background cron schedules for Price/Stock Delta syncs, Specification enrichment, and Local Product Image downloads.', 'hwsync' ); ?>
 						</p>
 					</div>
 
-					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top: 16px; background: #f8fafc; padding: 18px; border-radius: 6px; border: 1px solid #e2e8f0;">
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top: 16px; display: flex; flex-direction: column; gap: 16px;">
 						<?php wp_nonce_field( 'hwsync_save_schedule_action', 'hwsync_nonce' ); ?>
 						<input type="hidden" name="action" value="hwsync_save_schedule" />
 
-						<div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap;">
-							<label style="font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer;">
-								<input type="checkbox" name="schedule_enabled" value="1" <?php checked( $schedule_enabled, 1 ); ?> />
-								<span><?php esc_html_e( 'Enable Scheduled Background Sync', 'hwsync' ); ?></span>
-							</label>
-
-							<div style="display: flex; align-items: center; gap: 8px;">
-								<label for="schedule_time" style="font-weight: 600; font-size: 13px;"><?php esc_html_e( 'Run At Time:', 'hwsync' ); ?></label>
-								<input type="time" id="schedule_time" name="schedule_time" value="<?php echo esc_attr( $schedule_time ); ?>" style="height: 32px; border-radius: 4px; border: 1px solid #cbd5e1; padding: 0 8px;" />
+						<!-- Schedule 1: Price & Products Sync -->
+						<div style="background: #f8fafc; padding: 16px; border-radius: 6px; border: 1px solid #e2e8f0;">
+							<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
+								<label style="font-weight: 700; font-size: 14px; color: #0f172a; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+									<input type="checkbox" name="schedule_enabled" value="1" <?php checked( $schedule_enabled, 1 ); ?> />
+									<span><?php esc_html_e( '1. Price & Product Listings Sync (Incremental / Delta Updates)', 'hwsync' ); ?></span>
+								</label>
+								<span style="background: <?php echo $schedule_enabled ? '#dcfce7; color: #15803d;' : '#f1f5f9; color: #64748b;'; ?> font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 12px;">
+									<?php echo $schedule_enabled ? esc_html__( 'Active', 'hwsync' ) : esc_html__( 'Disabled', 'hwsync' ); ?>
+								</span>
 							</div>
-
-							<div style="display: flex; align-items: center; gap: 8px;">
-								<label for="schedule_frequency" style="font-weight: 600; font-size: 13px;"><?php esc_html_e( 'Frequency:', 'hwsync' ); ?></label>
-								<select id="schedule_frequency" name="schedule_frequency" style="height: 32px; border-radius: 4px; border: 1px solid #cbd5e1;">
-									<option value="daily" <?php selected( $schedule_freq, 'daily' ); ?>><?php esc_html_e( 'Daily (Once a Day)', 'hwsync' ); ?></option>
-									<option value="twicedaily" <?php selected( $schedule_freq, 'twicedaily' ); ?>><?php esc_html_e( 'Twice Daily (Every 12h)', 'hwsync' ); ?></option>
-									<option value="every_six_hours" <?php selected( $schedule_freq, 'every_six_hours' ); ?>><?php esc_html_e( 'Every 6 Hours', 'hwsync' ); ?></option>
-									<option value="hourly" <?php selected( $schedule_freq, 'hourly' ); ?>><?php esc_html_e( 'Hourly', 'hwsync' ); ?></option>
-								</select>
+							<div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap; font-size: 13px;">
+								<div style="display: flex; align-items: center; gap: 6px;">
+									<label for="schedule_time" style="font-weight: 600;"><?php esc_html_e( 'Run At Time:', 'hwsync' ); ?></label>
+									<input type="time" id="schedule_time" name="schedule_time" value="<?php echo esc_attr( $schedule_time ); ?>" style="height: 32px; border-radius: 4px; border: 1px solid #cbd5e1; padding: 0 8px;" />
+								</div>
+								<div style="display: flex; align-items: center; gap: 6px;">
+									<label for="schedule_frequency" style="font-weight: 600;"><?php esc_html_e( 'Frequency:', 'hwsync' ); ?></label>
+									<select id="schedule_frequency" name="schedule_frequency" style="height: 32px; border-radius: 4px; border: 1px solid #cbd5e1;">
+										<option value="daily" <?php selected( $schedule_freq, 'daily' ); ?>><?php esc_html_e( 'Daily (Once a Day)', 'hwsync' ); ?></option>
+										<option value="twicedaily" <?php selected( $schedule_freq, 'twicedaily' ); ?>><?php esc_html_e( 'Twice Daily (Every 12h)', 'hwsync' ); ?></option>
+										<option value="every_six_hours" <?php selected( $schedule_freq, 'every_six_hours' ); ?>><?php esc_html_e( 'Every 6 Hours', 'hwsync' ); ?></option>
+										<option value="every_two_hours" <?php selected( $schedule_freq, 'every_two_hours' ); ?>><?php esc_html_e( 'Every 2 Hours', 'hwsync' ); ?></option>
+										<option value="hourly" <?php selected( $schedule_freq, 'hourly' ); ?>><?php esc_html_e( 'Hourly', 'hwsync' ); ?></option>
+									</select>
+								</div>
+								<div style="font-size: 12px; color: #64748b;">
+									<strong><?php esc_html_e( 'Next Run:', 'hwsync' ); ?></strong> <?php echo esc_html( $next_price_str ); ?>
+								</div>
 							</div>
-
-							<button type="submit" class="button button-primary" style="background: #6366f1; border-color: #4f46e5; height: 34px; font-weight: 600; border-radius: 6px;">
-								<?php esc_html_e( 'Save Schedule Settings', 'hwsync' ); ?>
-							</button>
 						</div>
 
-						<div style="margin-top: 12px; font-size: 12px; color: #475569;">
-							<strong><?php esc_html_e( 'Next Scheduled Run:', 'hwsync' ); ?></strong> <?php echo esc_html( $next_run_str ); ?>
+						<!-- Schedule 2: Specifications Sync -->
+						<div style="background: #f8fafc; padding: 16px; border-radius: 6px; border: 1px solid #e2e8f0;">
+							<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
+								<label style="font-weight: 700; font-size: 14px; color: #0f172a; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+									<input type="checkbox" name="schedule_specs_enabled" value="1" <?php checked( $schedule_specs_enabled, 1 ); ?> />
+									<span><?php esc_html_e( '2. Technical Specifications Sync (Enrich Incomplete Hardware Specs)', 'hwsync' ); ?></span>
+								</label>
+								<span style="background: <?php echo $schedule_specs_enabled ? '#dcfce7; color: #15803d;' : '#f1f5f9; color: #64748b;'; ?> font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 12px;">
+									<?php echo $schedule_specs_enabled ? esc_html__( 'Active', 'hwsync' ) : esc_html__( 'Disabled', 'hwsync' ); ?>
+								</span>
+							</div>
+							<div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap; font-size: 13px;">
+								<div style="display: flex; align-items: center; gap: 6px;">
+									<label for="schedule_specs_time" style="font-weight: 600;"><?php esc_html_e( 'Run At Time:', 'hwsync' ); ?></label>
+									<input type="time" id="schedule_specs_time" name="schedule_specs_time" value="<?php echo esc_attr( $schedule_specs_time ); ?>" style="height: 32px; border-radius: 4px; border: 1px solid #cbd5e1; padding: 0 8px;" />
+								</div>
+								<div style="display: flex; align-items: center; gap: 6px;">
+									<label for="schedule_specs_frequency" style="font-weight: 600;"><?php esc_html_e( 'Frequency:', 'hwsync' ); ?></label>
+									<select id="schedule_specs_frequency" name="schedule_specs_frequency" style="height: 32px; border-radius: 4px; border: 1px solid #cbd5e1;">
+										<option value="daily" <?php selected( $schedule_specs_freq, 'daily' ); ?>><?php esc_html_e( 'Daily (Once a Day)', 'hwsync' ); ?></option>
+										<option value="twicedaily" <?php selected( $schedule_specs_freq, 'twicedaily' ); ?>><?php esc_html_e( 'Twice Daily (Every 12h)', 'hwsync' ); ?></option>
+										<option value="every_six_hours" <?php selected( $schedule_specs_freq, 'every_six_hours' ); ?>><?php esc_html_e( 'Every 6 Hours', 'hwsync' ); ?></option>
+										<option value="weekly" <?php selected( $schedule_specs_freq, 'weekly' ); ?>><?php esc_html_e( 'Weekly', 'hwsync' ); ?></option>
+									</select>
+								</div>
+								<div style="font-size: 12px; color: #64748b;">
+									<strong><?php esc_html_e( 'Next Run:', 'hwsync' ); ?></strong> <?php echo esc_html( $next_specs_str ); ?>
+								</div>
+							</div>
+						</div>
+
+						<!-- Schedule 3: Local Image Sync -->
+						<div style="background: #f8fafc; padding: 16px; border-radius: 6px; border: 1px solid #e2e8f0;">
+							<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
+								<label style="font-weight: 700; font-size: 14px; color: #0f172a; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+									<input type="checkbox" name="schedule_image_enabled" value="1" <?php checked( $schedule_image_enabled, 1 ); ?> />
+									<span><?php esc_html_e( '3. Component Image Sync (Download & Attach Local Uploaded Images)', 'hwsync' ); ?></span>
+								</label>
+								<span style="background: <?php echo $schedule_image_enabled ? '#dcfce7; color: #15803d;' : '#f1f5f9; color: #64748b;'; ?> font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 12px;">
+									<?php echo $schedule_image_enabled ? esc_html__( 'Active', 'hwsync' ) : esc_html__( 'Disabled', 'hwsync' ); ?>
+								</span>
+							</div>
+							<div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap; font-size: 13px;">
+								<div style="display: flex; align-items: center; gap: 6px;">
+									<label for="schedule_image_time" style="font-weight: 600;"><?php esc_html_e( 'Run At Time:', 'hwsync' ); ?></label>
+									<input type="time" id="schedule_image_time" name="schedule_image_time" value="<?php echo esc_attr( $schedule_image_time ); ?>" style="height: 32px; border-radius: 4px; border: 1px solid #cbd5e1; padding: 0 8px;" />
+								</div>
+								<div style="display: flex; align-items: center; gap: 6px;">
+									<label for="schedule_image_frequency" style="font-weight: 600;"><?php esc_html_e( 'Frequency:', 'hwsync' ); ?></label>
+									<select id="schedule_image_frequency" name="schedule_image_frequency" style="height: 32px; border-radius: 4px; border: 1px solid #cbd5e1;">
+										<option value="daily" <?php selected( $schedule_image_freq, 'daily' ); ?>><?php esc_html_e( 'Daily (Once a Day)', 'hwsync' ); ?></option>
+										<option value="twicedaily" <?php selected( $schedule_image_freq, 'twicedaily' ); ?>><?php esc_html_e( 'Twice Daily (Every 12h)', 'hwsync' ); ?></option>
+										<option value="every_six_hours" <?php selected( $schedule_image_freq, 'every_six_hours' ); ?>><?php esc_html_e( 'Every 6 Hours', 'hwsync' ); ?></option>
+										<option value="weekly" <?php selected( $schedule_image_freq, 'weekly' ); ?>><?php esc_html_e( 'Weekly', 'hwsync' ); ?></option>
+									</select>
+								</div>
+								<div style="font-size: 12px; color: #64748b;">
+									<strong><?php esc_html_e( 'Next Run:', 'hwsync' ); ?></strong> <?php echo esc_html( $next_image_str ); ?>
+								</div>
+							</div>
+						</div>
+
+						<div style="margin-top: 8px;">
+							<button type="submit" class="button button-primary" style="background: #6366f1; border-color: #4f46e5; height: 38px; padding: 0 24px; font-weight: 600; border-radius: 6px; font-size: 13px;">
+								<span class="dashicons dashicons-saved" style="margin-top: 4px;"></span>
+								<?php esc_html_e( 'Save All Schedule Settings', 'hwsync' ); ?>
+							</button>
 						</div>
 					</form>
 				</div>
@@ -3949,14 +4030,26 @@ class Admin {
 
 	public static function handle_save_schedule_settings() {
 		if ( ! current_user_can( 'manage_options' ) || ! check_admin_referer( 'hwsync_save_schedule_action', 'hwsync_nonce' ) ) {
-			wp_die( \__( 'Unauthorized request', 'hwsync' ) );
+			wp_die( __( 'Unauthorized request', 'hwsync' ) );
 		}
 
-		$enabled   = ! empty( $_POST['schedule_enabled'] );
-		$frequency = isset( $_POST['schedule_frequency'] ) ? sanitize_text_field( $_POST['schedule_frequency'] ) : 'daily';
-		$time_str  = isset( $_POST['schedule_time'] ) ? sanitize_text_field( $_POST['schedule_time'] ) : '03:00';
+		// 1. Price & Product Sync Schedule
+		$price_enabled = ! empty( $_POST['schedule_enabled'] );
+		$price_freq    = isset( $_POST['schedule_frequency'] ) ? sanitize_text_field( $_POST['schedule_frequency'] ) : 'daily';
+		$price_time    = isset( $_POST['schedule_time'] ) ? sanitize_text_field( $_POST['schedule_time'] ) : '03:00';
+		Cron::update_schedule( $price_enabled, $price_freq, $price_time );
 
-		Cron::update_schedule( $enabled, $frequency, $time_str );
+		// 2. Technical Specifications Sync Schedule
+		$specs_enabled = ! empty( $_POST['schedule_specs_enabled'] );
+		$specs_freq    = isset( $_POST['schedule_specs_frequency'] ) ? sanitize_text_field( $_POST['schedule_specs_frequency'] ) : 'daily';
+		$specs_time    = isset( $_POST['schedule_specs_time'] ) ? sanitize_text_field( $_POST['schedule_specs_time'] ) : '04:00';
+		Cron::update_specs_schedule( $specs_enabled, $specs_freq, $specs_time );
+
+		// 3. Local Images Sync Schedule
+		$img_enabled   = ! empty( $_POST['schedule_image_enabled'] );
+		$img_freq      = isset( $_POST['schedule_image_frequency'] ) ? sanitize_text_field( $_POST['schedule_image_frequency'] ) : 'daily';
+		$img_time      = isset( $_POST['schedule_image_time'] ) ? sanitize_text_field( $_POST['schedule_image_time'] ) : '05:00';
+		Cron::update_image_schedule( $img_enabled, $img_freq, $img_time );
 
 		wp_safe_redirect( admin_url( 'admin.php?page=hwsync-maintenance&status=schedule_saved' ) );
 		exit;
