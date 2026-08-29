@@ -40,6 +40,7 @@ class Admin {
 		add_action( 'wp_ajax_hwsync_export_amazon_csv', array( __CLASS__, 'handle_export_amazon_csv' ) );
 		add_action( 'wp_ajax_hwsync_import_amazon_csv', array( __CLASS__, 'handle_import_amazon_csv' ) );
 		add_action( 'wp_ajax_hwsync_delete_vendor_records', array( __CLASS__, 'handle_delete_vendor_records' ) );
+		add_action( 'wp_ajax_hwsync_delete_components', array( __CLASS__, 'handle_delete_components' ) );
 	}
 
 	public static function register_admin_menu() {
@@ -1752,6 +1753,9 @@ class Admin {
 							<span class="dashicons dashicons-warning"></span> <?php printf( esc_html__( 'Delete All from %s', 'hwsync' ), esc_html( $filtered_vendor_obj->vendor_name ) ); ?>
 						</button>
 					<?php endif; ?>
+					<button type="button" id="btn-bulk-delete-selected" class="button" disabled style="height: 36px; border-radius: 6px; font-weight: 600; background: #fef2f2; border-color: #fca5a5; color: #b91c1c; display: inline-flex; align-items: center; gap: 4px;">
+						<span class="dashicons dashicons-trash"></span> <?php esc_html_e( 'Delete Selected', 'hwsync' ); ?> (<span id="selected-delete-count">0</span>)
+					</button>
 					<button type="button" id="btn-bulk-clear-specs" class="button" disabled style="height: 36px; border-radius: 6px; font-weight: 600; background: #fef2f2; border-color: #fca5a5; color: #b91c1c; display: inline-flex; align-items: center; gap: 4px;">
 						<span class="dashicons dashicons-trash"></span> <?php esc_html_e( 'Clear Specs', 'hwsync' ); ?> (<span id="selected-specs-count">0</span>)
 					</button>
@@ -2187,10 +2191,12 @@ class Admin {
 				var cbAll = document.getElementById('cb-select-all-comps');
 				var itemCbs = document.querySelectorAll('.cb-comp-item');
 				var bulkMergeBtn = document.getElementById('btn-bulk-merge-selected');
+				var bulkDeleteSelectedBtn = document.getElementById('btn-bulk-delete-selected');
 				var bulkClearSpecsBtn = document.getElementById('btn-bulk-clear-specs');
 				var btnDeleteSelectedVendor = document.getElementById('btn-delete-selected-vendor');
 				var btnDeleteAllVendor = document.getElementById('btn-delete-all-vendor');
 				var selCountLabel = document.getElementById('selected-comp-count');
+				var selDeleteCountLabel = document.getElementById('selected-delete-count');
 				var selSpecsCountLabel = document.getElementById('selected-specs-count');
 				var selVendorCountLabel = document.getElementById('selected-vendor-count');
 				var currentVendorFilter = '<?php echo esc_js( $vendor_filter ); ?>';
@@ -2208,7 +2214,22 @@ class Admin {
 					});
 
 					selCountLabel.textContent = selectedComps.length;
+					if (selDeleteCountLabel) selDeleteCountLabel.textContent = selectedComps.length;
 					if (selSpecsCountLabel) selSpecsCountLabel.textContent = selectedComps.length;
+
+					if (bulkDeleteSelectedBtn) {
+						if (selectedComps.length >= 1) {
+							bulkDeleteSelectedBtn.disabled = false;
+							bulkDeleteSelectedBtn.style.background = '#dc2626';
+							bulkDeleteSelectedBtn.style.borderColor = '#b91c1c';
+							bulkDeleteSelectedBtn.style.color = '#fff';
+						} else {
+							bulkDeleteSelectedBtn.disabled = true;
+							bulkDeleteSelectedBtn.style.background = '#fef2f2';
+							bulkDeleteSelectedBtn.style.borderColor = '#fca5a5';
+							bulkDeleteSelectedBtn.style.color = '#b91c1c';
+						}
+					}
 					if (selVendorCountLabel) selVendorCountLabel.textContent = selectedComps.length;
 
 					if (btnDeleteSelectedVendor) {
@@ -2943,6 +2964,49 @@ class Admin {
 							});
 						});
 					}
+				}
+
+				// Bulk Delete Selected Components Handler
+				if (bulkDeleteSelectedBtn) {
+					bulkDeleteSelectedBtn.addEventListener('click', function() {
+						if (selectedComps.length === 0) {
+							alert('Please select at least one component using the checkboxes.');
+							return;
+						}
+						var conf = confirm('⚠️ WARNING: Are you sure you want to permanently delete the ' + selectedComps.length + ' selected component(s)?\n\nThis will remove the canonical components, all their linked retailer store prices, price history, and linked WordPress posts.\n\nThis action cannot be undone.');
+						if (!conf) return;
+
+						bulkDeleteSelectedBtn.disabled = true;
+						bulkDeleteSelectedBtn.innerHTML = '<span class="dashicons dashicons-update spin"></span> Deleting...';
+
+						var compIds = selectedComps.map(function(c) { return c.id; });
+						var formData = new URLSearchParams();
+						formData.append('action', 'hwsync_delete_components');
+						formData.append('hwsync_nonce', nonce);
+						compIds.forEach(function(id) { formData.append('component_ids[]', id); });
+
+						fetch(ajaxurl, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+							body: formData.toString()
+						})
+						.then(function(res) { return res.json(); })
+						.then(function(data) {
+							if (data.success) {
+								alert(data.data.message || 'Selected components deleted successfully.');
+								window.location.reload();
+							} else {
+								alert('Error: ' + (data.data ? data.data.message : 'Failed to delete selected components.'));
+								bulkDeleteSelectedBtn.disabled = false;
+								bulkDeleteSelectedBtn.innerHTML = '<span class="dashicons dashicons-trash"></span> Delete Selected (' + selectedComps.length + ')';
+							}
+						})
+						.catch(function(err) {
+							alert('Network error: ' + err.message);
+							bulkDeleteSelectedBtn.disabled = false;
+							bulkDeleteSelectedBtn.innerHTML = '<span class="dashicons dashicons-trash"></span> Delete Selected (' + selectedComps.length + ')';
+						});
+					});
 				}
 
 				// Vendor Deletion Handlers
@@ -4111,6 +4175,33 @@ class Admin {
 		$deleted = isset( $result['deleted_posts_count'] ) ? intval( $result['deleted_posts_count'] ) : 0;
 		wp_safe_redirect( admin_url( 'admin.php?page=hwsync-maintenance&status=wipe_success&deleted=' . $deleted ) );
 		exit;
+	}
+
+	public static function handle_delete_components() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => \__( 'Unauthorized permission.', 'hwsync' ) ) );
+		}
+
+		$component_ids = isset( $_POST['component_ids'] ) ? array_map( 'intval', (array) $_POST['component_ids'] ) : array();
+		$component_ids = array_filter( $component_ids );
+
+		if ( empty( $component_ids ) ) {
+			wp_send_json_error( array( 'message' => \__( 'No components selected for deletion.', 'hwsync' ) ) );
+		}
+
+		$deleted_count = 0;
+		foreach ( $component_ids as $id ) {
+			$comp = Component::find_by_id( $id );
+			if ( $comp && $comp->delete() ) {
+				$deleted_count++;
+			}
+		}
+
+		wp_send_json_success( array(
+			'deleted' => $deleted_count,
+			'message' => sprintf( \__( 'Successfully deleted %d component(s) and their linked store prices.', 'hwsync' ), $deleted_count ),
+		) );
 	}
 
 	public static function handle_delete_vendor_records() {

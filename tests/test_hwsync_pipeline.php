@@ -1343,6 +1343,34 @@ assert_test( 'Component Catalog Vendor Deletion removes targeted vendor prices, 
 	$c1_prices[0]->price == 22999.00
 ) );
 
+// Test 41: Bulk Component Deletion Pipeline ($comp->delete() and cascade cleanup)
+$comp_to_delete = new \HWsync\Models\Component( array(
+	'brand'      => 'Corsair',
+	'model_name' => 'RM850x 850W Gold Power Supply',
+	'category'   => 'psu',
+) );
+$comp_to_delete->save();
+
+$vp_to_delete = new \HWsync\Models\Vendor_Price( array(
+	'component_id' => $comp_to_delete->id,
+	'vendor_id'    => 1,
+	'product_url'  => 'https://mdcomputers.in/corsair-rm850x.html',
+	'price'        => 11500.00,
+	'vendor_sku'   => 'CORSAIR-RM850X',
+	'is_in_stock'  => 1,
+) );
+$vp_to_delete->save();
+
+$delete_success = $comp_to_delete->delete();
+$comp_deleted_check = \HWsync\Models\Component::find_by_id( $comp_to_delete->id );
+$prices_deleted_check = \HWsync\Models\Vendor_Price::find_by_component_id( $comp_to_delete->id );
+
+assert_test( 'Bulk Component Deletion permanently removes component record and all associated vendor prices', (
+	$delete_success === true &&
+	$comp_deleted_check === null &&
+	empty( $prices_deleted_check )
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";
