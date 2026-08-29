@@ -310,6 +310,22 @@ class MockWPDB {
 		}
 		return array();
 	}
+	public function delete( $table, $where ) {
+		if ( ! isset( $this->tables[ $table ] ) ) return 0;
+		$deleted = 0;
+		foreach ( $this->tables[ $table ] as $idx => $row ) {
+			$match = true;
+			foreach ( $where as $k => $v ) {
+				if ( (string)$row[ $k ] !== (string)$v ) { $match = false; break; }
+			}
+			if ( $match ) {
+				unset( $this->tables[ $table ][ $idx ] );
+				$deleted++;
+			}
+		}
+		$this->tables[ $table ] = array_values( $this->tables[ $table ] );
+		return $deleted;
+	}
 	public function query( $sql ) {
 		if ( preg_match( '/TRUNCATE\s+TABLE\s+(\w+)/i', $sql, $m ) ) {
 			$this->tables[ $m[1] ] = array();
@@ -323,15 +339,27 @@ class MockWPDB {
 			$tbl = $m[1];
 			$cond = $m[2];
 			if ( ! empty( $this->tables[ $tbl ] ) ) {
-				if ( preg_match( '/id\s*=\s*(\d+)/i', $cond, $qm ) ) {
-					$target_id = $qm[1];
-					foreach ( $this->tables[ $tbl ] as $idx => $r ) {
-						if ( (string)$r['id'] === (string)$target_id ) {
+				preg_match( '/vendor_id\s*=\s*(\d+)/i', $cond, $vm );
+				$vid = $vm ? $vm[1] : null;
+				preg_match( '/component_id\s+IN\s*\(([^)]+)\)/i', $cond, $cm );
+				$cids = $cm ? array_map( 'trim', explode( ',', $cm[1] ) ) : null;
+				preg_match( '/id\s*=\s*(\d+)/i', $cond, $idm );
+				$idval = $idm ? $idm[1] : null;
+
+				$deleted = 0;
+				foreach ( $this->tables[ $tbl ] as $idx => $r ) {
+					if ( $idval && (string)$r['id'] === (string)$idval ) {
+						unset( $this->tables[ $tbl ][ $idx ] );
+						$deleted++;
+					} elseif ( $vid && (string)$r['vendor_id'] === (string)$vid ) {
+						if ( ! $cids || in_array( (string)$r['component_id'], $cids ) ) {
 							unset( $this->tables[ $tbl ][ $idx ] );
+							$deleted++;
 						}
 					}
-					$this->tables[ $tbl ] = array_values( $this->tables[ $tbl ] );
 				}
+				$this->tables[ $tbl ] = array_values( $this->tables[ $tbl ] );
+				return $deleted;
 			}
 			return true;
 		}
@@ -341,15 +369,46 @@ class MockWPDB {
 		if ( stripos( $query, 'post_type' ) !== false ) {
 			return array_keys( $GLOBALS['mock_posts'] ?? array() );
 		}
+		if ( preg_match( '/SELECT\s+DISTINCT\s+component_id\s+FROM\s+(\w+)\s+WHERE\s+(.+)/i', $query, $m ) ) {
+			$tbl = $m[1];
+			$cond = $m[2];
+			$cols = array();
+			if ( ! empty( $this->tables[ $tbl ] ) ) {
+				preg_match( '/vendor_id\s*=\s*(\d+)/i', $cond, $vm );
+				$vid = $vm ? $vm[1] : null;
+				preg_match( '/component_id\s+IN\s*\(([^)]+)\)/i', $cond, $cm );
+				$cids = $cm ? array_map( 'trim', explode( ',', $cm[1] ) ) : null;
+				foreach ( $this->tables[ $tbl ] as $r ) {
+					if ( $vid && (string)$r['vendor_id'] !== (string)$vid ) continue;
+					if ( $cids && ! in_array( (string)$r['component_id'], $cids ) ) continue;
+					if ( isset( $r['component_id'] ) && ! in_array( $r['component_id'], $cols ) ) {
+						$cols[] = $r['component_id'];
+					}
+				}
+			}
+			return $cols;
+		}
 		return array();
 	}
 	public function get_var( $query ) {
 		if ( preg_match( '/SHOW\s+TABLES\s+LIKE\s+\'([^\']+)\'/i', $query, $m ) ) {
 			return isset( $this->tables[ $m[1] ] ) ? $m[1] : null;
 		}
-		if ( preg_match( '/COUNT\(\*\)\s+FROM\s+(\w+)/i', $query, $m ) ) {
+		if ( preg_match( '/COUNT\(\*\)\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+))?/i', $query, $m ) ) {
 			$tbl = $m[1];
-			return isset( $this->tables[ $tbl ] ) ? count( $this->tables[ $tbl ] ) : 0;
+			if ( empty( $m[2] ) ) {
+				return isset( $this->tables[ $tbl ] ) ? count( $this->tables[ $tbl ] ) : 0;
+			}
+			$cond = $m[2];
+			$count = 0;
+			if ( ! empty( $this->tables[ $tbl ] ) ) {
+				preg_match( '/component_id\s*=\s*(\d+)/i', $cond, $cm );
+				$cid = $cm ? $cm[1] : null;
+				foreach ( $this->tables[ $tbl ] as $r ) {
+					if ( $cid && (string)$r['component_id'] === (string)$cid ) $count++;
+				}
+			}
+			return $count;
 		}
 		if ( preg_match( '/SELECT\s+id\s+FROM\s+(\w+)\s+WHERE\s+(.+)/i', $query, $m ) ) {
 			$tbl = $m[1];
@@ -1217,6 +1276,71 @@ assert_test( 'Amazon Products CSV Bulk Link Updater updates stored product_url w
 	$refreshed_price->product_url === 'https://www.amazon.in/dp/B0BTZB7F88?tag=mycustomtag-21' &&
 	$refreshed_price->vendor_sku === 'B0BTZB7F88' &&
 	$refreshed_price->price == 36999.00
+) );
+
+// Test 40: Component Catalog Vendor Filtering & Vendor Record Deletion (Selected & All Cascade)
+$comp_multi1 = new \HWsync\Models\Component( array(
+	'brand'      => 'Gigabyte',
+	'model_name' => 'B650 AORUS ELITE AX',
+	'category'   => 'motherboard',
+) );
+$comp_multi1->save();
+
+$comp_multi2 = new \HWsync\Models\Component( array(
+	'brand'      => 'MSI',
+	'model_name' => 'MAG B650 TOMAHAWK WIFI',
+	'category'   => 'motherboard',
+) );
+$comp_multi2->save();
+
+// comp_multi1 has Amazon & MDComputers prices
+$vp_amz1 = new \HWsync\Models\Vendor_Price( array(
+	'component_id' => $comp_multi1->id,
+	'vendor_id'    => $vendor_amazon_id,
+	'product_url'  => 'https://www.amazon.in/dp/B0BHDV51JS',
+	'price'        => 22499.00,
+	'vendor_sku'   => 'B0BHDV51JS',
+	'is_in_stock'  => 1,
+) );
+$vp_amz1->save();
+
+$vp_md1 = new \HWsync\Models\Vendor_Price( array(
+	'component_id' => $comp_multi1->id,
+	'vendor_id'    => 1, // MDComputers
+	'product_url'  => 'https://mdcomputers.in/gigabyte-b650.html',
+	'price'        => 22999.00,
+	'vendor_sku'   => 'GIGA-B650-ELITE',
+	'is_in_stock'  => 1,
+) );
+$vp_md1->save();
+
+// comp_multi2 ONLY has Amazon price
+$vp_amz2 = new \HWsync\Models\Vendor_Price( array(
+	'component_id' => $comp_multi2->id,
+	'vendor_id'    => $vendor_amazon_id,
+	'product_url'  => 'https://www.amazon.in/dp/B0BHC3V1DF',
+	'price'        => 21999.00,
+	'vendor_sku'   => 'B0BHC3V1DF',
+	'is_in_stock'  => 1,
+) );
+$vp_amz2->save();
+
+// Execute delete_vendor_records for Amazon India across these 2 components
+$del_res = \HWsync\Models\Component::delete_vendor_records( 'amazon-in', array( $comp_multi1->id, $comp_multi2->id ) );
+
+$c1_after = \HWsync\Models\Component::find_by_id( $comp_multi1->id );
+$c2_after = \HWsync\Models\Component::find_by_id( $comp_multi2->id );
+$c1_prices = \HWsync\Models\Vendor_Price::find_by_component_id( $comp_multi1->id );
+
+assert_test( 'Component Catalog Vendor Deletion removes targeted vendor prices, recalculates remaining store lowest prices, and purges orphan components', (
+	$del_res['success'] === true &&
+	$del_res['prices_deleted'] === 2 &&
+	$del_res['components_removed'] === 1 && // comp_multi2 had only Amazon, so removed
+	$del_res['components_updated'] === 1 && // comp_multi1 still has MDComputers, so updated
+	$c1_after !== null &&
+	$c2_after === null &&
+	count( $c1_prices ) === 1 &&
+	$c1_prices[0]->price == 22999.00
 ) );
 
 echo "\n---------------------------------------------\n";

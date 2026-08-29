@@ -39,6 +39,7 @@ class Admin {
 		add_action( 'admin_post_hwsync_export_amazon_csv', array( __CLASS__, 'handle_export_amazon_csv' ) );
 		add_action( 'wp_ajax_hwsync_export_amazon_csv', array( __CLASS__, 'handle_export_amazon_csv' ) );
 		add_action( 'wp_ajax_hwsync_import_amazon_csv', array( __CLASS__, 'handle_import_amazon_csv' ) );
+		add_action( 'wp_ajax_hwsync_delete_vendor_records', array( __CLASS__, 'handle_delete_vendor_records' ) );
 	}
 
 	public static function register_admin_menu() {
@@ -388,6 +389,86 @@ class Admin {
 							});
 						});
 					}
+				}
+
+				// Vendor Deletion Handlers
+				if (btnDeleteSelectedVendor) {
+					btnDeleteSelectedVendor.addEventListener('click', function() {
+						if (selectedComps.length === 0) return;
+						var vName = btnDeleteSelectedVendor.getAttribute('data-vendor-name') || currentVendorFilter;
+						var conf = confirm('Are you sure you want to delete price listings from ' + vName + ' for the ' + selectedComps.length + ' selected component(s)?\n\nComponents with other stores will update their lowest price, and orphan components will be cleaned up.');
+						if (!conf) return;
+
+						btnDeleteSelectedVendor.disabled = true;
+						btnDeleteSelectedVendor.innerHTML = '<span class="dashicons dashicons-update spin"></span> Deleting...';
+
+						var compIds = selectedComps.map(function(c) { return c.id; });
+						var formData = new URLSearchParams();
+						formData.append('action', 'hwsync_delete_vendor_records');
+						formData.append('hwsync_nonce', nonce);
+						formData.append('vendor_slug', currentVendorFilter);
+						compIds.forEach(function(id) { formData.append('component_ids[]', id); });
+
+						fetch(ajaxurl, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+							body: formData.toString()
+						})
+						.then(function(res) { return res.json(); })
+						.then(function(data) {
+							if (data.success) {
+								alert(data.data.message || 'Vendor records deleted successfully.');
+								window.location.reload();
+							} else {
+								alert('Error: ' + (data.data ? data.data.message : 'Failed to delete vendor records.'));
+								btnDeleteSelectedVendor.disabled = false;
+								btnDeleteSelectedVendor.innerHTML = '<span class="dashicons dashicons-trash"></span> Delete Selected';
+							}
+						})
+						.catch(function(err) {
+							alert('Network error: ' + err.message);
+							btnDeleteSelectedVendor.disabled = false;
+							btnDeleteSelectedVendor.innerHTML = '<span class="dashicons dashicons-trash"></span> Delete Selected';
+						});
+					});
+				}
+
+				if (btnDeleteAllVendor) {
+					btnDeleteAllVendor.addEventListener('click', function() {
+						var vName = btnDeleteAllVendor.getAttribute('data-vendor-name') || currentVendorFilter;
+						var conf = confirm('⚠️ WARNING: Are you sure you want to delete ALL price listings from ' + vName + ' across the database?\n\nThis will remove all listings for this vendor, recalculate lowest prices for components with remaining stores, and clean up components that only belonged to ' + vName + '.\n\nAre you sure you want to proceed?');
+						if (!conf) return;
+
+						btnDeleteAllVendor.disabled = true;
+						btnDeleteAllVendor.innerHTML = '<span class="dashicons dashicons-update spin"></span> Deleting All...';
+
+						var formData = new URLSearchParams();
+						formData.append('action', 'hwsync_delete_vendor_records');
+						formData.append('hwsync_nonce', nonce);
+						formData.append('vendor_slug', currentVendorFilter);
+
+						fetch(ajaxurl, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+							body: formData.toString()
+						})
+						.then(function(res) { return res.json(); })
+						.then(function(data) {
+							if (data.success) {
+								alert(data.data.message || 'All vendor records deleted successfully.');
+								window.location.reload();
+							} else {
+								alert('Error: ' + (data.data ? data.data.message : 'Failed to delete vendor records.'));
+								btnDeleteAllVendor.disabled = false;
+								btnDeleteAllVendor.innerHTML = '<span class="dashicons dashicons-warning"></span> Delete All';
+							}
+						})
+						.catch(function(err) {
+							alert('Network error: ' + err.message);
+							btnDeleteAllVendor.disabled = false;
+							btnDeleteAllVendor.innerHTML = '<span class="dashicons dashicons-warning"></span> Delete All';
+						});
+					});
 				}
 
 				function escapeHtml(text) {
@@ -1755,20 +1836,24 @@ class Admin {
 	}
 
 	public static function render_components_page() {
-		$cat_filter = isset( $_GET['cat'] ) ? sanitize_text_field( $_GET['cat'] ) : 'all';
-		$search     = isset( $_GET['s'] ) ? sanitize_text_field( $_GET['s'] ) : '';
-		$paged      = isset( $_GET['paged'] ) ? max( 1, intval( $_GET['paged'] ) ) : 1;
-		$limit      = 50;
-		$offset     = ( $paged - 1 ) * $limit;
+		$cat_filter    = isset( $_GET['cat'] ) ? sanitize_text_field( $_GET['cat'] ) : 'all';
+		$vendor_filter = isset( $_GET['vendor'] ) ? sanitize_text_field( $_GET['vendor'] ) : 'all';
+		$search        = isset( $_GET['s'] ) ? sanitize_text_field( $_GET['s'] ) : '';
+		$paged         = isset( $_GET['paged'] ) ? max( 1, intval( $_GET['paged'] ) ) : 1;
+		$limit         = 50;
+		$offset        = ( $paged - 1 ) * $limit;
 
 		$query_args = array(
 			'category' => ( $cat_filter !== 'all' ) ? $cat_filter : '',
+			'vendor'   => ( $vendor_filter !== 'all' ) ? $vendor_filter : '',
 			'search'   => $search,
 			'limit'    => $limit,
 			'offset'   => $offset,
 		);
 
 		$components = Component::get_all( $query_args );
+		$all_vendors = Vendor::get_all();
+		$filtered_vendor_obj = ( $vendor_filter !== 'all' ) ? Vendor::find_by_slug( $vendor_filter ) : null;
 		$total_count = Component::count( $query_args );
 		$total_pages = ceil( $total_count / $limit );
 		$nonce = wp_create_nonce( 'hwsync_manual_sync_action' );
@@ -1798,16 +1883,35 @@ class Admin {
 						<option value="cabinet" <?php selected( $cat_filter, 'cabinet' ); ?>><?php esc_html_e( 'Cabinets / Cases', 'hwsync' ); ?></option>
 					</select>
 
-					<input type="search" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="<?php esc_attr_e( 'Search brand, model, SKU...', 'hwsync' ); ?>" style="height: 36px; width: 220px; border-radius: 6px; font-size: 13px;" />
+					<select name="vendor" onchange="this.form.submit()" style="height: 36px; border-radius: 6px; font-size: 13px; max-width: 190px;">
+						<option value="all" <?php selected( $vendor_filter, 'all' ); ?>><?php esc_html_e( 'All Retailers', 'hwsync' ); ?></option>
+						<?php if ( ! empty( $all_vendors ) ) : ?>
+							<?php foreach ( $all_vendors as $v ) : ?>
+								<option value="<?php echo esc_attr( $v->vendor_slug ); ?>" <?php selected( $vendor_filter, $v->vendor_slug ); ?>>
+									<?php echo esc_html( $v->vendor_name ); ?>
+								</option>
+							<?php endforeach; ?>
+						<?php endif; ?>
+					</select>
+
+					<input type="search" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="<?php esc_attr_e( 'Search brand, model, SKU...', 'hwsync' ); ?>" style="height: 36px; width: 200px; border-radius: 6px; font-size: 13px;" />
 
 					<button type="submit" class="button" style="height: 36px; border-radius: 6px; font-weight: 600;"><?php esc_html_e( 'Filter', 'hwsync' ); ?></button>
-					<?php if ( $cat_filter !== 'all' || ! empty( $search ) ) : ?>
+					<?php if ( $cat_filter !== 'all' || $vendor_filter !== 'all' || ! empty( $search ) ) : ?>
 						<a href="<?php echo esc_url( admin_url( 'admin.php?page=hwsync-components' ) ); ?>" class="button" style="height: 36px; border-radius: 6px;"><?php esc_html_e( 'Reset', 'hwsync' ); ?></a>
 					<?php endif; ?>
 				</form>
 
 				<!-- Right: Action Buttons -->
 				<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+					<?php if ( $vendor_filter !== 'all' && $filtered_vendor_obj ) : ?>
+						<button type="button" id="btn-delete-selected-vendor" class="button" disabled style="height: 36px; border-radius: 6px; font-weight: 600; background: #fef2f2; border-color: #fca5a5; color: #b91c1c; display: inline-flex; align-items: center; gap: 4px;" data-vendor-slug="<?php echo esc_attr( $vendor_filter ); ?>" data-vendor-name="<?php echo esc_attr( $filtered_vendor_obj->vendor_name ); ?>">
+							<span class="dashicons dashicons-trash"></span> <?php printf( esc_html__( 'Delete Selected from %s', 'hwsync' ), esc_html( $filtered_vendor_obj->vendor_name ) ); ?> (<span id="selected-vendor-count">0</span>)
+						</button>
+						<button type="button" id="btn-delete-all-vendor" class="button" style="height: 36px; border-radius: 6px; font-weight: 600; background: #fee2e2; border-color: #f87171; color: #991b1b; display: inline-flex; align-items: center; gap: 4px;" data-vendor-slug="<?php echo esc_attr( $vendor_filter ); ?>" data-vendor-name="<?php echo esc_attr( $filtered_vendor_obj->vendor_name ); ?>">
+							<span class="dashicons dashicons-warning"></span> <?php printf( esc_html__( 'Delete All from %s', 'hwsync' ), esc_html( $filtered_vendor_obj->vendor_name ) ); ?>
+						</button>
+					<?php endif; ?>
 					<button type="button" id="btn-bulk-clear-specs" class="button" disabled style="height: 36px; border-radius: 6px; font-weight: 600; background: #fef2f2; border-color: #fca5a5; color: #b91c1c; display: inline-flex; align-items: center; gap: 4px;">
 						<span class="dashicons dashicons-trash"></span> <?php esc_html_e( 'Clear Specs', 'hwsync' ); ?> (<span id="selected-specs-count">0</span>)
 					</button>
@@ -1937,7 +2041,7 @@ class Admin {
 					<div style="display: flex; gap: 4px;">
 						<?php for ( $i = 1; $i <= $total_pages; $i++ ) : 
 							if ( $i == 1 || $i == $total_pages || abs( $i - $paged ) <= 2 ) :
-								$url = add_query_arg( array( 'paged' => $i, 'cat' => $cat_filter, 's' => $search ) );
+								$url = add_query_arg( array( 'paged' => $i, 'cat' => $cat_filter, 'vendor' => $vendor_filter, 's' => $search ) );
 								$is_curr = ( $i == $paged );
 						?>
 							<a href="<?php echo esc_url( $url ); ?>" class="button <?php echo $is_curr ? 'button-primary' : ''; ?>" style="min-width: 32px; text-align: center;">
@@ -2244,8 +2348,12 @@ class Admin {
 				var itemCbs = document.querySelectorAll('.cb-comp-item');
 				var bulkMergeBtn = document.getElementById('btn-bulk-merge-selected');
 				var bulkClearSpecsBtn = document.getElementById('btn-bulk-clear-specs');
+				var btnDeleteSelectedVendor = document.getElementById('btn-delete-selected-vendor');
+				var btnDeleteAllVendor = document.getElementById('btn-delete-all-vendor');
 				var selCountLabel = document.getElementById('selected-comp-count');
 				var selSpecsCountLabel = document.getElementById('selected-specs-count');
+				var selVendorCountLabel = document.getElementById('selected-vendor-count');
+				var currentVendorFilter = '<?php echo esc_js( $vendor_filter ); ?>';
 
 				function updateSelectedState() {
 					selectedComps = [];
@@ -2261,6 +2369,21 @@ class Admin {
 
 					selCountLabel.textContent = selectedComps.length;
 					if (selSpecsCountLabel) selSpecsCountLabel.textContent = selectedComps.length;
+					if (selVendorCountLabel) selVendorCountLabel.textContent = selectedComps.length;
+
+					if (btnDeleteSelectedVendor) {
+						if (selectedComps.length >= 1) {
+							btnDeleteSelectedVendor.disabled = false;
+							btnDeleteSelectedVendor.style.background = '#dc2626';
+							btnDeleteSelectedVendor.style.borderColor = '#b91c1c';
+							btnDeleteSelectedVendor.style.color = '#fff';
+						} else {
+							btnDeleteSelectedVendor.disabled = true;
+							btnDeleteSelectedVendor.style.background = '#fef2f2';
+							btnDeleteSelectedVendor.style.borderColor = '#fca5a5';
+							btnDeleteSelectedVendor.style.color = '#b91c1c';
+						}
+					}
 
 					if (selectedComps.length >= 2) {
 						bulkMergeBtn.disabled = false;
@@ -3981,6 +4104,28 @@ class Admin {
 		$deleted = isset( $result['deleted_posts_count'] ) ? intval( $result['deleted_posts_count'] ) : 0;
 		wp_safe_redirect( admin_url( 'admin.php?page=hwsync-maintenance&status=wipe_success&deleted=' . $deleted ) );
 		exit;
+	}
+
+	public static function handle_delete_vendor_records() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => \__( 'Unauthorized permission.', 'hwsync' ) ) );
+		}
+
+		$vendor_slug   = isset( $_POST['vendor_slug'] ) ? sanitize_text_field( $_POST['vendor_slug'] ) : '';
+		$component_ids = isset( $_POST['component_ids'] ) ? array_map( 'intval', (array) $_POST['component_ids'] ) : array();
+
+		if ( empty( $vendor_slug ) || $vendor_slug === 'all' ) {
+			wp_send_json_error( array( 'message' => \__( 'No valid vendor selected for record deletion.', 'hwsync' ) ) );
+		}
+
+		$result = Component::delete_vendor_records( $vendor_slug, $component_ids );
+
+		if ( ! empty( $result['success'] ) ) {
+			wp_send_json_success( $result );
+		} else {
+			wp_send_json_error( $result );
+		}
 	}
 
 	public static function handle_restore_default_vendors() {
