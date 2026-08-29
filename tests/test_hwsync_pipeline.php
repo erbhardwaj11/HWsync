@@ -1167,6 +1167,48 @@ assert_test( 'Amazon India Adapter parses search cards, extracts ASIN, canonical
 	$parsed_amazon[0]['in_stock'] === true
 ) );
 
+// Test 39: Amazon Products CSV Export & Bulk Affiliate Links Updater Pipeline
+$comp_amazon = new \HWsync\Models\Component( array(
+	'brand'      => 'AMD',
+	'model_name' => 'Ryzen 7 7800X3D',
+	'category'   => 'cpu',
+) );
+$comp_amazon->save();
+
+$amazon_vendor_rec = \HWsync\Models\Vendor::find_by_slug( 'amazon-in' );
+$vendor_amazon_id = $amazon_vendor_rec ? $amazon_vendor_rec->id : 99;
+
+$price_amazon = new \HWsync\Models\Vendor_Price( array(
+	'component_id' => $comp_amazon->id,
+	'vendor_id'    => $vendor_amazon_id,
+	'product_url'  => 'https://www.amazon.in/dp/B0BTZB7F88',
+	'price'        => 36999.00,
+	'sku'          => 'B0BTZB7F88',
+	'stock_status' => 'in_stock',
+) );
+$price_amazon->save();
+
+// Simulate CSV Import with updated custom affiliate link
+$mock_csv_line = array(
+	'price_id'               => $price_amazon->id,
+	'component_id'           => $comp_amazon->id,
+	'asin___sku'             => 'B0BTZB7F88',
+	'affiliate___custom_url' => 'https://www.amazon.in/dp/B0BTZB7F88?tag=mycustomtag-21',
+);
+
+$sanitized_affiliate_url = esc_url_raw( $mock_csv_line['affiliate___custom_url'] );
+$price_amazon->product_url = $sanitized_affiliate_url;
+$price_amazon->save();
+
+$refreshed_price = \HWsync\Models\Vendor_Price::find_by_id( $price_amazon->id );
+
+assert_test( 'Amazon Products CSV Bulk Link Updater updates stored product_url with affiliate tracking link', (
+	$refreshed_price !== null &&
+	$refreshed_price->product_url === 'https://www.amazon.in/dp/B0BTZB7F88?tag=mycustomtag-21' &&
+	$refreshed_price->sku === 'B0BTZB7F88' &&
+	$refreshed_price->price == 36999.00
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

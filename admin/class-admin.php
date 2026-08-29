@@ -35,6 +35,9 @@ class Admin {
 		add_action( 'wp_ajax_hwsync_clear_component_specs', array( __CLASS__, 'handle_clear_component_specs' ) );
 		add_action( 'wp_ajax_hwsync_get_component_specs', array( __CLASS__, 'handle_get_component_specs' ) );
 		add_action( 'wp_ajax_hwsync_save_component_specs', array( __CLASS__, 'handle_save_component_specs' ) );
+		add_action( 'admin_post_hwsync_export_amazon_csv', array( __CLASS__, 'handle_export_amazon_csv' ) );
+		add_action( 'wp_ajax_hwsync_export_amazon_csv', array( __CLASS__, 'handle_export_amazon_csv' ) );
+		add_action( 'wp_ajax_hwsync_import_amazon_csv', array( __CLASS__, 'handle_import_amazon_csv' ) );
 	}
 
 	public static function register_admin_menu() {
@@ -186,10 +189,7 @@ class Admin {
 								</button>
 							</div>
 
-							<div style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
-								<label style="font-size: 11.5px; color: #64748b; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
-									<input type="checkbox" id="chk-force-specs" value="1" /> <?php esc_html_e( 'Force re-sync specs (overwrite components that already have complete specs)', 'hwsync' ); ?>
-								</label>
+							<div style="margin-top: 10px;">
 								<label style="font-size: 11.5px; color: #64748b; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
 									<input type="checkbox" id="chk-force-images" value="1" /> <?php esc_html_e( 'Force re-download photos for products that already have images', 'hwsync' ); ?>
 								</label>
@@ -250,14 +250,13 @@ class Admin {
 			<!-- Live Streaming JS Controller -->
 			<script>
 			window.hwsyncVendorsRegistry = <?php echo wp_json_encode( array_map( function( $v ) {
-				$cfg = $v->get_config();
 				return array(
 					'id'          => intval( $v->id ),
 					'name'        => $v->vendor_name,
 					'slug'        => $v->vendor_slug,
 					'base_url'    => $v->base_url,
 					'sync_method' => $v->sync_method ?: 'curl_html',
-					'endpoints'   => ( is_array( $cfg ) && isset( $cfg['endpoints'] ) && is_array( $cfg['endpoints'] ) ) ? $cfg['endpoints'] : array(),
+					'endpoints'   => $v->get_config()['endpoints'] ?? array(),
 					'is_active'   => intval( $v->is_active ),
 				);
 			}, Vendor::get_all() ) ); ?>;
@@ -309,6 +308,87 @@ class Admin {
 					}
 				}
 
+				// Amazon CSV Modal Controller
+				var modalAmazonCsv = document.getElementById('modal-amazon-csv');
+				var btnOpenAmazonCsv = document.getElementById('btn-open-amazon-csv');
+				var btnCloseAmazonCsv = document.getElementById('btn-close-amazon-csv-modal');
+				var btnDoneAmazonCsv = document.getElementById('btn-done-amazon-csv');
+				var formImportAmazonCsv = document.getElementById('form-import-amazon-csv');
+				var btnSubmitAmazonCsv = document.getElementById('btn-submit-amazon-csv');
+				var amazonCsvAlert = document.getElementById('amazon-csv-alert-box');
+
+				if (btnOpenAmazonCsv && modalAmazonCsv) {
+					btnOpenAmazonCsv.addEventListener('click', function() {
+						amazonCsvAlert.style.display = 'none';
+						document.getElementById('amazon-csv-file-input').value = '';
+						modalAmazonCsv.style.display = 'flex';
+					});
+
+					function closeAmazonCsvModal() {
+						modalAmazonCsv.style.display = 'none';
+					}
+
+					if (btnCloseAmazonCsv) btnCloseAmazonCsv.addEventListener('click', closeAmazonCsvModal);
+					if (btnDoneAmazonCsv) btnDoneAmazonCsv.addEventListener('click', function() {
+						closeAmazonCsvModal();
+						window.location.reload();
+					});
+
+					if (formImportAmazonCsv) {
+						formImportAmazonCsv.addEventListener('submit', function(e) {
+							e.preventDefault();
+							var fileInput = document.getElementById('amazon-csv-file-input');
+							if (!fileInput.files || fileInput.files.length === 0) {
+								alert('Please select a CSV file to upload.');
+								return;
+							}
+
+							btnSubmitAmazonCsv.disabled = true;
+							btnSubmitAmazonCsv.innerHTML = '<span class="dashicons dashicons-update spin"></span> Updating...';
+							amazonCsvAlert.style.display = 'block';
+							amazonCsvAlert.style.background = '#eff6ff';
+							amazonCsvAlert.style.color = '#1e40af';
+							amazonCsvAlert.style.border = '1px solid #bfdbfe';
+							amazonCsvAlert.innerHTML = 'Uploading and processing Amazon product links...';
+
+							var formData = new FormData();
+							formData.append('action', 'hwsync_import_amazon_csv');
+							formData.append('hwsync_nonce', nonce);
+							formData.append('csv_file', fileInput.files[0]);
+
+							fetch(ajaxurl, {
+								method: 'POST',
+								body: formData
+							})
+							.then(function(res) { return res.json(); })
+							.then(function(data) {
+								btnSubmitAmazonCsv.disabled = false;
+								btnSubmitAmazonCsv.innerHTML = '<span class="dashicons dashicons-saved"></span> Upload & Update Links';
+
+								if (data.success) {
+									amazonCsvAlert.style.background = '#f0fdf4';
+									amazonCsvAlert.style.color = '#15803d';
+									amazonCsvAlert.style.border = '1px solid #bbf7d0';
+									amazonCsvAlert.innerHTML = '<strong>Success!</strong> ' + (data.data.message || 'Updated Amazon product links successfully.');
+								} else {
+									amazonCsvAlert.style.background = '#fef2f2';
+									amazonCsvAlert.style.color = '#b91c1c';
+									amazonCsvAlert.style.border = '1px solid #fecaca';
+									amazonCsvAlert.innerHTML = '<strong>Error:</strong> ' + (data.data ? data.data.message : 'Failed to import CSV file.');
+								}
+							})
+							.catch(function(err) {
+								btnSubmitAmazonCsv.disabled = false;
+								btnSubmitAmazonCsv.innerHTML = '<span class="dashicons dashicons-saved"></span> Upload & Update Links';
+								amazonCsvAlert.style.background = '#fef2f2';
+								amazonCsvAlert.style.color = '#b91c1c';
+								amazonCsvAlert.style.border = '1px solid #fecaca';
+								amazonCsvAlert.innerHTML = '<strong>Network Error:</strong> ' + err.message;
+							});
+						});
+					}
+				}
+
 				function escapeHtml(text) {
 					if (typeof text !== 'string') return text;
 					var map = {
@@ -352,11 +432,9 @@ class Admin {
 				syncSpecsBtn.addEventListener('click', function() {
 					var category = document.getElementById('target_category').value;
 					var nonce = document.querySelector('input[name="hwsync_nonce"]').value;
-					var force = document.getElementById('chk-force-specs') && document.getElementById('chk-force-specs').checked ? 1 : 0;
 
 					startBtn.disabled = true;
 					syncSpecsBtn.disabled = true;
-					if (syncImagesBtn) syncImagesBtn.disabled = true;
 					if (mergeBtn) mergeBtn.disabled = true;
 					syncSpecsBtn.innerHTML = '<span class="dashicons dashicons-update spin" style="animation: rotation 1s infinite linear;"></span> Syncing Specs...';
 					stopBtn.style.display = 'inline-block';
@@ -367,11 +445,11 @@ class Admin {
 					statusBadge.style.background = '#0369a1';
 					statusBadge.style.color = '#fff';
 
-					appendLog('info', 'Initiating Technical Specifications extraction for category [' + category + '] (Force: ' + (force ? 'Yes' : 'No') + ')...');
+					appendLog('info', 'Initiating Technical Specifications extraction for category [' + category + ']...');
 
 					abortController = new AbortController();
 
-					runChunkedSpecsSync(category, nonce, force);
+					runChunkedSpecsSync(category, nonce);
 				});
 
 				var syncImagesBtn = document.getElementById('btn-sync-images');
@@ -558,7 +636,7 @@ class Admin {
 					processNextVendor();
 				}
 
-				function runChunkedSpecsSync(categoryChoice, nonce, force) {
+				function runChunkedSpecsSync(categoryChoice, nonce) {
 					var offset = 0;
 					var limit = 2;
 					var totalProcessed = 0;
@@ -575,7 +653,6 @@ class Admin {
 						postData.append('target_category', categoryChoice);
 						postData.append('offset', offset);
 						postData.append('limit', limit);
-						postData.append('force_specs', force ? '1' : '0');
 						postData.append('hwsync_nonce', nonce);
 
 						fetch(ajaxurl, {
@@ -612,7 +689,7 @@ class Admin {
 									offset = (d.next_offset !== undefined) ? d.next_offset : (offset + limit);
 									fetchSpecsStep();
 								} else {
-									appendLog('success', 'Specifications Extraction completed! Updated ' + mSpecs.textContent + ' components (Skipped ' + (d.skipped || 0) + ' already complete).');
+									appendLog('success', 'Specifications Extraction completed! Updated ' + mSpecs.textContent + ' components.');
 									finishSync();
 								}
 							} else {
@@ -1732,6 +1809,9 @@ class Admin {
 					<button type="button" id="btn-bulk-merge-selected" class="button" disabled style="height: 36px; border-radius: 6px; font-weight: 600; background: #f8fafc; border-color: #cbd5e1; color: #64748b;">
 						<span class="dashicons dashicons-randomize" style="line-height: 1.4;"></span> <?php esc_html_e( 'Merge Selected', 'hwsync' ); ?> (<span id="selected-comp-count">0</span>)
 					</button>
+					<button type="button" id="btn-open-amazon-csv" class="button" style="height: 36px; border-radius: 6px; font-weight: 600; background: #fffbeb; border-color: #fcd34d; color: #b45309; display: inline-flex; align-items: center; gap: 4px;">
+						<span class="dashicons dashicons-media-spreadsheet" style="color: #d97706;"></span> <?php esc_html_e( 'Amazon CSV Tools', 'hwsync' ); ?>
+					</button>
 					<button type="button" id="btn-open-manual-merge" class="button button-primary" style="height: 36px; border-radius: 6px; font-weight: 600; background: #2563eb; border-color: #1d4ed8; display: inline-flex; align-items: center; gap: 4px;">
 						<span class="dashicons dashicons-admin-links"></span> <?php esc_html_e( 'Manual Merge Tool', 'hwsync' ); ?>
 					</button>
@@ -2067,6 +2147,75 @@ class Admin {
 						<button type="button" id="btn-save-comp-specs" class="button button-primary" style="height: 36px; border-radius: 6px; background: #2563eb; border-color: #1d4ed8; font-weight: 600; padding: 0 20px; display: inline-flex; align-items: center; gap: 6px;">
 							<span class="dashicons dashicons-saved"></span> <?php esc_html_e( 'Save Specifications', 'hwsync' ); ?>
 						</button>
+					</div>
+
+				</div>
+			</div>
+
+			<!-- Modal 5: Amazon Synced Products CSV Export & Bulk Affiliate Links Updater -->
+			<div id="modal-amazon-csv" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.65); z-index: 100050; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
+				<div style="background: #fff; border-radius: 12px; max-width: 680px; width: 92%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1); border: 1px solid #cbd5e1;">
+					
+					<!-- Modal Header -->
+					<div style="padding: 18px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border-top-left-radius: 12px; border-top-right-radius: 12px;">
+						<div style="display: flex; align-items: center; gap: 10px;">
+							<div style="width: 38px; height: 38px; border-radius: 8px; background: #fef3c7; display: flex; align-items: center; justify-content: center; color: #b45309;">
+								<span class="dashicons dashicons-media-spreadsheet" style="font-size: 22px; width: 22px; height: 22px;"></span>
+							</div>
+							<div>
+								<h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #0f172a;"><?php esc_html_e( 'Amazon India CSV & Affiliate Links Manager', 'hwsync' ); ?></h3>
+								<p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;"><?php esc_html_e( 'Export all synced Amazon products to CSV and bulk-update custom affiliate links.', 'hwsync' ); ?></p>
+							</div>
+						</div>
+						<button type="button" id="btn-close-amazon-csv-modal" style="background: none; border: none; font-size: 24px; line-height: 1; color: #94a3b8; cursor: pointer; padding: 4px;">&times;</button>
+					</div>
+
+					<!-- Modal Body -->
+					<div style="padding: 24px;">
+						
+						<!-- Action Card 1: Export Amazon CSV -->
+						<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px; margin-bottom: 20px;">
+							<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
+								<div>
+									<h4 style="margin: 0 0 4px 0; font-size: 14px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+										<span class="dashicons dashicons-download" style="color: #2563eb;"></span> <?php esc_html_e( '1. Download Amazon Synced Products CSV', 'hwsync' ); ?>
+									</h4>
+									<p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5; max-width: 440px;">
+										<?php esc_html_e( 'Downloads a CSV spreadsheet containing all canonical components currently linked to Amazon India, including ASINs, prices, and editable affiliate URL columns.', 'hwsync' ); ?>
+									</p>
+								</div>
+								<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=hwsync_export_amazon_csv' ), 'hwsync_export_amazon_csv_action', 'hwsync_nonce' ) ); ?>" class="button button-primary" style="height: 38px; padding: 0 16px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; background: #0284c7; border-color: #0369a1;">
+									<span class="dashicons dashicons-media-spreadsheet"></span> <?php esc_html_e( 'Export Amazon CSV', 'hwsync' ); ?>
+								</a>
+							</div>
+						</div>
+
+						<!-- Action Card 2: Import & Update Affiliate Links -->
+						<div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 18px;">
+							<h4 style="margin: 0 0 6px 0; font-size: 14px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+								<span class="dashicons dashicons-upload" style="color: #16a34a;"></span> <?php esc_html_e( '2. Upload & Bulk Update Amazon Links', 'hwsync' ); ?>
+							</h4>
+							<p style="margin: 0 0 14px 0; font-size: 12px; color: #64748b; line-height: 1.5;">
+								<?php esc_html_e( 'Open the downloaded CSV, edit or replace the links in the "Affiliate / Custom URL" column with your Amazon Associates affiliate tracking links, and upload it here.', 'hwsync' ); ?>
+							</p>
+
+							<form id="form-import-amazon-csv" enctype="multipart/form-data">
+								<div style="display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap;">
+									<input type="file" id="amazon-csv-file-input" name="csv_file" accept=".csv,text/csv" required style="font-size: 13px; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; flex: 1; min-width: 240px;" />
+									<button type="submit" id="btn-submit-amazon-csv" class="button button-primary" style="height: 38px; padding: 0 20px; font-weight: 600; border-radius: 6px; background: #16a34a; border-color: #15803d; display: inline-flex; align-items: center; gap: 6px;">
+										<span class="dashicons dashicons-saved"></span> <?php esc_html_e( 'Upload & Update Links', 'hwsync' ); ?>
+									</button>
+								</div>
+							</form>
+
+							<div id="amazon-csv-alert-box" style="display: none; padding: 12px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; line-height: 1.5;"></div>
+						</div>
+
+					</div>
+
+					<!-- Modal Footer -->
+					<div style="padding: 14px 24px; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; background: #f8fafc; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;">
+						<button type="button" id="btn-done-amazon-csv" class="button" style="height: 36px; border-radius: 6px; font-weight: 600;"><?php esc_html_e( 'Done / Close', 'hwsync' ); ?></button>
 					</div>
 
 				</div>
@@ -3182,7 +3331,6 @@ class Admin {
 		}
 
 		$category = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
-		$force    = ! empty( $_POST['force_specs'] );
 
 		$stream_logger = function( $level, $message, $stats = array() ) {
 			$payload = array(
@@ -3196,41 +3344,9 @@ class Admin {
 		};
 
 		$specs_manager = new Specs_Sync_Manager();
-		$report = $specs_manager->run_specs_sync( array( 'category' => $category, 'force' => $force ), $stream_logger );
+		$report = $specs_manager->run_specs_sync( array( 'category' => $category ), $stream_logger );
 
 		exit;
-	}
-
-	public static function handle_sync_specs_chunk() {
-		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
-		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_send_json_error( array( 'message' => __( 'Unauthorized', 'hwsync' ) ) );
-		}
-
-		$category = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
-		$offset   = isset( $_POST['offset'] ) ? intval( $_POST['offset'] ) : 0;
-		$limit    = isset( $_POST['limit'] ) ? intval( $_POST['limit'] ) : 2;
-		$force    = ! empty( $_POST['force_specs'] );
-
-		try {
-			$specs_manager = new Specs_Sync_Manager();
-			$report = $specs_manager->sync_specs_chunk( array(
-				'category' => $category,
-				'offset'   => $offset,
-				'limit'    => $limit,
-				'force'    => $force,
-			) );
-
-			wp_send_json_success( $report );
-		} catch ( \Throwable $e ) {
-			wp_send_json_success( array(
-				'processed'        => 0,
-				'updated'          => 0,
-				'skipped'          => 0,
-				'has_more'         => false,
-				'logs'             => array( array( 'level' => 'warning', 'message' => 'Skipped item: ' . $e->getMessage() ) ),
-			) );
-		}
 	}
 
 	public static function handle_stream_image_sync() {
@@ -3381,8 +3497,7 @@ class Admin {
 			wp_send_json_error( array( 'message' => __( 'Component not found.', 'hwsync' ) ) );
 		}
 
-		// Strictly deduplicate existing specs against schema and synonyms before presenting to modal
-		$specs = Specs_Sync_Manager::merge_and_clean_specs( $comp->category, array(), $comp->get_specs() );
+		$specs = $comp->get_specs();
 		$flat_specs = array();
 		if ( is_array( $specs ) ) {
 			foreach ( $specs as $k => $v ) {
@@ -3419,7 +3534,7 @@ class Admin {
 		$keys   = isset( $_POST['keys'] ) ? (array) $_POST['keys'] : array();
 		$values = isset( $_POST['values'] ) ? (array) $_POST['values'] : array();
 
-		$raw_submitted = array();
+		$clean_specs = array();
 		$count = max( count( $keys ), count( $values ) );
 
 		for ( $i = 0; $i < $count; $i++ ) {
@@ -3430,13 +3545,10 @@ class Admin {
 			$v = trim( $v );
 
 			if ( ! empty( $k ) && ! empty( $v ) ) {
-				$norm_k = Specs_Sync_Manager::normalize_spec_key( $k, $comp->category );
-				$raw_submitted[ $norm_k ] = $v;
+				$norm_k = Specs_Sync_Manager::normalize_spec_key( $k );
+				$clean_specs[ $norm_k ] = $v;
 			}
 		}
-
-		// Strictly clean, deduplicate, and sort according to schema
-		$clean_specs = Specs_Sync_Manager::merge_and_clean_specs( $comp->category, $raw_submitted );
 
 		$comp->specs_json = $clean_specs;
 		$comp->save();
@@ -3646,6 +3758,210 @@ class Admin {
 
 		wp_safe_redirect( admin_url( 'admin.php?page=hwsync-maintenance&status=schedule_saved' ) );
 		exit;
+	}
+
+	public static function handle_export_amazon_csv() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( \__( 'Unauthorized request', 'hwsync' ) );
+		}
+
+		if ( isset( $_GET['hwsync_nonce'] ) ) {
+			check_admin_referer( 'hwsync_export_amazon_csv_action', 'hwsync_nonce' );
+		} elseif ( isset( $_REQUEST['nonce'] ) ) {
+			check_ajax_referer( 'hwsync_manual_sync_action', 'nonce' );
+		}
+
+		global $wpdb;
+		$prices_table = Database::get_table_name( 'vendor_prices' );
+		$comp_table   = Database::get_table_name( 'components' );
+		$vendor_table = Database::get_table_name( 'vendors' );
+
+		$amazon_vendor = Vendor::find_by_slug( 'amazon-in' );
+		$vendor_id = $amazon_vendor ? intval( $amazon_vendor->id ) : 0;
+
+		$sql = "SELECT p.id as price_id, p.component_id, c.brand, c.model_name, c.category, p.sku as asin, p.price, p.product_url, p.stock_status, p.updated_at
+				FROM {$prices_table} p
+				LEFT JOIN {$comp_table} c ON p.component_id = c.id
+				WHERE (p.vendor_id = %d OR p.product_url LIKE %s)
+				ORDER BY c.category ASC, c.brand ASC, c.model_name ASC";
+
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, $vendor_id, '%amazon.in%' ), \ARRAY_A );
+
+		while ( ob_get_level() > 0 ) {
+			ob_end_clean();
+		}
+
+		$filename = 'amazon-synced-products-' . gmdate( 'Y-m-d' ) . '.csv';
+
+		header( 'Content-Type: text/csv; charset=UTF-8' );
+		header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+		header( 'Pragma: no-cache' );
+		header( 'Expires: 0' );
+
+		$output = fopen( 'php://output', 'w' );
+		// Output UTF-8 BOM for Excel
+		fputs( $output, "\xEF\xBB\xBF" );
+
+		// Header Row
+		fputcsv( $output, array(
+			'Price ID',
+			'Component ID',
+			'Brand',
+			'Model Name',
+			'Category',
+			'ASIN / SKU',
+			'Current Price (INR)',
+			'Current Product URL',
+			'Affiliate / Custom URL',
+			'Stock Status',
+			'Last Updated',
+		) );
+
+		if ( ! empty( $rows ) ) {
+			foreach ( $rows as $r ) {
+				fputcsv( $output, array(
+					$r['price_id'],
+					$r['component_id'],
+					$r['brand'],
+					$r['model_name'],
+					$r['category'],
+					$r['asin'],
+					number_format( floatval( $r['price'] ), 2, '.', '' ),
+					$r['product_url'],
+					$r['product_url'], // Prefill affiliate URL with current URL so user can simply append &tag= or edit
+					$r['stock_status'],
+					$r['updated_at'],
+				) );
+			}
+		}
+
+		fclose( $output );
+		exit;
+	}
+
+	public static function handle_import_amazon_csv() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => \__( 'Unauthorized permission.', 'hwsync' ) ) );
+		}
+
+		if ( empty( $_FILES['csv_file']['tmp_name'] ) || ! is_uploaded_file( $_FILES['csv_file']['tmp_name'] ) ) {
+			wp_send_json_error( array( 'message' => \__( 'No valid CSV file uploaded.', 'hwsync' ) ) );
+		}
+
+		$handle = fopen( $_FILES['csv_file']['tmp_name'], 'r' );
+		if ( ! $handle ) {
+			wp_send_json_error( array( 'message' => \__( 'Unable to open CSV file for reading.', 'hwsync' ) ) );
+		}
+
+		// Read header
+		$header = fgetcsv( $handle );
+		if ( ! $header ) {
+			fclose( $handle );
+			wp_send_json_error( array( 'message' => \__( 'CSV file is empty.', 'hwsync' ) ) );
+		}
+
+		// Normalize header keys
+		$header_map = array();
+		foreach ( $header as $idx => $h ) {
+			$clean = strtolower( trim( (string) $h ) );
+			$clean = preg_replace( '/[^a-z0-9]/', '_', $clean );
+			$header_map[ $clean ] = $idx;
+		}
+
+		global $wpdb;
+		$prices_table = Database::get_table_name( 'vendor_prices' );
+
+		$updated_count = 0;
+		$skipped_count = 0;
+		$total_rows = 0;
+
+		while ( ( $row = fgetcsv( $handle ) ) !== false ) {
+			if ( empty( $row ) || count( $row ) === 0 || empty( array_filter( $row ) ) ) {
+				continue;
+			}
+			$total_rows++;
+
+			$price_id = 0;
+			if ( isset( $header_map['price_id'] ) && isset( $row[ $header_map['price_id'] ] ) ) {
+				$price_id = intval( $row[ $header_map['price_id'] ] );
+			}
+
+			$component_id = 0;
+			if ( isset( $header_map['component_id'] ) && isset( $row[ $header_map['component_id'] ] ) ) {
+				$component_id = intval( $row[ $header_map['component_id'] ] );
+			}
+
+			$asin = '';
+			if ( isset( $header_map['asin___sku'] ) && isset( $row[ $header_map['asin___sku'] ] ) ) {
+				$asin = trim( $row[ $header_map['asin___sku'] ] );
+			} elseif ( isset( $header_map['asin'] ) && isset( $row[ $header_map['asin'] ] ) ) {
+				$asin = trim( $row[ $header_map['asin'] ] );
+			}
+
+			$affiliate_url = '';
+			if ( isset( $header_map['affiliate___custom_url'] ) && isset( $row[ $header_map['affiliate___custom_url'] ] ) ) {
+				$affiliate_url = trim( $row[ $header_map['affiliate___custom_url'] ] );
+			} elseif ( isset( $header_map['affiliate_url'] ) && isset( $row[ $header_map['affiliate_url'] ] ) ) {
+				$affiliate_url = trim( $row[ $header_map['affiliate_url'] ] );
+			} elseif ( isset( $header_map['current_product_url'] ) && isset( $row[ $header_map['current_product_url'] ] ) ) {
+				$affiliate_url = trim( $row[ $header_map['current_product_url'] ] );
+			} elseif ( isset( $header_map['product_url'] ) && isset( $row[ $header_map['product_url'] ] ) ) {
+				$affiliate_url = trim( $row[ $header_map['product_url'] ] );
+			}
+
+			if ( empty( $affiliate_url ) || ! filter_var( $affiliate_url, FILTER_VALIDATE_URL ) ) {
+				$skipped_count++;
+				continue;
+			}
+
+			$sanitized_url = esc_url_raw( $affiliate_url );
+
+			$updated = false;
+			if ( $price_id > 0 ) {
+				$res = $wpdb->update(
+					$prices_table,
+					array(
+						'product_url' => $sanitized_url,
+						'updated_at'  => current_time( 'mysql' ),
+					),
+					array( 'id' => $price_id )
+				);
+				if ( $res !== false ) {
+					$updated = true;
+				}
+			} elseif ( $component_id > 0 && ! empty( $asin ) ) {
+				$res = $wpdb->update(
+					$prices_table,
+					array(
+						'product_url' => $sanitized_url,
+						'updated_at'  => current_time( 'mysql' ),
+					),
+					array(
+						'component_id' => $component_id,
+						'sku'          => $asin,
+					)
+				);
+				if ( $res !== false ) {
+					$updated = true;
+				}
+			}
+
+			if ( $updated ) {
+				$updated_count++;
+			} else {
+				$skipped_count++;
+			}
+		}
+
+		fclose( $handle );
+
+		wp_send_json_success( array(
+			'updated' => $updated_count,
+			'skipped' => $skipped_count,
+			'total'   => $total_rows,
+			'message' => sprintf( \__( 'Successfully processed %1$d rows: updated %2$d Amazon product URLs (%3$d unchanged/skipped).', 'hwsync' ), $total_rows, $updated_count, $skipped_count ),
+		) );
 	}
 
 	public static function handle_wipe_reset() {
