@@ -250,13 +250,14 @@ class Admin {
 			<!-- Live Streaming JS Controller -->
 			<script>
 			window.hwsyncVendorsRegistry = <?php echo wp_json_encode( array_map( function( $v ) {
+				$cfg = $v->get_config();
 				return array(
 					'id'          => intval( $v->id ),
 					'name'        => $v->vendor_name,
 					'slug'        => $v->vendor_slug,
 					'base_url'    => $v->base_url,
 					'sync_method' => $v->sync_method ?: 'curl_html',
-					'endpoints'   => $v->get_config()['endpoints'] ?? array(),
+					'endpoints'   => ( is_array( $cfg ) && isset( $cfg['endpoints'] ) && is_array( $cfg['endpoints'] ) ) ? $cfg['endpoints'] : array(),
 					'is_active'   => intval( $v->is_active ),
 				);
 			}, Vendor::get_all() ) ); ?>;
