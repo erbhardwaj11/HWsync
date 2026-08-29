@@ -108,29 +108,54 @@ class Database {
 			KEY recorded_at (recorded_at)
 		) {$charset_collate};";
 
-		dbDelta( $sql_vendors );
-		dbDelta( $sql_components );
-		dbDelta( $sql_prices );
-		dbDelta( $sql_history );
-
-		// Ensure columns exist on existing databases and modify column constraints
-		$existing_cols = $wpdb->get_col( "DESC {$vendors_table}" );
-		if ( ! empty( $existing_cols ) ) {
-			// Ensure adapter_class is nullable with default empty string
-			$wpdb->query( "ALTER TABLE {$vendors_table} MODIFY COLUMN adapter_class varchar(128) NULL DEFAULT ''" );
-			if ( ! in_array( 'sync_method', $existing_cols ) ) {
-				$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN sync_method varchar(64) NOT NULL DEFAULT 'curl_html' AFTER adapter_class" );
-			}
-			if ( ! in_array( 'config_json', $existing_cols ) ) {
-				$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN config_json longtext DEFAULT NULL AFTER sync_method" );
+		if ( ! function_exists( 'dbDelta' ) ) {
+			if ( defined( 'ABSPATH' ) && file_exists( ABSPATH . 'wp-admin/includes/upgrade.php' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+			} elseif ( defined( 'ABSPATH' ) && file_exists( rtrim( ABSPATH, '/\\' ) . '/wp-admin/includes/upgrade.php' ) ) {
+				require_once rtrim( ABSPATH, '/\\' ) . '/wp-admin/includes/upgrade.php';
 			}
 		}
 
-		$existing_comp_cols = $wpdb->get_col( "DESC {$components_table}" );
-		if ( ! empty( $existing_comp_cols ) ) {
-			if ( ! in_array( 'image_url', $existing_comp_cols ) ) {
-				$wpdb->query( "ALTER TABLE {$components_table} ADD COLUMN image_url varchar(500) DEFAULT NULL AFTER specs_json" );
+		try {
+			if ( function_exists( 'dbDelta' ) ) {
+				\dbDelta( $sql_vendors );
+				\dbDelta( $sql_components );
+				\dbDelta( $sql_prices );
+				\dbDelta( $sql_history );
+			} else {
+				$wpdb->query( $sql_vendors );
+				$wpdb->query( $sql_components );
+				$wpdb->query( $sql_prices );
+				$wpdb->query( $sql_history );
 			}
+		} catch ( \Throwable $e ) {
+			$wpdb->query( $sql_vendors );
+			$wpdb->query( $sql_components );
+			$wpdb->query( $sql_prices );
+			$wpdb->query( $sql_history );
+		}
+
+		// Ensure columns exist on existing databases and modify column constraints
+		try {
+			$existing_cols = $wpdb->get_col( "DESC {$vendors_table}" );
+			if ( ! empty( $existing_cols ) && is_array( $existing_cols ) ) {
+				// Ensure adapter_class is nullable with default empty string
+				$wpdb->query( "ALTER TABLE {$vendors_table} MODIFY COLUMN adapter_class varchar(128) NULL DEFAULT ''" );
+				if ( ! in_array( 'sync_method', $existing_cols ) ) {
+					$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN sync_method varchar(64) NOT NULL DEFAULT 'curl_html' AFTER adapter_class" );
+				}
+				if ( ! in_array( 'config_json', $existing_cols ) ) {
+					$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN config_json longtext DEFAULT NULL AFTER sync_method" );
+				}
+			}
+
+			$existing_comp_cols = $wpdb->get_col( "DESC {$components_table}" );
+			if ( ! empty( $existing_comp_cols ) && is_array( $existing_comp_cols ) ) {
+				if ( ! in_array( 'image_url', $existing_comp_cols ) ) {
+					$wpdb->query( "ALTER TABLE {$components_table} ADD COLUMN image_url varchar(500) DEFAULT NULL AFTER specs_json" );
+				}
+			}
+		} catch ( \Throwable $e ) {
 		}
 
 		update_option( 'hwsync_db_version', self::DB_VERSION );

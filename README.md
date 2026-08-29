@@ -1,4 +1,4 @@
-# HWsync (v0.0.3.0)
+# HWsync (v0.0.3.1)
 
 High-performance WordPress plugin & synchronization engine for PC hardware components and real-time multi-vendor pricing across Indian computer retail stores.
 
