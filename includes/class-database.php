@@ -41,7 +41,7 @@ class Database {
 			config_json longtext DEFAULT NULL,
 			is_active tinyint(1) NOT NULL DEFAULT 1,
 			last_sync_at datetime DEFAULT NULL,
-			created_at datetime DEFAULT NULL,
+			created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY  (id),
 			UNIQUE KEY vendor_slug (vendor_slug)
 		) {$charset_collate};";
@@ -59,8 +59,8 @@ class Database {
 			image_url varchar(500) DEFAULT NULL,
 			wp_post_id bigint(20) unsigned DEFAULT NULL,
 			sync_hash varchar(64) DEFAULT NULL,
-			created_at datetime DEFAULT NULL,
-			updated_at datetime DEFAULT NULL,
+			created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			PRIMARY KEY  (id),
 			KEY category (category),
 			KEY brand (brand),
@@ -82,9 +82,9 @@ class Database {
 			is_in_stock tinyint(1) NOT NULL DEFAULT 1,
 			stock_status varchar(32) NOT NULL DEFAULT 'in_stock',
 			raw_data_json longtext DEFAULT NULL,
-			last_checked_at datetime DEFAULT NULL,
-			created_at datetime DEFAULT NULL,
-			updated_at datetime DEFAULT NULL,
+			last_checked_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			PRIMARY KEY  (id),
 			KEY component_id (component_id),
 			KEY vendor_id (vendor_id),
@@ -101,24 +101,17 @@ class Database {
 			vendor_id bigint(20) unsigned NOT NULL,
 			price decimal(10,2) NOT NULL,
 			is_in_stock tinyint(1) NOT NULL DEFAULT 1,
-			recorded_at datetime DEFAULT NULL,
+			recorded_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY  (id),
 			KEY vendor_price_id (vendor_price_id),
 			KEY component_id (component_id),
 			KEY recorded_at (recorded_at)
 		) {$charset_collate};";
 
-		if ( function_exists( 'dbDelta' ) ) {
-			dbDelta( $sql_vendors );
-			dbDelta( $sql_components );
-			dbDelta( $sql_prices );
-			dbDelta( $sql_history );
-		} else {
-			$wpdb->query( $sql_vendors );
-			$wpdb->query( $sql_components );
-			$wpdb->query( $sql_prices );
-			$wpdb->query( $sql_history );
-		}
+		dbDelta( $sql_vendors );
+		dbDelta( $sql_components );
+		dbDelta( $sql_prices );
+		dbDelta( $sql_history );
 
 		// Ensure columns exist on existing databases and modify column constraints
 		$existing_cols = $wpdb->get_col( "DESC {$vendors_table}" );

@@ -1303,23 +1303,28 @@ class Specs_Sync_Manager {
 		$clean_html = preg_replace( '#<(script|style|noscript|svg|iframe)[^>]*>[\s\S]*?</\1>#i', ' ', $html );
 		$specs_html = '';
 
+		// Targeted Pattern 0: Amazon product technical details & overview tables
+		if ( strpos( $url, 'amazon.in' ) !== false || $vendor_slug === 'amazon-in' || $vendor_slug === 'amazon' ) {
+			if ( preg_match_all( '/<(?:div|table)[^>]*(?:id=["\'](?:productOverview_feature_div|productDetails_techSpec_section_1|productDetails_techSpec_section_2|prodDetails|detailBullets_feature_div)["\']|class=["\'][^"\']*(?:prodDetTable|a-keyvalue)[^"\']*)[^>]*>[\s\S]*?<\/(?:div|table)>/i', $clean_html, $am_matches ) ) {
+				$specs_html = implode( "\n", $am_matches[0] );
+			}
+		}
+
 		// Targeted Pattern 1: Dedicated specification tab container
-		if ( preg_match( '/<(?:div|section|table)[^>]*(?:id=["\']tab-specification["\']|id=["\']tab-specs["\']|class=["\'][^"\']*(?:woocommerce-Tabs-panel--specification|shop_attributes|product-attribute-specs-table|specification)[^"\']*)[^>]*>[\s\S]*?<\/(?:div|section|table)>/i', $clean_html, $sm ) ) {
+		if ( empty( $specs_html ) && preg_match( '/<(?:div|section|table)[^>]*(?:id=["\']tab-specification["\']|id=["\']tab-specs["\']|class=["\'][^"\']*(?:woocommerce-Tabs-panel--specification|shop_attributes|product-attribute-specs-table|specification)[^"\']*)[^>]*>[\s\S]*?<\/(?:div|section|table)>/i', $clean_html, $sm ) ) {
 			$specs_html = $sm[0];
 		}
 		// Targeted Pattern 2: Attributes table within product container / Amazon tech specs
-		elseif ( preg_match( '/<table[^>]*(?:class=["\'][^"\']*(?:shop_attributes|table-bordered|table-striped|data-table|table_specifications|prodDetTable)[^"\']*|id=["\'](?:product-attribute-specs-table|productDetails_techSpec_section_1|productDetails_techSpec_section_2)["\'])[^>]*>[\s\S]*?<\/table>/i', $clean_html, $sm ) ) {
+		elseif ( empty( $specs_html ) && preg_match( '/<table[^>]*(?:class=["\'][^"\']*(?:shop_attributes|table-bordered|table-striped|data-table|table_specifications|prodDetTable)[^"\']*|id=["\'](?:product-attribute-specs-table|productDetails_techSpec_section_1|productDetails_techSpec_section_2)["\'])[^>]*>[\s\S]*?<\/table>/i', $clean_html, $sm ) ) {
 			$specs_html = $sm[0];
 		}
 		// Targeted Pattern 3: Description tab containing definition lists
-		elseif ( preg_match( '/<div[^>]*id=["\']tab-description["\'][^>]*>[\s\S]*?<\/div>/i', $clean_html, $sm ) ) {
+		elseif ( empty( $specs_html ) && preg_match( '/<div[^>]*id=["\']tab-description["\'][^>]*>[\s\S]*?<\/div>/i', $clean_html, $sm ) ) {
 			$specs_html = $sm[0];
 		}
 		// Targeted Pattern 4: General product details / entry content container
-		elseif ( preg_match( '/<(?:div|section)[^>]*(?:class=["\'][^"\']*(?:product-description|product-specifications|woocommerce-product-details__short-description|entry-content|productOverview_feature_div)[^"\']*)[^>]*>[\s\S]*?<\/(?:div|section)>/i', $clean_html, $sm ) ) {
+		elseif ( empty( $specs_html ) && preg_match( '/<(?:div|section)[^>]*(?:class=["\'][^"\']*(?:product-description|product-specifications|woocommerce-product-details__short-description|entry-content|productOverview_feature_div)[^"\']*)[^>]*>[\s\S]*?<\/(?:div|section)>/i', $clean_html, $sm ) ) {
 			$specs_html = $sm[0];
-		} else {
-			$specs_html = '';
 		}
 
 		if ( empty( $specs_html ) ) {
@@ -1330,7 +1335,7 @@ class Specs_Sync_Manager {
 	}
 
 	/**
-	 * Detect if an HTML payload is a Cloudflare / Bot Management interstitial challenge.
+	 * Detect if an HTML payload is a Cloudflare / Bot Management / Amazon CAPTCHA interstitial challenge.
 	 *
 	 * @param string $html
 	 * @return bool
@@ -1352,6 +1357,9 @@ class Specs_Sync_Manager {
 			'checking your browser',
 			'ddos protection by cloudflare',
 			'enable javascript and cookies to continue',
+			'enter the characters you see below',
+			'type the characters you see in this image',
+			'api-services-support@amazon.com',
 		);
 		$lower = strtolower( $html );
 		foreach ( $markers as $m ) {

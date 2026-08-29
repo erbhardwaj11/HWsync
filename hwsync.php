@@ -3,7 +3,7 @@
  * Plugin Name: HWsync - Indian PC Component & Multi-Vendor Price Synchronizer
  * Plugin URI: https://github.com/hwsync/hwsync
  * Description: High-performance hardware component and multi-vendor pricing synchronizer for Indian PC retailers. Tracks canonical components, links vendor prices, and updates WordPress posts.
- * Version: 0.0.2.4
+ * Version: 0.0.2.2
  * Author: HWsync Team
  * Author URI: https://github.com/hwsync
  * License: GPL-2.0+
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly.
 }
 
-define( 'HWSYNC_VERSION', '0.0.2.4' );
+define( 'HWSYNC_VERSION', '0.0.2.2' );
 define( 'HWSYNC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HWSYNC_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'HWSYNC_PLUGIN_FILE', __FILE__ );
@@ -97,71 +97,36 @@ class HWsync_Plugin {
 	}
 
 	public function activate() {
-		try {
-			\HWsync\Database::create_tables();
-		} catch ( \Throwable $e ) {
-			if ( function_exists( 'error_log' ) ) {
-				error_log( 'HWsync activation create_tables notice: ' . $e->getMessage() );
-			}
-		}
-
-		try {
-			\HWsync\Database::seed_default_vendors();
-		} catch ( \Throwable $e ) {
-			if ( function_exists( 'error_log' ) ) {
-				error_log( 'HWsync activation seed_default_vendors notice: ' . $e->getMessage() );
-			}
-		}
-
-		try {
-			\HWsync\Cron::schedule_events();
-		} catch ( \Throwable $e ) {
-			if ( function_exists( 'error_log' ) ) {
-				error_log( 'HWsync activation schedule_events notice: ' . $e->getMessage() );
-			}
-		}
-
-		if ( function_exists( 'flush_rewrite_rules' ) ) {
-			flush_rewrite_rules();
-		}
+		\HWsync\Database::create_tables();
+		\HWsync\Database::seed_default_vendors();
+		\HWsync\Cron::schedule_events();
+		flush_rewrite_rules();
 	}
 
 	public function deactivate() {
-		try {
-			\HWsync\Cron::clear_events();
-		} catch ( \Throwable $e ) {
-			// Fail silently
-		}
-		if ( function_exists( 'flush_rewrite_rules' ) ) {
-			flush_rewrite_rules();
-		}
+		\HWsync\Cron::clear_events();
+		flush_rewrite_rules();
 	}
 
 	public function init() {
-		try {
-			load_plugin_textdomain( 'hwsync', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
+		load_plugin_textdomain( 'hwsync', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
 
-			// Check for DB schema updates on upgrade
-			if ( get_option( 'hwsync_db_version' ) !== \HWsync\Database::DB_VERSION ) {
-				\HWsync\Database::create_tables();
-				\HWsync\Database::seed_default_vendors();
-			}
-
-			// Init public shortcodes & styles
-			\HWsync\Public_Handler::init();
-
-			// Init admin dashboard
-			if ( is_admin() ) {
-				\HWsync\Admin::init();
-			}
-
-			// Init cron runners
-			\HWsync\Cron::init();
-		} catch ( \Throwable $e ) {
-			if ( function_exists( 'error_log' ) ) {
-				error_log( 'HWsync init notice: ' . $e->getMessage() );
-			}
+		// Check for DB schema updates on upgrade
+		if ( get_option( 'hwsync_db_version' ) !== \HWsync\Database::DB_VERSION ) {
+			\HWsync\Database::create_tables();
+			\HWsync\Database::seed_default_vendors();
 		}
+
+		// Init public shortcodes & styles
+		\HWsync\Public_Handler::init();
+
+		// Init admin dashboard
+		if ( is_admin() ) {
+			\HWsync\Admin::init();
+		}
+
+		// Init cron runners
+		\HWsync\Cron::init();
 	}
 }
 

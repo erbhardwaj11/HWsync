@@ -13,20 +13,33 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 
 	public function get_category_endpoints() {
 		return array(
-			'cpu'         => '/s?k=processor+cpu+desktop',
-			'gpu'         => '/s?k=graphic+card+gpu',
-			'motherboard' => '/s?k=motherboard+desktop',
-			'ram'         => '/s?k=desktop+ram+ddr4+ddr5',
-			'storage'     => '/s?k=internal+ssd+nvme+m2',
-			'psu'         => '/s?k=power+supply+psu+smps',
-			'cooler'      => '/s?k=cpu+cooler+aio+liquid',
-			'cabinet'     => '/s?k=gaming+pc+cabinet+case',
+			'cpu'         => '/s?k=processor+desktop&i=computers',
+			'gpu'         => '/s?k=graphic+card&i=computers',
+			'motherboard' => '/s?k=motherboard+desktop&i=computers',
+			'ram'         => '/s?k=desktop+ram+ddr4+ddr5&i=computers',
+			'storage'     => '/s?k=internal+ssd+nvme+m.2&i=computers',
+			'psu'         => '/s?k=smps+power+supply+unit&i=computers',
+			'cooler'      => '/s?k=cpu+cooler+liquid+aio&i=computers',
+			'cabinet'     => '/s?k=gaming+cabinet+case&i=computers',
 		);
+	}
+
+	/**
+	 * Get affiliate tag configured for Amazon India.
+	 *
+	 * @return string
+	 */
+	public function get_affiliate_tag() {
+		$tag = '';
+		if ( function_exists( 'get_option' ) ) {
+			$tag = (string) get_option( 'hwsync_amazon_affiliate_tag', '' );
+		}
+		return trim( $tag );
 	}
 
 	public function fetch_products( $category = '', $page = 1 ) {
 		$endpoints = $this->get_category_endpoints();
-		$path = isset( $endpoints[ $category ] ) ? $endpoints[ $category ] : '/s?k=processor+cpu+desktop';
+		$path = isset( $endpoints[ $category ] ) ? $endpoints[ $category ] : '/s?k=processor+desktop&i=computers';
 
 		if ( $page > 1 ) {
 			$connector = ( strpos( $path, '?' ) !== false ) ? '&' : '?';
@@ -35,11 +48,23 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 			$url = $this->base_url . $path;
 		}
 
+		$user_agents = array(
+			'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+			'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0',
+			'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+		);
+		$ua = $user_agents[ array_rand( $user_agents ) ];
+
 		$headers = array(
-			'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-			'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-			'Accept-Language' => 'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
-			'Referer'         => 'https://www.amazon.in/',
+			'User-Agent'                => $ua,
+			'Accept'                    => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+			'Accept-Language'           => 'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
+			'Referer'                   => 'https://www.amazon.in/',
+			'Upgrade-Insecure-Requests' => '1',
+			'Sec-Fetch-Dest'            => 'document',
+			'Sec-Fetch-Mode'            => 'navigate',
+			'Sec-Fetch-Site'            => 'none',
+			'Sec-Fetch-User'            => '?1',
 		);
 
 		$res = $this->make_request( $url, $headers );
@@ -56,6 +81,8 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 			return $items;
 		}
 
+		$affiliate_tag = $this->get_affiliate_tag();
+
 		// Split by search result components or data-asin cards
 		$blocks = array();
 		if ( preg_match_all( '/<div[^>]*data-component-type=["\']s-search-result["\'][^>]*>[\s\S]*?(?=<div[^>]*data-component-type=["\']s-search-result["\']|\Z)/i', $html, $matches ) ) {
@@ -71,6 +98,10 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 				$asin = trim( $m_asin[1] );
 			}
 
+			if ( empty( $asin ) ) {
+				continue;
+			}
+
 			// Extract Title
 			$title = '';
 			if ( preg_match( '/<h2[^>]*>[\s\S]*?<span[^>]*>(.*?)<\/span>/i', $block, $m_title ) ) {
@@ -83,15 +114,14 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 				continue;
 			}
 
-			// Build canonical URL
-			if ( ! empty( $asin ) ) {
-				$url = $this->base_url . '/dp/' . $asin;
-			} elseif ( preg_match( '/<a[^>]*class=["\'][^"\']*a-link-normal[^"\']*["\'][^>]*href=["\']([^"\']+)["\']/i', $block, $m_url ) ) {
-				$raw_href = $m_url[1];
-				$clean_path = explode( '?', $raw_href )[0];
-				$url = ( strpos( $clean_path, 'http' ) === 0 ) ? $clean_path : $this->base_url . '/' . ltrim( $clean_path, '/' );
-			} else {
-				continue;
+			// Clean title of promotional junk
+			$title = preg_replace( '/^(Sponsored|Limited time deal|Amazon\'s Choice|Best seller)\s*[:-]?\s*/i', '', $title );
+			$title = trim( $title );
+
+			// Build canonical URL with affiliate tag
+			$url = $this->base_url . '/dp/' . $asin;
+			if ( ! empty( $affiliate_tag ) ) {
+				$url .= '?tag=' . urlencode( $affiliate_tag );
 			}
 
 			// Extract Price
@@ -115,10 +145,12 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 				$original_price = floatval( $orig_str );
 			}
 
-			// Extract Image URL
+			// Extract High-Res Image URL
 			$image_url = '';
 			if ( preg_match( '/<img[^>]*class=["\'][^"\']*s-image[^"\']*["\'][^>]*src=["\']([^"\']+)["\']/i', $block, $m_img ) ) {
-				$image_url = trim( $m_img[1] );
+				$raw_img = trim( $m_img[1] );
+				// Convert thumbnail url to clean full-resolution photo
+				$image_url = preg_replace( '/\._[A-Z0-9_,]+_\./i', '.', $raw_img );
 			}
 
 			// Check Availability
@@ -144,5 +176,71 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 		}
 
 		return $items;
+	}
+
+	/**
+	 * Fetch single product details directly from Amazon product page URL or ASIN.
+	 *
+	 * @param string $url_or_asin
+	 * @return array|null
+	 */
+	public function fetch_single_product( $url_or_asin ) {
+		$asin = '';
+		if ( preg_match( '/(?:dp|gp\/product)\/([A-Z0-9]{10})/i', $url_or_asin, $m ) ) {
+			$asin = $m[1];
+		} elseif ( preg_match( '/^[A-Z0-9]{10}$/i', trim( $url_or_asin ) ) ) {
+			$asin = trim( $url_or_asin );
+		}
+
+		if ( empty( $asin ) ) {
+			return null;
+		}
+
+		$url = $this->base_url . '/dp/' . $asin;
+		$headers = array(
+			'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+			'Accept'     => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+		);
+
+		$res = $this->make_request( $url, $headers );
+		if ( ! $res['success'] || empty( $res['body'] ) ) {
+			return null;
+		}
+
+		$html = $res['body'];
+
+		// Extract Title
+		$title = '';
+		if ( preg_match( '/<span[^>]*id=["\']productTitle["\'][^>]*>(.*?)<\/span>/is', $html, $m ) ) {
+			$title = trim( strip_tags( html_entity_decode( $m[1], ENT_QUOTES, 'UTF-8' ) ) );
+		}
+
+		// Extract Price
+		$price = 0.0;
+		if ( preg_match( '/<span[^>]*class=["\'][^"\']*a-price-whole[^"\']*["\'][^>]*>([^<]+)<\/span>/i', $html, $m ) ) {
+			$price = floatval( preg_replace( '/[^\d.]/', '', $m[1] ) );
+		} elseif ( preg_match( '/<span[^>]*id=["\']priceblock_ourprice["\'][^>]*>₹?\s*([\d,]+(?:\.\d+)?)<\/span>/i', $html, $m ) ) {
+			$price = floatval( preg_replace( '/[^\d.]/', '', $m[1] ) );
+		}
+
+		// Extract Image
+		$image_url = '';
+		if ( preg_match( '/<img[^>]*id=["\']landingImage["\'][^>]*data-old-hires=["\']([^"\']+)["\']/i', $html, $m ) && ! empty( $m[1] ) ) {
+			$image_url = trim( $m[1] );
+		} elseif ( preg_match( '/<img[^>]*id=["\']landingImage["\'][^>]*src=["\']([^"\']+)["\']/i', $html, $m ) ) {
+			$image_url = preg_replace( '/\._[A-Z0-9_,]+_\./i', '.', trim( $m[1] ) );
+		}
+
+		$in_stock = ( stripos( $html, 'Currently unavailable' ) === false && $price > 0 );
+
+		return array(
+			'title'        => $title,
+			'url'          => $url,
+			'price'        => $price,
+			'image_url'    => $image_url,
+			'in_stock'     => $in_stock,
+			'stock_status' => $in_stock ? 'in_stock' : 'out_of_stock',
+			'sku'          => $asin,
+		);
 	}
 }

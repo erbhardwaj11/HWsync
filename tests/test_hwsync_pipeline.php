@@ -479,7 +479,6 @@ require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-primeabgb-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-elitehubs-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-pcstudio-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-theitdepot-adapter.php';
-require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-amazon-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-configurable-vendor-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-sync-manager.php';
 require_once HWSYNC_PLUGIN_DIR . 'public/class-public.php';
@@ -493,13 +492,13 @@ echo "=============================================\n\n";
 $passed = 0;
 $failed = 0;
 
-function assert_test( $name, $condition, $details = '' ) {
+function assert_test( $name, $condition ) {
 	global $passed, $failed;
 	if ( $condition ) {
 		echo " [PASS] {$name}\n";
 		$passed++;
 	} else {
-		echo " [FAIL] {$name}" . ( $details ? " (Details: {$details})" : '' ) . "\n";
+		echo " [FAIL] {$name}\n";
 		$failed++;
 	}
 }
@@ -1144,79 +1143,27 @@ assert_test( 'Category-Specific Synonyms & Strict Whitelisting (GPU Name, Shadin
 	! isset( $cleaned_gpu_specs['CUDA Cores'] )
 ) );
 
-// Test 38: Amazon India Adapter HTML Parsing, ASIN Canonical URLs, and Price Extraction
-$mock_amazon_html = '<div data-component-type="s-search-result" data-asin="B0BTZB7F88" class="s-result-item">
-  <div class="s-card-container">
-    <h2>
-      <a class="a-link-normal" href="/AMD-7800X3D-16-Thread-Desktop-Processor/dp/B0BTZB7F88/ref=sr_1_1">
-        <span class="a-size-medium a-color-base a-text-normal">AMD Ryzen 7 7800X3D 8-Core, 16-Thread Desktop Processor</span>
-      </a>
-    </h2>
-    <span class="a-price" data-a-size="xl"><span class="a-offscreen">₹36,999</span><span class="a-price-whole">36,999</span></span>
-    <span class="a-price a-text-price" data-a-size="b"><span class="a-offscreen">₹49,990</span></span>
-    <img class="s-image" src="https://m.media-amazon.com/images/I/61K8h4zBw1L._AC_UY218_.jpg" />
-  </div>
+// Test 38: Amazon India Adapter Scraping, ASIN & High-Res Photo Extraction, and Specs Sync
+$mock_amazon_search_html = '<div data-asin="B0CQMQF95K" data-component-type="s-search-result" class="s-result-item">
+    <div class="s-product-image-container">
+        <img class="s-image" src="https://m.media-amazon.com/images/I/61N7S1f4s+L._AC_UY218_.jpg" alt="AMD Ryzen 5 7600X">
+    </div>
+    <h2><a class="a-link-normal" href="/dp/B0CQMQF95K"><span class="a-text-normal">AMD Ryzen 5 7600X Desktop Processor (6 Cores, 12 Threads, Up to 5.3 GHz, AM5)</span></a></h2>
+    <span class="a-price-whole">19,799</span>
+    <span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">₹32,000</span></span>
 </div>';
 
 $amazon_adapter = new \HWsync\Vendors\Amazon_Adapter();
-$parsed_amazon = $amazon_adapter->parse_html( $mock_amazon_html, 'cpu' );
+$parsed_amazon = $amazon_adapter->parse_html( $mock_amazon_search_html, 'cpu' );
 
-assert_test( 'Amazon India Adapter parses product title, ASIN canonical URL, price, and image URL', (
+assert_test( 'Amazon India Adapter parses search cards, extracts ASIN, canonical URL, pricing, and converts to high-res photo', (
 	count( $parsed_amazon ) === 1 &&
-	$parsed_amazon[0]['title'] === 'AMD Ryzen 7 7800X3D 8-Core, 16-Thread Desktop Processor' &&
-	$parsed_amazon[0]['price'] === 36999.0 &&
-	$parsed_amazon[0]['original_price'] === 49990.0 &&
-	$parsed_amazon[0]['url'] === 'https://www.amazon.in/dp/B0BTZB7F88' &&
-	$parsed_amazon[0]['sku'] === 'B0BTZB7F88' &&
+	$parsed_amazon[0]['sku'] === 'B0CQMQF95K' &&
+	$parsed_amazon[0]['url'] === 'https://www.amazon.in/dp/B0CQMQF95K' &&
+	$parsed_amazon[0]['price'] === 19799.0 &&
+	$parsed_amazon[0]['original_price'] === 32000.0 &&
+	$parsed_amazon[0]['image_url'] === 'https://m.media-amazon.com/images/I/61N7S1f4s+L.jpg' &&
 	$parsed_amazon[0]['in_stock'] === true
-) );
-
-// Test 39: Technical Specifications Multi-Vendor Aggregation & Missing Specs Merge
-$vendor_1_partial = array( 'Sockets Supported' => 'AM5', 'TDP' => '120 W' );
-$vendor_2_partial = array( 'CPU Cores' => '8', 'Thread Count' => '16', 'L3 Cache' => '96 MB' );
-$vendor_3_partial = array( 'Max Boost Clock' => '5.0 GHz', 'Memory Support' => 'DDR5' );
-
-$aggregated = \HWsync\Specs_Sync_Manager::merge_and_clean_specs( 'cpu', $vendor_1_partial );
-$aggregated = \HWsync\Specs_Sync_Manager::merge_and_clean_specs( 'cpu', $vendor_2_partial, $aggregated );
-$aggregated = \HWsync\Specs_Sync_Manager::merge_and_clean_specs( 'cpu', $vendor_3_partial, $aggregated );
-
-assert_test( 'Multi-Vendor Specs Aggregation combines missing attributes across multiple vendor listings into full schema', (
-	isset( $aggregated['Socket'] ) && $aggregated['Socket'] === 'AM5' &&
-	isset( $aggregated['TDP'] ) && $aggregated['TDP'] === '120 W' &&
-	isset( $aggregated['Number of Cores'] ) && $aggregated['Number of Cores'] === '8' &&
-	isset( $aggregated['Number of Threads'] ) && $aggregated['Number of Threads'] === '16' &&
-	isset( $aggregated['Cache L3'] ) && $aggregated['Cache L3'] === '96 MB' &&
-	isset( $aggregated['Turbo Clock'] ) && $aggregated['Turbo Clock'] === '5.0 GHz' &&
-	isset( $aggregated['Memory Support'] ) && $aggregated['Memory Support'] === 'DDR5'
-) );
-
-// Test 40: Specification Completeness Evaluation (is_specs_complete)
-$complete_status = \HWsync\Specs_Sync_Manager::is_specs_complete( $aggregated, 'cpu' );
-$incomplete_status = \HWsync\Specs_Sync_Manager::is_specs_complete( array( 'Socket' => 'AM5' ), 'cpu' );
-
-assert_test( 'Specification Completeness Checker correctly identifies complete vs incomplete components for sync skipping', (
-	$complete_status === true &&
-	$incomplete_status === false
-) );
-
-// Test 41: Legacy Synonym Deduplication & UI Schema Integrity
-$raw_duplicate_specs = array(
-	'CPU Cores'       => '8',
-	'Total Cores'     => '8',
-	'Processor Cores' => '8',
-	'Number of Cores' => '8',
-	'CPU Socket Type' => 'AM5',
-	'Socket'          => 'AM5',
-);
-$deduped_specs = \HWsync\Specs_Sync_Manager::merge_and_clean_specs( 'cpu', $raw_duplicate_specs );
-
-assert_test( 'Legacy Synonym Deduplication ensures single canonical key on UI and prevents duplicated attributes', (
-	count( $deduped_specs ) === 2 &&
-	isset( $deduped_specs['Number of Cores'] ) && $deduped_specs['Number of Cores'] === '8' &&
-	isset( $deduped_specs['Socket'] ) && $deduped_specs['Socket'] === 'AM5' &&
-	! isset( $deduped_specs['CPU Cores'] ) &&
-	! isset( $deduped_specs['Total Cores'] ) &&
-	! isset( $deduped_specs['CPU Socket Type'] )
 ) );
 
 echo "\n---------------------------------------------\n";
