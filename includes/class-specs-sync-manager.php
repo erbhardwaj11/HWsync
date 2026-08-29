@@ -145,6 +145,20 @@ class Specs_Sync_Manager {
 	);
 
 	/**
+	 * Core/essential attributes per category for completeness evaluation.
+	 */
+	public static $core_specs_by_category = array(
+		'cpu'         => array( 'Socket', 'Number of Cores', 'Number of Threads', 'Frequency', 'Turbo Clock', 'Cache L3', 'TDP', 'Memory Support' ),
+		'gpu'         => array( 'GPU Name', 'Memory Size', 'Memory Type', 'Memory Bus', 'Suggested PSU', 'TDP' ),
+		'motherboard' => array( 'Socket', 'Chipset', 'Form Factor', 'Supported Memory Type' ),
+		'cooler'      => array( 'Cooling Type', 'Socket Support', 'Fan Size' ),
+		'ram'         => array( 'Memory Type', 'Capacity', 'Speed', 'Tested Latency' ),
+		'psu'         => array( 'Wattage', 'Certification', 'Modular' ),
+		'cabinet'     => array( 'Cabinet Size', 'Motherboard Size', 'Max Gpu Length' ),
+		'storage'     => array( 'Capacity', 'Form Factor', 'Interface', 'Read Speed' ),
+	);
+
+	/**
 	 * Synonym dictionaries mapping vendor variations into canonical schema keys.
 	 */
 	public static $category_synonyms_map = array(
@@ -843,6 +857,37 @@ class Specs_Sync_Manager {
 	}
 
 	/**
+	 * Check if a component's specifications are complete according to its category schema.
+	 *
+	 * @param array $specs
+	 * @param string $category
+	 * @return bool
+	 */
+	public static function is_specs_complete( $specs, $category ) {
+		if ( empty( $specs ) || ! is_array( $specs ) ) {
+			return false;
+		}
+
+		$cat = self::normalize_category_slug( $category );
+		$core_list = isset( self::$core_specs_by_category[ $cat ] ) ? self::$core_specs_by_category[ $cat ] : array();
+
+		if ( empty( $core_list ) ) {
+			return count( $specs ) >= 3;
+		}
+
+		$present_count = 0;
+		foreach ( $core_list as $core_key ) {
+			if ( isset( $specs[ $core_key ] ) && $specs[ $core_key ] !== '' ) {
+				$present_count++;
+			}
+		}
+
+		// Complete if at least 70% of core schema attributes are filled, or at least 5 attributes
+		$threshold = max( 2, intval( ceil( count( $core_list ) * 0.7 ) ) );
+		return ( $present_count >= $threshold || count( $specs ) >= count( $core_list ) );
+	}
+
+	/**
 	 * Validate whether a key-value pair is a genuine hardware specification,
 	 * rejecting footer disclaimers, shipping text, wishlist, notes, and paragraphs.
 	 *
@@ -984,10 +1029,10 @@ class Specs_Sync_Manager {
 
 	/**
 	 * Run manual specs synchronization for existing canonical components in DB.
-	 * Visits product pages on vendor websites, extracts the specifications section,
-	 * updates database records, and updates WordPress component posts.
+	 * Visits product pages across ALL linked retailers, aggregates missing specifications,
+	 * skips components that already have complete specifications, and updates posts.
 	 *
-	 * @param array $options Options array: 'category', 'component_id', 'limit', 'offset'.
+	 * @param array $options Options array: 'category', 'component_id', 'limit', 'offset', 'force'.
 	 * @param callable|null $logger Progress callback logger.
 	 * @return array Sync report.
 	 */
@@ -999,8 +1044,9 @@ class Specs_Sync_Manager {
 		$component_id = isset( $options['component_id'] ) ? intval( $options['component_id'] ) : 0;
 		$limit        = isset( $options['limit'] ) ? intval( $options['limit'] ) : 100;
 		$offset       = isset( $options['offset'] ) ? intval( $options['offset'] ) : 0;
+		$force        = ! empty( $options['force'] );
 
-		$this->emit( $logger, 'info', "Starting Technical Specifications Sync engine..." );
+		$this->emit( $logger, 'info', "Starting Technical Specifications Multi-Vendor Aggregator..." );
 
 		$where_clauses = array( "1=1" );
 		if ( $component_id > 0 ) {
@@ -1014,20 +1060,30 @@ class Specs_Sync_Manager {
 
 		if ( empty( $components_raw ) ) {
 			$this->emit( $logger, 'warning', "No components found in database matching criteria." );
-			return array( 'total' => 0, 'updated' => 0 );
+			return array( 'total' => 0, 'updated' => 0, 'skipped' => 0 );
 		}
 
 		$report = array(
 			'total_components' => count( $components_raw ),
 			'specs_updated'    => 0,
+			'skipped'          => 0,
 			'posts_refreshed'  => 0,
 			'errors'           => array(),
 		);
 
-		$this->emit( $logger, 'info', "Found " . count( $components_raw ) . " canonical components in DB. Visiting retailer product pages..." );
+		$this->emit( $logger, 'info', "Found " . count( $components_raw ) . " canonical components in DB. Checking specification completeness across retailer sources..." );
 
 		foreach ( $components_raw as $c_row ) {
 			$component = new Component( $c_row );
+			$existing_specs = $component->get_specs();
+
+			// Skip if already completely populated and not forcing re-sync
+			if ( ! $force && self::is_specs_complete( $existing_specs, $component->category ) ) {
+				$report['skipped']++;
+				$this->emit( $logger, 'info', "[SKIPPED] Component #{$component->id} [{$component->brand} {$component->model_name}] already has complete specifications." );
+				continue;
+			}
+
 			$this->emit( $logger, 'info', "Syncing specs for Component #{$component->id}: [{$component->brand} {$component->model_name}] ({$component->category})..." );
 
 			$prices = $component->get_prices();
@@ -1039,6 +1095,7 @@ class Specs_Sync_Manager {
 			$clean_specs = array();
 			$collected_text = $component->brand . ' ' . $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
 
+			// Multi-vendor aggregation: query all vendor listings until complete
 			foreach ( $prices as $p ) {
 				if ( empty( $p->product_url ) ) {
 					continue;
@@ -1049,14 +1106,26 @@ class Specs_Sync_Manager {
 
 				$fetched_specs = $this->fetch_specs_from_product_url( $p->product_url, $vendor_slug, $component->category );
 				if ( ! empty( $fetched_specs ) ) {
-					$clean_specs = array_merge( $clean_specs, $fetched_specs );
-					$this->emit( $logger, 'info', "Extracted " . count( $fetched_specs ) . " clean specs from " . ( $vendor ? $vendor->vendor_name : 'retailer' ) . " product page." );
-					break; // Found good specs table from primary store
+					$new_attrs = 0;
+					foreach ( $fetched_specs as $fk => $fv ) {
+						if ( ! isset( $clean_specs[ $fk ] ) || $clean_specs[ $fk ] === '' ) {
+							$clean_specs[ $fk ] = $fv;
+							$new_attrs++;
+						}
+					}
+					$this->emit( $logger, 'info', "Extracted " . count( $fetched_specs ) . " specs ({$new_attrs} new/missing) from " . ( $vendor ? $vendor->vendor_name : 'retailer' ) . " product page." );
+				}
+
+				// Check if full specification coverage has been attained
+				$interim_merged = self::merge_and_clean_specs( $component->category, $clean_specs, $existing_specs, $collected_text );
+				if ( self::is_specs_complete( $interim_merged, $component->category ) ) {
+					$this->emit( $logger, 'debug', "All required category specifications gathered across vendor sources." );
+					break;
 				}
 			}
 
-			// Clean, normalize, and merge specs according to exact category schema
-			$merged_specs = self::merge_and_clean_specs( $component->category, $clean_specs, $component->get_specs(), $collected_text );
+			// Clean, normalize, deduplicate and merge specs according to exact category schema
+			$merged_specs = self::merge_and_clean_specs( $component->category, $clean_specs, $existing_specs, $collected_text );
 
 			if ( ! empty( $merged_specs ) ) {
 				$component->specs_json = $merged_specs;
@@ -1075,7 +1144,7 @@ class Specs_Sync_Manager {
 			}
 		}
 
-		$this->emit( $logger, 'success', "Technical Specifications Sync complete. Updated specs for {$report['specs_updated']} components." );
+		$this->emit( $logger, 'success', "Technical Specifications Sync complete. Updated specs for {$report['specs_updated']} components (Skipped {$report['skipped']} already complete)." );
 		return $report;
 	}
 
@@ -1089,6 +1158,7 @@ class Specs_Sync_Manager {
 		$category = isset( $options['category'] ) ? sanitize_text_field( $options['category'] ) : 'all';
 		$offset   = isset( $options['offset'] ) ? intval( $options['offset'] ) : 0;
 		$limit    = isset( $options['limit'] ) ? intval( $options['limit'] ) : 2;
+		$force    = ! empty( $options['force'] );
 
 		$where_clauses = array( "1=1" );
 		if ( $category !== 'all' && ! empty( $category ) ) {
@@ -1101,13 +1171,27 @@ class Specs_Sync_Manager {
 
 		$logs = array();
 		$updated = 0;
+		$skipped = 0;
 
 		foreach ( $components_raw as $c_row ) {
 			$component = new Component( $c_row );
+			$existing_specs = $component->get_specs();
+
+			// Skip if already complete and not force re-syncing
+			if ( ! $force && self::is_specs_complete( $existing_specs, $component->category ) ) {
+				$skipped++;
+				$logs[] = array(
+					'level'   => 'info',
+					'message' => "[SKIPPED] Component #{$component->id} [{$component->brand} {$component->model_name}] already has complete specifications.",
+				);
+				continue;
+			}
+
 			$prices = $component->get_prices();
 			$clean_specs = array();
 			$collected_text = $component->brand . ' ' . $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
 
+			// Multi-vendor aggregation
 			foreach ( $prices as $p ) {
 				if ( empty( $p->product_url ) ) {
 					continue;
@@ -1117,16 +1201,26 @@ class Specs_Sync_Manager {
 
 				$fetched = $this->fetch_specs_from_product_url( $p->product_url, $vendor_slug, $component->category );
 				if ( ! empty( $fetched ) ) {
-					$clean_specs = array_merge( $clean_specs, $fetched );
+					$new_count = 0;
+					foreach ( $fetched as $fk => $fv ) {
+						if ( ! isset( $clean_specs[ $fk ] ) || $clean_specs[ $fk ] === '' ) {
+							$clean_specs[ $fk ] = $fv;
+							$new_count++;
+						}
+					}
 					$logs[] = array(
 						'level'   => 'match',
-						'message' => "[{$component->brand} {$component->model_name}] Extracted " . count( $fetched ) . " clean specs from " . ( $vendor ? $vendor->vendor_name : 'vendor' ) . " product page.",
+						'message' => "[{$component->brand} {$component->model_name}] Extracted " . count( $fetched ) . " specs ({$new_count} new/missing) from " . ( $vendor ? $vendor->vendor_name : 'vendor' ) . " product page.",
 					);
+				}
+
+				$interim_merged = self::merge_and_clean_specs( $component->category, $clean_specs, $existing_specs, $collected_text );
+				if ( self::is_specs_complete( $interim_merged, $component->category ) ) {
 					break;
 				}
 			}
 
-			$merged_specs = self::merge_and_clean_specs( $component->category, $clean_specs, $component->get_specs(), $collected_text );
+			$merged_specs = self::merge_and_clean_specs( $component->category, $clean_specs, $existing_specs, $collected_text );
 
 			if ( ! empty( $merged_specs ) ) {
 				$component->specs_json = $merged_specs;
@@ -1153,6 +1247,7 @@ class Specs_Sync_Manager {
 			'has_more'         => $has_more,
 			'processed'        => count( $components_raw ),
 			'updated'          => $updated,
+			'skipped'          => $skipped,
 			'total_components' => $total_count,
 			'next_offset'      => $next_offset,
 			'logs'             => $logs,
@@ -1191,7 +1286,7 @@ class Specs_Sync_Manager {
 			}
 		}
 
-		// Standard cURL fetch for WooCommerce, OpenCart, Journal 3, Magento pages
+		// Standard cURL fetch for WooCommerce, OpenCart, Journal 3, Magento, Amazon pages
 		$res = $this->make_http_request( $url );
 		if ( empty( $res['body'] ) ) {
 			return $specs;
@@ -1212,8 +1307,8 @@ class Specs_Sync_Manager {
 		if ( preg_match( '/<(?:div|section|table)[^>]*(?:id=["\']tab-specification["\']|id=["\']tab-specs["\']|class=["\'][^"\']*(?:woocommerce-Tabs-panel--specification|shop_attributes|product-attribute-specs-table|specification)[^"\']*)[^>]*>[\s\S]*?<\/(?:div|section|table)>/i', $clean_html, $sm ) ) {
 			$specs_html = $sm[0];
 		}
-		// Targeted Pattern 2: Attributes table within product container
-		elseif ( preg_match( '/<table[^>]*(?:class=["\'][^"\']*(?:shop_attributes|table-bordered|table-striped|data-table|table_specifications)[^"\']*|id=["\']product-attribute-specs-table["\'])[^>]*>[\s\S]*?<\/table>/i', $clean_html, $sm ) ) {
+		// Targeted Pattern 2: Attributes table within product container / Amazon tech specs
+		elseif ( preg_match( '/<table[^>]*(?:class=["\'][^"\']*(?:shop_attributes|table-bordered|table-striped|data-table|table_specifications|prodDetTable)[^"\']*|id=["\'](?:product-attribute-specs-table|productDetails_techSpec_section_1|productDetails_techSpec_section_2)["\'])[^>]*>[\s\S]*?<\/table>/i', $clean_html, $sm ) ) {
 			$specs_html = $sm[0];
 		}
 		// Targeted Pattern 3: Description tab containing definition lists
@@ -1221,7 +1316,7 @@ class Specs_Sync_Manager {
 			$specs_html = $sm[0];
 		}
 		// Targeted Pattern 4: General product details / entry content container
-		elseif ( preg_match( '/<(?:div|section)[^>]*(?:class=["\'][^"\']*(?:product-description|product-specifications|woocommerce-product-details__short-description|entry-content)[^"\']*)[^>]*>[\s\S]*?<\/(?:div|section)>/i', $clean_html, $sm ) ) {
+		elseif ( preg_match( '/<(?:div|section)[^>]*(?:class=["\'][^"\']*(?:product-description|product-specifications|woocommerce-product-details__short-description|entry-content|productOverview_feature_div)[^"\']*)[^>]*>[\s\S]*?<\/(?:div|section)>/i', $clean_html, $sm ) ) {
 			$specs_html = $sm[0];
 		} else {
 			$specs_html = '';
@@ -1384,12 +1479,13 @@ class Specs_Sync_Manager {
 
 	/**
 	 * Merge vendor extracted specs with category schema rules and domain regex extraction.
+	 * Strictly deduplicates keys and guarantees no duplicates on UI/postmeta.
 	 *
 	 * @param string $category
 	 * @param array $raw_specs
 	 * @param array $existing_specs
 	 * @param string $text_context
-	 * @return array Clean dictionary conforming strictly to the category schema.
+	 * @return array Clean dictionary conforming strictly to the category schema without duplicate keys.
 	 */
 	public static function merge_and_clean_specs( $category, $raw_specs = array(), $existing_specs = array(), $text_context = '' ) {
 		$merged = array();
@@ -1417,7 +1513,9 @@ class Specs_Sync_Manager {
 				if ( self::is_valid_spec_pair( $k, $v ) ) {
 					$norm_k = self::normalize_spec_key( $k, $category );
 					if ( empty( $allowed ) || in_array( $norm_k, $allowed, true ) ) {
-						$merged[ $norm_k ] = (string) $v;
+						if ( ! isset( $merged[ $norm_k ] ) || empty( $merged[ $norm_k ] ) ) {
+							$merged[ $norm_k ] = (string) $v;
+						}
 					}
 				}
 			}
@@ -1555,7 +1653,7 @@ class Specs_Sync_Manager {
 				break;
 		}
 
-		// Final strict filter: if allowed list is defined, discard any non-schema key
+		// Final strict filter: if allowed list is defined, discard any non-schema key and preserve schema order
 		if ( ! empty( $allowed ) ) {
 			$filtered = array();
 			foreach ( $allowed as $allowed_key ) {

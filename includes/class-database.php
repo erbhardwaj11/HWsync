@@ -189,6 +189,14 @@ class Database {
 				'sync_method'   => 'curl_html',
 				'is_active'     => 1,
 			),
+			array(
+				'vendor_slug'   => 'amazon-in',
+				'vendor_name'   => 'Amazon India',
+				'base_url'      => 'https://www.amazon.in',
+				'adapter_class' => 'HWsync\\Vendors\\Amazon_Adapter',
+				'sync_method'   => 'curl_html',
+				'is_active'     => 1,
+			),
 		);
 
 		foreach ( $default_vendors as $vendor ) {

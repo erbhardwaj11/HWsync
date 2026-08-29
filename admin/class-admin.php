@@ -186,7 +186,10 @@ class Admin {
 								</button>
 							</div>
 
-							<div style="margin-top: 10px;">
+							<div style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
+								<label style="font-size: 11.5px; color: #64748b; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
+									<input type="checkbox" id="chk-force-specs" value="1" /> <?php esc_html_e( 'Force re-sync specs (overwrite components that already have complete specs)', 'hwsync' ); ?>
+								</label>
 								<label style="font-size: 11.5px; color: #64748b; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
 									<input type="checkbox" id="chk-force-images" value="1" /> <?php esc_html_e( 'Force re-download photos for products that already have images', 'hwsync' ); ?>
 								</label>
@@ -348,9 +351,11 @@ class Admin {
 				syncSpecsBtn.addEventListener('click', function() {
 					var category = document.getElementById('target_category').value;
 					var nonce = document.querySelector('input[name="hwsync_nonce"]').value;
+					var force = document.getElementById('chk-force-specs') && document.getElementById('chk-force-specs').checked ? 1 : 0;
 
 					startBtn.disabled = true;
 					syncSpecsBtn.disabled = true;
+					if (syncImagesBtn) syncImagesBtn.disabled = true;
 					if (mergeBtn) mergeBtn.disabled = true;
 					syncSpecsBtn.innerHTML = '<span class="dashicons dashicons-update spin" style="animation: rotation 1s infinite linear;"></span> Syncing Specs...';
 					stopBtn.style.display = 'inline-block';
@@ -361,11 +366,11 @@ class Admin {
 					statusBadge.style.background = '#0369a1';
 					statusBadge.style.color = '#fff';
 
-					appendLog('info', 'Initiating Technical Specifications extraction for category [' + category + ']...');
+					appendLog('info', 'Initiating Technical Specifications extraction for category [' + category + '] (Force: ' + (force ? 'Yes' : 'No') + ')...');
 
 					abortController = new AbortController();
 
-					runChunkedSpecsSync(category, nonce);
+					runChunkedSpecsSync(category, nonce, force);
 				});
 
 				var syncImagesBtn = document.getElementById('btn-sync-images');
@@ -552,7 +557,7 @@ class Admin {
 					processNextVendor();
 				}
 
-				function runChunkedSpecsSync(categoryChoice, nonce) {
+				function runChunkedSpecsSync(categoryChoice, nonce, force) {
 					var offset = 0;
 					var limit = 2;
 					var totalProcessed = 0;
@@ -569,6 +574,7 @@ class Admin {
 						postData.append('target_category', categoryChoice);
 						postData.append('offset', offset);
 						postData.append('limit', limit);
+						postData.append('force_specs', force ? '1' : '0');
 						postData.append('hwsync_nonce', nonce);
 
 						fetch(ajaxurl, {
@@ -605,7 +611,7 @@ class Admin {
 									offset = (d.next_offset !== undefined) ? d.next_offset : (offset + limit);
 									fetchSpecsStep();
 								} else {
-									appendLog('success', 'Specifications Extraction completed! Updated ' + mSpecs.textContent + ' components.');
+									appendLog('success', 'Specifications Extraction completed! Updated ' + mSpecs.textContent + ' components (Skipped ' + (d.skipped || 0) + ' already complete).');
 									finishSync();
 								}
 							} else {
@@ -3175,6 +3181,7 @@ class Admin {
 		}
 
 		$category = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
+		$force    = ! empty( $_POST['force_specs'] );
 
 		$stream_logger = function( $level, $message, $stats = array() ) {
 			$payload = array(
@@ -3188,9 +3195,41 @@ class Admin {
 		};
 
 		$specs_manager = new Specs_Sync_Manager();
-		$report = $specs_manager->run_specs_sync( array( 'category' => $category ), $stream_logger );
+		$report = $specs_manager->run_specs_sync( array( 'category' => $category, 'force' => $force ), $stream_logger );
 
 		exit;
+	}
+
+	public static function handle_sync_specs_chunk() {
+		check_ajax_referer( 'hwsync_manual_sync_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unauthorized', 'hwsync' ) ) );
+		}
+
+		$category = isset( $_POST['target_category'] ) ? sanitize_text_field( $_POST['target_category'] ) : 'all';
+		$offset   = isset( $_POST['offset'] ) ? intval( $_POST['offset'] ) : 0;
+		$limit    = isset( $_POST['limit'] ) ? intval( $_POST['limit'] ) : 2;
+		$force    = ! empty( $_POST['force_specs'] );
+
+		try {
+			$specs_manager = new Specs_Sync_Manager();
+			$report = $specs_manager->sync_specs_chunk( array(
+				'category' => $category,
+				'offset'   => $offset,
+				'limit'    => $limit,
+				'force'    => $force,
+			) );
+
+			wp_send_json_success( $report );
+		} catch ( \Throwable $e ) {
+			wp_send_json_success( array(
+				'processed'        => 0,
+				'updated'          => 0,
+				'skipped'          => 0,
+				'has_more'         => false,
+				'logs'             => array( array( 'level' => 'warning', 'message' => 'Skipped item: ' . $e->getMessage() ) ),
+			) );
+		}
 	}
 
 	public static function handle_stream_image_sync() {
@@ -3341,7 +3380,8 @@ class Admin {
 			wp_send_json_error( array( 'message' => __( 'Component not found.', 'hwsync' ) ) );
 		}
 
-		$specs = $comp->get_specs();
+		// Strictly deduplicate existing specs against schema and synonyms before presenting to modal
+		$specs = Specs_Sync_Manager::merge_and_clean_specs( $comp->category, array(), $comp->get_specs() );
 		$flat_specs = array();
 		if ( is_array( $specs ) ) {
 			foreach ( $specs as $k => $v ) {
@@ -3378,7 +3418,7 @@ class Admin {
 		$keys   = isset( $_POST['keys'] ) ? (array) $_POST['keys'] : array();
 		$values = isset( $_POST['values'] ) ? (array) $_POST['values'] : array();
 
-		$clean_specs = array();
+		$raw_submitted = array();
 		$count = max( count( $keys ), count( $values ) );
 
 		for ( $i = 0; $i < $count; $i++ ) {
@@ -3389,10 +3429,13 @@ class Admin {
 			$v = trim( $v );
 
 			if ( ! empty( $k ) && ! empty( $v ) ) {
-				$norm_k = Specs_Sync_Manager::normalize_spec_key( $k );
-				$clean_specs[ $norm_k ] = $v;
+				$norm_k = Specs_Sync_Manager::normalize_spec_key( $k, $comp->category );
+				$raw_submitted[ $norm_k ] = $v;
 			}
 		}
+
+		// Strictly clean, deduplicate, and sort according to schema
+		$clean_specs = Specs_Sync_Manager::merge_and_clean_specs( $comp->category, $raw_submitted );
 
 		$comp->specs_json = $clean_specs;
 		$comp->save();

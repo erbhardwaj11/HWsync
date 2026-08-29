@@ -17,6 +17,9 @@ class Sync_Manager {
 		'primeabgb'   => 'HWsync\\Vendors\\PrimeABGB_Adapter',
 		'elitehubs'   => 'HWsync\\Vendors\\EliteHubs_Adapter',
 		'pcstudio'    => 'HWsync\\Vendors\\PCStudio_Adapter',
+		'theitdepot'  => 'HWsync\\Vendors\\TheITDepot_Adapter',
+		'amazon-in'   => 'HWsync\\Vendors\\Amazon_Adapter',
+		'amazon'      => 'HWsync\\Vendors\\Amazon_Adapter',
 	);
 
 	/**
