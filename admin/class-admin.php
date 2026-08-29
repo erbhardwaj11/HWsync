@@ -19,6 +19,7 @@ class Admin {
 		add_action( 'admin_post_hwsync_wipe_reset', array( __CLASS__, 'handle_wipe_reset' ) );
 		add_action( 'admin_post_hwsync_restore_default_vendors', array( __CLASS__, 'handle_restore_default_vendors' ) );
 		add_action( 'admin_post_hwsync_save_schedule', array( __CLASS__, 'handle_save_schedule_settings' ) );
+		add_action( 'wp_ajax_hwsync_save_schedule_settings', array( __CLASS__, 'handle_ajax_save_schedule_settings' ) );
 		add_action( 'wp_ajax_hwsync_sync_batch', array( __CLASS__, 'handle_sync_batch' ) );
 		add_action( 'wp_ajax_hwsync_sync_specs_chunk', array( __CLASS__, 'handle_sync_specs_chunk' ) );
 		add_action( 'wp_ajax_hwsync_stream_sync', array( __CLASS__, 'handle_stream_sync' ) );
@@ -3873,7 +3874,7 @@ class Admin {
 						</p>
 					</div>
 
-					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top: 16px; display: flex; flex-direction: column; gap: 16px;">
+					<form id="form-save-schedules" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top: 16px; display: flex; flex-direction: column; gap: 16px;">
 						<?php wp_nonce_field( 'hwsync_save_schedule_action', 'hwsync_nonce' ); ?>
 						<input type="hidden" name="action" value="hwsync_save_schedule" />
 
@@ -3972,7 +3973,7 @@ class Admin {
 						</div>
 
 						<div style="margin-top: 8px;">
-							<button type="submit" class="button button-primary" style="background: #6366f1; border-color: #4f46e5; height: 38px; padding: 0 24px; font-weight: 600; border-radius: 6px; font-size: 13px;">
+							<button type="submit" id="btn-save-all-schedules" class="button button-primary" style="background: #6366f1; border-color: #4f46e5; height: 38px; padding: 0 24px; font-weight: 600; border-radius: 6px; font-size: 13px;">
 								<span class="dashicons dashicons-saved" style="margin-top: 4px;"></span>
 								<?php esc_html_e( 'Save All Schedule Settings', 'hwsync' ); ?>
 							</button>
@@ -4000,6 +4001,50 @@ class Admin {
 					</button>
 				</form>
 			</div>
+
+			<script>
+			document.addEventListener('DOMContentLoaded', function() {
+				var form = document.getElementById('form-save-schedules');
+				var btn = document.getElementById('btn-save-all-schedules');
+
+				if (form && btn) {
+					form.addEventListener('submit', function(e) {
+						e.preventDefault();
+						btn.disabled = true;
+						btn.innerHTML = '<span class="dashicons dashicons-update spin" style="margin-top: 4px;"></span> Saving Settings...';
+
+						var formData = new FormData(form);
+						formData.set('action', 'hwsync_save_schedule_settings');
+
+						fetch(ajaxurl, {
+							method: 'POST',
+							body: formData
+						})
+						.then(function(res) { return res.json(); })
+						.then(function(data) {
+							btn.disabled = false;
+							btn.innerHTML = '<span class="dashicons dashicons-saved" style="margin-top: 4px;"></span> Save All Schedule Settings';
+
+							if (data.success) {
+								var alertBox = document.createElement('div');
+								alertBox.className = 'notice notice-success is-dismissible';
+								alertBox.style.marginTop = '16px';
+								alertBox.innerHTML = '<p><strong>✓ Success:</strong> ' + (data.data.message || 'Settings saved successfully.') + '</p>';
+								form.parentNode.insertBefore(alertBox, form);
+								window.scrollTo({ top: 0, behavior: 'smooth' });
+								setTimeout(function() { window.location.reload(); }, 1200);
+							} else {
+								alert('Error: ' + (data.data ? data.data.message : 'Failed to save settings.'));
+							}
+						})
+						.catch(function(err) {
+							// Fallback to standard form submission if AJAX fetch fails
+							form.submit();
+						});
+					});
+				}
+			});
+			</script>
 		</div>
 		<?php
 	}
@@ -4029,8 +4074,13 @@ class Admin {
 	}
 
 	public static function handle_save_schedule_settings() {
-		if ( ! current_user_can( 'manage_options' ) || ! check_admin_referer( 'hwsync_save_schedule_action', 'hwsync_nonce' ) ) {
-			wp_die( __( 'Unauthorized request', 'hwsync' ) );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( __( 'Unauthorized permission.', 'hwsync' ) );
+		}
+
+		$nonce = isset( $_POST['hwsync_nonce'] ) ? sanitize_text_field( $_POST['hwsync_nonce'] ) : '';
+		if ( ! wp_verify_nonce( $nonce, 'hwsync_save_schedule_action' ) && ! check_admin_referer( 'hwsync_save_schedule_action', 'hwsync_nonce' ) ) {
+			wp_die( __( 'Security token expired. Please reload and try again.', 'hwsync' ) );
 		}
 
 		// 1. Price & Product Sync Schedule
@@ -4051,8 +4101,50 @@ class Admin {
 		$img_time      = isset( $_POST['schedule_image_time'] ) ? sanitize_text_field( $_POST['schedule_image_time'] ) : '05:00';
 		Cron::update_image_schedule( $img_enabled, $img_freq, $img_time );
 
-		wp_safe_redirect( admin_url( 'admin.php?page=hwsync-maintenance&status=schedule_saved' ) );
+		wp_redirect( admin_url( 'admin.php?page=hwsync-maintenance&status=schedule_saved' ) );
 		exit;
+	}
+
+	public static function handle_ajax_save_schedule_settings() {
+		check_ajax_referer( 'hwsync_save_schedule_action', 'hwsync_nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unauthorized permission.', 'hwsync' ) ) );
+		}
+
+		// 1. Price & Product Sync Schedule
+		$price_enabled = ! empty( $_POST['schedule_enabled'] );
+		$price_freq    = isset( $_POST['schedule_frequency'] ) ? sanitize_text_field( $_POST['schedule_frequency'] ) : 'daily';
+		$price_time    = isset( $_POST['schedule_time'] ) ? sanitize_text_field( $_POST['schedule_time'] ) : '03:00';
+		Cron::update_schedule( $price_enabled, $price_freq, $price_time );
+
+		// 2. Technical Specifications Sync Schedule
+		$specs_enabled = ! empty( $_POST['schedule_specs_enabled'] );
+		$specs_freq    = isset( $_POST['schedule_specs_frequency'] ) ? sanitize_text_field( $_POST['schedule_specs_frequency'] ) : 'daily';
+		$specs_time    = isset( $_POST['schedule_specs_time'] ) ? sanitize_text_field( $_POST['schedule_specs_time'] ) : '04:00';
+		Cron::update_specs_schedule( $specs_enabled, $specs_freq, $specs_time );
+
+		// 3. Local Images Sync Schedule
+		$img_enabled   = ! empty( $_POST['schedule_image_enabled'] );
+		$img_freq      = isset( $_POST['schedule_image_frequency'] ) ? sanitize_text_field( $_POST['schedule_image_frequency'] ) : 'daily';
+		$img_time      = isset( $_POST['schedule_image_time'] ) ? sanitize_text_field( $_POST['schedule_image_time'] ) : '05:00';
+		Cron::update_image_schedule( $img_enabled, $img_freq, $img_time );
+
+		// Compute next run times for UI feedback
+		$next_price_ts = wp_next_scheduled( Cron::CRON_HOOK );
+		$next_price_str = $next_price_ts ? get_date_from_gmt( date( 'Y-m-d H:i:s', $next_price_ts ), 'd-m-Y H:i:s' ) . ' (Local Time)' : __( 'Not Scheduled', 'hwsync' );
+
+		$next_specs_ts = wp_next_scheduled( Cron::CRON_SPECS_HOOK );
+		$next_specs_str = $next_specs_ts ? get_date_from_gmt( date( 'Y-m-d H:i:s', $next_specs_ts ), 'd-m-Y H:i:s' ) . ' (Local Time)' : __( 'Not Scheduled', 'hwsync' );
+
+		$next_image_ts = wp_next_scheduled( Cron::CRON_IMAGE_HOOK );
+		$next_image_str = $next_image_ts ? get_date_from_gmt( date( 'Y-m-d H:i:s', $next_image_ts ), 'd-m-Y H:i:s' ) . ' (Local Time)' : __( 'Not Scheduled', 'hwsync' );
+
+		wp_send_json_success( array(
+			'message'        => __( 'All automated schedule settings saved successfully!', 'hwsync' ),
+			'next_price_str' => $next_price_str,
+			'next_specs_str' => $next_specs_str,
+			'next_image_str' => $next_image_str,
+		) );
 	}
 
 	public static function handle_export_amazon_csv() {
