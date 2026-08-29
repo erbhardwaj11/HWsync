@@ -42,6 +42,10 @@ class Vendor {
 		global $wpdb;
 		$table = Database::get_table_name( 'vendors' );
 		$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE vendor_slug = %s", $slug ), \ARRAY_A );
+		if ( ! $row && ( $slug === 'amazon-in' || $slug === 'amazon' ) ) {
+			Database::seed_default_vendors();
+			$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE vendor_slug = %s", 'amazon-in' ), \ARRAY_A );
+		}
 		return $row ? new self( $row ) : null;
 	}
 
@@ -55,6 +59,23 @@ class Vendor {
 		$sql .= " ORDER BY vendor_name ASC";
 
 		$results = $wpdb->get_results( $sql, \ARRAY_A );
+
+		// If no vendors or missing amazon-in, auto-seed defaults and re-fetch
+		$has_amazon = false;
+		if ( ! empty( $results ) ) {
+			foreach ( $results as $r ) {
+				if ( ( $r['vendor_slug'] ?? '' ) === 'amazon-in' ) {
+					$has_amazon = true;
+					break;
+				}
+			}
+		}
+
+		if ( ! $has_amazon ) {
+			Database::seed_default_vendors();
+			$results = $wpdb->get_results( $sql, \ARRAY_A );
+		}
+
 		$vendors = array();
 		if ( $results ) {
 			foreach ( $results as $row ) {

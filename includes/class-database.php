@@ -6,7 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class Database {
-	const DB_VERSION = '1.0.2';
+	const DB_VERSION = '1.0.3';
 
 	public static function get_table_name( $name ) {
 		global $wpdb;

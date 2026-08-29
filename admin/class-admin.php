@@ -17,6 +17,7 @@ class Admin {
 		add_action( 'admin_post_hwsync_export_csv', array( __CLASS__, 'handle_export_csv' ) );
 		add_action( 'admin_post_hwsync_restore_csv', array( __CLASS__, 'handle_restore_csv' ) );
 		add_action( 'admin_post_hwsync_wipe_reset', array( __CLASS__, 'handle_wipe_reset' ) );
+		add_action( 'admin_post_hwsync_restore_default_vendors', array( __CLASS__, 'handle_restore_default_vendors' ) );
 		add_action( 'admin_post_hwsync_save_schedule', array( __CLASS__, 'handle_save_schedule_settings' ) );
 		add_action( 'wp_ajax_hwsync_sync_batch', array( __CLASS__, 'handle_sync_batch' ) );
 		add_action( 'wp_ajax_hwsync_sync_specs_chunk', array( __CLASS__, 'handle_sync_specs_chunk' ) );
@@ -1065,7 +1066,14 @@ class Admin {
 					<h1 style="margin: 0 0 4px 0; font-size: 24px; font-weight: 700; color: #0f172a;"><?php esc_html_e( 'Registered PC Hardware Retailers', 'hwsync' ); ?></h1>
 					<p style="margin: 0; color: #64748b; font-size: 13px;"><?php esc_html_e( 'Manage multi-vendor scrapers, add custom retailers, and test 1-component sample extraction across all hardware categories.', 'hwsync' ); ?></p>
 				</div>
-				<div>
+				<div style="display: flex; gap: 8px; align-items: center;">
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display: inline;">
+						<?php wp_nonce_field( 'hwsync_restore_default_vendors_action', 'hwsync_nonce' ); ?>
+						<input type="hidden" name="action" value="hwsync_restore_default_vendors" />
+						<button type="submit" class="button" style="height: 38px; padding: 0 14px; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; background: #f8fafc; border-color: #cbd5e1; color: #475569;">
+							<span class="dashicons dashicons-update" style="color: #64748b;"></span> <?php esc_html_e( 'Sync / Restore Core Retailers', 'hwsync' ); ?>
+						</button>
+					</form>
 					<button type="button" id="btn-open-add-vendor" class="button button-primary" style="height: 38px; padding: 0 16px; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; background: #2563eb; border-color: #1d4ed8;">
 						<span class="dashicons dashicons-plus-alt2" style="margin-top: 1px;"></span> <?php esc_html_e( 'Add New Retailer', 'hwsync' ); ?>
 					</button>
@@ -3972,6 +3980,16 @@ class Admin {
 		$result = Backup_Manager::wipe_and_reset_all_data();
 		$deleted = isset( $result['deleted_posts_count'] ) ? intval( $result['deleted_posts_count'] ) : 0;
 		wp_safe_redirect( admin_url( 'admin.php?page=hwsync-maintenance&status=wipe_success&deleted=' . $deleted ) );
+		exit;
+	}
+
+	public static function handle_restore_default_vendors() {
+		if ( ! current_user_can( 'manage_options' ) || ! check_admin_referer( 'hwsync_restore_default_vendors_action', 'hwsync_nonce' ) ) {
+			wp_die( \__( 'Unauthorized request', 'hwsync' ) );
+		}
+
+		Database::seed_default_vendors();
+		wp_safe_redirect( admin_url( 'admin.php?page=hwsync-vendors&status=seeded' ) );
 		exit;
 	}
 }
