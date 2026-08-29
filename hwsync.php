@@ -3,7 +3,7 @@
  * Plugin Name: HWsync - Indian PC Component & Multi-Vendor Price Synchronizer
  * Plugin URI: https://github.com/hwsync/hwsync
  * Description: High-performance hardware component and multi-vendor pricing synchronizer for Indian PC retailers. Tracks canonical components, links vendor prices, and updates WordPress posts.
- * Version: 0.0.2.4
+ * Version: 0.0.2.3
  * Author: HWsync Team
  * Author URI: https://github.com/hwsync
  * License: GPL-2.0+
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly.
 }
 
-define( 'HWSYNC_VERSION', '0.0.2.4' );
+define( 'HWSYNC_VERSION', '0.0.2.3' );
 define( 'HWSYNC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HWSYNC_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'HWSYNC_PLUGIN_FILE', __FILE__ );
@@ -25,7 +25,7 @@ define( 'HWSYNC_PLUGIN_FILE', __FILE__ );
  */
 spl_autoload_register( function ( $class ) {
 	$prefix = 'HWsync\\';
-	$base_dir = HWSYNC_PLUGIN_DIR;
+	$base_dir = HWSYNC_PLUGIN_DIR . 'includes/';
 
 	$len = strlen( $prefix );
 	if ( strncmp( $prefix, $class, $len ) !== 0 ) {
@@ -33,35 +33,18 @@ spl_autoload_register( function ( $class ) {
 	}
 
 	$relative_class = substr( $class, $len );
-
-	if ( $relative_class === 'Admin' ) {
-		$file = $base_dir . 'admin/class-admin.php';
-		if ( file_exists( $file ) ) {
-			require_once $file;
-			return;
-		}
-	}
-
-	if ( $relative_class === 'Public_Handler' ) {
-		$file = $base_dir . 'public/class-public.php';
-		if ( file_exists( $file ) ) {
-			require_once $file;
-			return;
-		}
-	}
-
 	$parts = explode( '\\', $relative_class );
 	$file_name = 'class-' . strtolower( str_replace( '_', '-', array_pop( $parts ) ) ) . '.php';
 	$subdir = ! empty( $parts ) ? strtolower( implode( '/', $parts ) ) . '/' : '';
 
-	$file = $base_dir . 'includes/' . $subdir . $file_name;
+	$file = $base_dir . $subdir . $file_name;
 
 	if ( file_exists( $file ) ) {
 		require_once $file;
 	}
 } );
 
-// Include core procedural files, admin, and models
+// Include core procedural files and admin if needed
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-database.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-backup-manager.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/class-specs-sync-manager.php';
@@ -81,7 +64,11 @@ require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-pcstudio-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-theitdepot-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-amazon-adapter.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/vendors/class-configurable-vendor-adapter.php';
-require_once HWSYNC_PLUGIN_DIR . 'admin/class-admin.php';
+
+if ( is_admin() ) {
+	require_once HWSYNC_PLUGIN_DIR . 'admin/class-admin.php';
+}
+
 require_once HWSYNC_PLUGIN_DIR . 'public/class-public.php';
 require_once HWSYNC_PLUGIN_DIR . 'includes/helpers.php';
 
@@ -110,56 +97,36 @@ class HWsync_Plugin {
 	}
 
 	public function activate() {
-		try {
-			\HWsync\Database::create_tables();
-			\HWsync\Database::seed_default_vendors();
-			\HWsync\Cron::schedule_events();
-			if ( function_exists( 'flush_rewrite_rules' ) ) {
-				flush_rewrite_rules();
-			}
-		} catch ( \Throwable $e ) {
-			if ( function_exists( 'error_log' ) ) {
-				error_log( 'HWsync Activation Note: ' . $e->getMessage() );
-			}
-		}
+		\HWsync\Database::create_tables();
+		\HWsync\Database::seed_default_vendors();
+		\HWsync\Cron::schedule_events();
+		flush_rewrite_rules();
 	}
 
 	public function deactivate() {
-		try {
-			\HWsync\Cron::clear_events();
-			if ( function_exists( 'flush_rewrite_rules' ) ) {
-				flush_rewrite_rules();
-			}
-		} catch ( \Throwable $e ) {
-			// Suppress deactivation error
-		}
+		\HWsync\Cron::clear_events();
+		flush_rewrite_rules();
 	}
 
 	public function init() {
-		try {
-			load_plugin_textdomain( 'hwsync', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
+		load_plugin_textdomain( 'hwsync', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
 
-			// Check for DB schema updates on upgrade
-			if ( get_option( 'hwsync_db_version' ) !== \HWsync\Database::DB_VERSION ) {
-				\HWsync\Database::create_tables();
-				\HWsync\Database::seed_default_vendors();
-			}
-
-			// Init public shortcodes & styles
-			\HWsync\Public_Handler::init();
-
-			// Init admin dashboard
-			if ( is_admin() ) {
-				\HWsync\Admin::init();
-			}
-
-			// Init cron runners
-			\HWsync\Cron::init();
-		} catch ( \Throwable $e ) {
-			if ( function_exists( 'error_log' ) ) {
-				error_log( 'HWsync Init Note: ' . $e->getMessage() );
-			}
+		// Check for DB schema updates on upgrade
+		if ( get_option( 'hwsync_db_version' ) !== \HWsync\Database::DB_VERSION ) {
+			\HWsync\Database::create_tables();
+			\HWsync\Database::seed_default_vendors();
 		}
+
+		// Init public shortcodes & styles
+		\HWsync\Public_Handler::init();
+
+		// Init admin dashboard
+		if ( is_admin() ) {
+			\HWsync\Admin::init();
+		}
+
+		// Init cron runners
+		\HWsync\Cron::init();
 	}
 }
 

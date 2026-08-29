@@ -6,7 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class Database {
-	const DB_VERSION = '1.0.3';
+	const DB_VERSION = '1.0.2';
 
 	public static function get_table_name( $name ) {
 		global $wpdb;
@@ -121,27 +121,23 @@ class Database {
 		}
 
 		// Ensure columns exist on existing databases and modify column constraints
-		try {
-			$existing_cols = $wpdb->get_col( "DESC {$vendors_table}" );
-			if ( ! empty( $existing_cols ) ) {
-				// Ensure adapter_class is nullable with default empty string
-				$wpdb->query( "ALTER TABLE {$vendors_table} MODIFY COLUMN adapter_class varchar(128) NULL DEFAULT ''" );
-				if ( ! in_array( 'sync_method', $existing_cols ) ) {
-					$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN sync_method varchar(64) NOT NULL DEFAULT 'curl_html' AFTER adapter_class" );
-				}
-				if ( ! in_array( 'config_json', $existing_cols ) ) {
-					$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN config_json longtext DEFAULT NULL AFTER sync_method" );
-				}
+		$existing_cols = $wpdb->get_col( "DESC {$vendors_table}" );
+		if ( ! empty( $existing_cols ) ) {
+			// Ensure adapter_class is nullable with default empty string
+			$wpdb->query( "ALTER TABLE {$vendors_table} MODIFY COLUMN adapter_class varchar(128) NULL DEFAULT ''" );
+			if ( ! in_array( 'sync_method', $existing_cols ) ) {
+				$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN sync_method varchar(64) NOT NULL DEFAULT 'curl_html' AFTER adapter_class" );
 			}
+			if ( ! in_array( 'config_json', $existing_cols ) ) {
+				$wpdb->query( "ALTER TABLE {$vendors_table} ADD COLUMN config_json longtext DEFAULT NULL AFTER sync_method" );
+			}
+		}
 
-			$existing_comp_cols = $wpdb->get_col( "DESC {$components_table}" );
-			if ( ! empty( $existing_comp_cols ) ) {
-				if ( ! in_array( 'image_url', $existing_comp_cols ) ) {
-					$wpdb->query( "ALTER TABLE {$components_table} ADD COLUMN image_url varchar(500) DEFAULT NULL AFTER specs_json" );
-				}
+		$existing_comp_cols = $wpdb->get_col( "DESC {$components_table}" );
+		if ( ! empty( $existing_comp_cols ) ) {
+			if ( ! in_array( 'image_url', $existing_comp_cols ) ) {
+				$wpdb->query( "ALTER TABLE {$components_table} ADD COLUMN image_url varchar(500) DEFAULT NULL AFTER specs_json" );
 			}
-		} catch ( \Throwable $e ) {
-			// Non-critical alteration error
 		}
 
 		update_option( 'hwsync_db_version', self::DB_VERSION );
@@ -211,13 +207,9 @@ class Database {
 		);
 
 		foreach ( $default_vendors as $vendor ) {
-			try {
-				$exists = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE vendor_slug = %s", $vendor['vendor_slug'] ) );
-				if ( ! $exists ) {
-					$wpdb->insert( $table, $vendor );
-				}
-			} catch ( \Throwable $e ) {
-				// Suppress insert error on duplicate
+			$exists = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE vendor_slug = %s", $vendor['vendor_slug'] ) );
+			if ( ! $exists ) {
+				$wpdb->insert( $table, $vendor );
 			}
 		}
 	}
