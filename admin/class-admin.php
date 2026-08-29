@@ -310,166 +310,6 @@ class Admin {
 					}
 				}
 
-				// Amazon CSV Modal Controller
-				var modalAmazonCsv = document.getElementById('modal-amazon-csv');
-				var btnOpenAmazonCsv = document.getElementById('btn-open-amazon-csv');
-				var btnCloseAmazonCsv = document.getElementById('btn-close-amazon-csv-modal');
-				var btnDoneAmazonCsv = document.getElementById('btn-done-amazon-csv');
-				var formImportAmazonCsv = document.getElementById('form-import-amazon-csv');
-				var btnSubmitAmazonCsv = document.getElementById('btn-submit-amazon-csv');
-				var amazonCsvAlert = document.getElementById('amazon-csv-alert-box');
-
-				if (btnOpenAmazonCsv && modalAmazonCsv) {
-					btnOpenAmazonCsv.addEventListener('click', function() {
-						amazonCsvAlert.style.display = 'none';
-						document.getElementById('amazon-csv-file-input').value = '';
-						modalAmazonCsv.style.display = 'flex';
-					});
-
-					function closeAmazonCsvModal() {
-						modalAmazonCsv.style.display = 'none';
-					}
-
-					if (btnCloseAmazonCsv) btnCloseAmazonCsv.addEventListener('click', closeAmazonCsvModal);
-					if (btnDoneAmazonCsv) btnDoneAmazonCsv.addEventListener('click', function() {
-						closeAmazonCsvModal();
-						window.location.reload();
-					});
-
-					if (formImportAmazonCsv) {
-						formImportAmazonCsv.addEventListener('submit', function(e) {
-							e.preventDefault();
-							var fileInput = document.getElementById('amazon-csv-file-input');
-							if (!fileInput.files || fileInput.files.length === 0) {
-								alert('Please select a CSV file to upload.');
-								return;
-							}
-
-							btnSubmitAmazonCsv.disabled = true;
-							btnSubmitAmazonCsv.innerHTML = '<span class="dashicons dashicons-update spin"></span> Updating...';
-							amazonCsvAlert.style.display = 'block';
-							amazonCsvAlert.style.background = '#eff6ff';
-							amazonCsvAlert.style.color = '#1e40af';
-							amazonCsvAlert.style.border = '1px solid #bfdbfe';
-							amazonCsvAlert.innerHTML = 'Uploading and processing Amazon product links...';
-
-							var formData = new FormData();
-							formData.append('action', 'hwsync_import_amazon_csv');
-							formData.append('hwsync_nonce', nonce);
-							formData.append('csv_file', fileInput.files[0]);
-
-							fetch(ajaxurl, {
-								method: 'POST',
-								body: formData
-							})
-							.then(function(res) { return res.json(); })
-							.then(function(data) {
-								btnSubmitAmazonCsv.disabled = false;
-								btnSubmitAmazonCsv.innerHTML = '<span class="dashicons dashicons-saved"></span> Upload & Update Links';
-
-								if (data.success) {
-									amazonCsvAlert.style.background = '#f0fdf4';
-									amazonCsvAlert.style.color = '#15803d';
-									amazonCsvAlert.style.border = '1px solid #bbf7d0';
-									amazonCsvAlert.innerHTML = '<strong>Success!</strong> ' + (data.data.message || 'Updated Amazon product links successfully.');
-								} else {
-									amazonCsvAlert.style.background = '#fef2f2';
-									amazonCsvAlert.style.color = '#b91c1c';
-									amazonCsvAlert.style.border = '1px solid #fecaca';
-									amazonCsvAlert.innerHTML = '<strong>Error:</strong> ' + (data.data ? data.data.message : 'Failed to import CSV file.');
-								}
-							})
-							.catch(function(err) {
-								btnSubmitAmazonCsv.disabled = false;
-								btnSubmitAmazonCsv.innerHTML = '<span class="dashicons dashicons-saved"></span> Upload & Update Links';
-								amazonCsvAlert.style.background = '#fef2f2';
-								amazonCsvAlert.style.color = '#b91c1c';
-								amazonCsvAlert.style.border = '1px solid #fecaca';
-								amazonCsvAlert.innerHTML = '<strong>Network Error:</strong> ' + err.message;
-							});
-						});
-					}
-				}
-
-				// Vendor Deletion Handlers
-				if (btnDeleteSelectedVendor) {
-					btnDeleteSelectedVendor.addEventListener('click', function() {
-						if (selectedComps.length === 0) return;
-						var vName = btnDeleteSelectedVendor.getAttribute('data-vendor-name') || currentVendorFilter;
-						var conf = confirm('Are you sure you want to delete price listings from ' + vName + ' for the ' + selectedComps.length + ' selected component(s)?\n\nComponents with other stores will update their lowest price, and orphan components will be cleaned up.');
-						if (!conf) return;
-
-						btnDeleteSelectedVendor.disabled = true;
-						btnDeleteSelectedVendor.innerHTML = '<span class="dashicons dashicons-update spin"></span> Deleting...';
-
-						var compIds = selectedComps.map(function(c) { return c.id; });
-						var formData = new URLSearchParams();
-						formData.append('action', 'hwsync_delete_vendor_records');
-						formData.append('hwsync_nonce', nonce);
-						formData.append('vendor_slug', currentVendorFilter);
-						compIds.forEach(function(id) { formData.append('component_ids[]', id); });
-
-						fetch(ajaxurl, {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-							body: formData.toString()
-						})
-						.then(function(res) { return res.json(); })
-						.then(function(data) {
-							if (data.success) {
-								alert(data.data.message || 'Vendor records deleted successfully.');
-								window.location.reload();
-							} else {
-								alert('Error: ' + (data.data ? data.data.message : 'Failed to delete vendor records.'));
-								btnDeleteSelectedVendor.disabled = false;
-								btnDeleteSelectedVendor.innerHTML = '<span class="dashicons dashicons-trash"></span> Delete Selected';
-							}
-						})
-						.catch(function(err) {
-							alert('Network error: ' + err.message);
-							btnDeleteSelectedVendor.disabled = false;
-							btnDeleteSelectedVendor.innerHTML = '<span class="dashicons dashicons-trash"></span> Delete Selected';
-						});
-					});
-				}
-
-				if (btnDeleteAllVendor) {
-					btnDeleteAllVendor.addEventListener('click', function() {
-						var vName = btnDeleteAllVendor.getAttribute('data-vendor-name') || currentVendorFilter;
-						var conf = confirm('⚠️ WARNING: Are you sure you want to delete ALL price listings from ' + vName + ' across the database?\n\nThis will remove all listings for this vendor, recalculate lowest prices for components with remaining stores, and clean up components that only belonged to ' + vName + '.\n\nAre you sure you want to proceed?');
-						if (!conf) return;
-
-						btnDeleteAllVendor.disabled = true;
-						btnDeleteAllVendor.innerHTML = '<span class="dashicons dashicons-update spin"></span> Deleting All...';
-
-						var formData = new URLSearchParams();
-						formData.append('action', 'hwsync_delete_vendor_records');
-						formData.append('hwsync_nonce', nonce);
-						formData.append('vendor_slug', currentVendorFilter);
-
-						fetch(ajaxurl, {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-							body: formData.toString()
-						})
-						.then(function(res) { return res.json(); })
-						.then(function(data) {
-							if (data.success) {
-								alert(data.data.message || 'All vendor records deleted successfully.');
-								window.location.reload();
-							} else {
-								alert('Error: ' + (data.data ? data.data.message : 'Failed to delete vendor records.'));
-								btnDeleteAllVendor.disabled = false;
-								btnDeleteAllVendor.innerHTML = '<span class="dashicons dashicons-warning"></span> Delete All';
-							}
-						})
-						.catch(function(err) {
-							alert('Network error: ' + err.message);
-							btnDeleteAllVendor.disabled = false;
-							btnDeleteAllVendor.innerHTML = '<span class="dashicons dashicons-warning"></span> Delete All';
-						});
-					});
-				}
 
 				function escapeHtml(text) {
 					if (typeof text !== 'string') return text;
@@ -3020,6 +2860,173 @@ class Admin {
 						editSpecsAlert.textContent = 'Network error: ' + err.message;
 					});
 				});
+
+				// Amazon CSV Modal Controller
+				var modalAmazonCsv = document.getElementById('modal-amazon-csv');
+				var btnOpenAmazonCsv = document.getElementById('btn-open-amazon-csv');
+				var btnCloseAmazonCsv = document.getElementById('btn-close-amazon-csv-modal');
+				var btnDoneAmazonCsv = document.getElementById('btn-done-amazon-csv');
+				var formImportAmazonCsv = document.getElementById('form-import-amazon-csv');
+				var btnSubmitAmazonCsv = document.getElementById('btn-submit-amazon-csv');
+				var amazonCsvAlert = document.getElementById('amazon-csv-alert-box');
+
+				if (btnOpenAmazonCsv && modalAmazonCsv) {
+					btnOpenAmazonCsv.addEventListener('click', function() {
+						if (amazonCsvAlert) amazonCsvAlert.style.display = 'none';
+						var fileInp = document.getElementById('amazon-csv-file-input');
+						if (fileInp) fileInp.value = '';
+						modalAmazonCsv.style.display = 'flex';
+					});
+
+					function closeAmazonCsvModal() {
+						modalAmazonCsv.style.display = 'none';
+					}
+
+					if (btnCloseAmazonCsv) btnCloseAmazonCsv.addEventListener('click', closeAmazonCsvModal);
+					if (btnDoneAmazonCsv) btnDoneAmazonCsv.addEventListener('click', function() {
+						closeAmazonCsvModal();
+						window.location.reload();
+					});
+
+					if (formImportAmazonCsv) {
+						formImportAmazonCsv.addEventListener('submit', function(e) {
+							e.preventDefault();
+							var fileInput = document.getElementById('amazon-csv-file-input');
+							if (!fileInput.files || fileInput.files.length === 0) {
+								alert('Please select a CSV file to upload.');
+								return;
+							}
+
+							btnSubmitAmazonCsv.disabled = true;
+							btnSubmitAmazonCsv.innerHTML = '<span class="dashicons dashicons-update spin"></span> Updating...';
+							if (amazonCsvAlert) {
+								amazonCsvAlert.style.display = 'block';
+								amazonCsvAlert.style.background = '#eff6ff';
+								amazonCsvAlert.style.color = '#1e40af';
+								amazonCsvAlert.style.border = '1px solid #bfdbfe';
+								amazonCsvAlert.innerHTML = 'Uploading and processing Amazon product links...';
+							}
+
+							var formData = new FormData();
+							formData.append('action', 'hwsync_import_amazon_csv');
+							formData.append('hwsync_nonce', nonce);
+							formData.append('csv_file', fileInput.files[0]);
+
+							fetch(ajaxurl, {
+								method: 'POST',
+								body: formData
+							})
+							.then(function(res) { return res.json(); })
+							.then(function(data) {
+								btnSubmitAmazonCsv.disabled = false;
+								btnSubmitAmazonCsv.innerHTML = '<span class="dashicons dashicons-saved"></span> Upload & Update Links';
+
+								if (data.success) {
+									amazonCsvAlert.style.background = '#f0fdf4';
+									amazonCsvAlert.style.color = '#15803d';
+									amazonCsvAlert.style.border = '1px solid #bbf7d0';
+									amazonCsvAlert.innerHTML = '<strong>Success!</strong> ' + (data.data.message || 'Updated Amazon product links successfully.');
+								} else {
+									amazonCsvAlert.style.background = '#fef2f2';
+									amazonCsvAlert.style.color = '#b91c1c';
+									amazonCsvAlert.style.border = '1px solid #fecaca';
+									amazonCsvAlert.innerHTML = '<strong>Error:</strong> ' + (data.data ? data.data.message : 'Failed to import CSV file.');
+								}
+							})
+							.catch(function(err) {
+								btnSubmitAmazonCsv.disabled = false;
+								btnSubmitAmazonCsv.innerHTML = '<span class="dashicons dashicons-saved"></span> Upload & Update Links';
+								amazonCsvAlert.style.background = '#fef2f2';
+								amazonCsvAlert.style.color = '#b91c1c';
+								amazonCsvAlert.style.border = '1px solid #fecaca';
+								amazonCsvAlert.innerHTML = '<strong>Network Error:</strong> ' + err.message;
+							});
+						});
+					}
+				}
+
+				// Vendor Deletion Handlers
+				if (btnDeleteSelectedVendor) {
+					btnDeleteSelectedVendor.addEventListener('click', function() {
+						if (selectedComps.length === 0) {
+							alert('Please select at least one component using the checkboxes.');
+							return;
+						}
+						var vName = btnDeleteSelectedVendor.getAttribute('data-vendor-name') || currentVendorFilter;
+						var conf = confirm('Are you sure you want to delete price listings from ' + vName + ' for the ' + selectedComps.length + ' selected component(s)?\n\nComponents with other stores will update their lowest price, and orphan components will be cleaned up.');
+						if (!conf) return;
+
+						btnDeleteSelectedVendor.disabled = true;
+						btnDeleteSelectedVendor.innerHTML = '<span class="dashicons dashicons-update spin"></span> Deleting...';
+
+						var compIds = selectedComps.map(function(c) { return c.id; });
+						var formData = new URLSearchParams();
+						formData.append('action', 'hwsync_delete_vendor_records');
+						formData.append('hwsync_nonce', nonce);
+						formData.append('vendor_slug', currentVendorFilter);
+						compIds.forEach(function(id) { formData.append('component_ids[]', id); });
+
+						fetch(ajaxurl, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+							body: formData.toString()
+						})
+						.then(function(res) { return res.json(); })
+						.then(function(data) {
+							if (data.success) {
+								alert(data.data.message || 'Vendor records deleted successfully.');
+								window.location.reload();
+							} else {
+								alert('Error: ' + (data.data ? data.data.message : 'Failed to delete vendor records.'));
+								btnDeleteSelectedVendor.disabled = false;
+								btnDeleteSelectedVendor.innerHTML = '<span class="dashicons dashicons-trash"></span> Delete Selected';
+							}
+						})
+						.catch(function(err) {
+							alert('Network error: ' + err.message);
+							btnDeleteSelectedVendor.disabled = false;
+							btnDeleteSelectedVendor.innerHTML = '<span class="dashicons dashicons-trash"></span> Delete Selected';
+						});
+					});
+				}
+
+				if (btnDeleteAllVendor) {
+					btnDeleteAllVendor.addEventListener('click', function() {
+						var vName = btnDeleteAllVendor.getAttribute('data-vendor-name') || currentVendorFilter;
+						var conf = confirm('⚠️ WARNING: Are you sure you want to delete ALL price listings from ' + vName + ' across the entire database?\n\nThis will remove all listings for this vendor, recalculate lowest prices for components with remaining stores, and clean up components that only belonged to ' + vName + '.\n\nAre you sure you want to proceed?');
+						if (!conf) return;
+
+						btnDeleteAllVendor.disabled = true;
+						btnDeleteAllVendor.innerHTML = '<span class="dashicons dashicons-update spin"></span> Deleting All...';
+
+						var formData = new URLSearchParams();
+						formData.append('action', 'hwsync_delete_vendor_records');
+						formData.append('hwsync_nonce', nonce);
+						formData.append('vendor_slug', currentVendorFilter);
+
+						fetch(ajaxurl, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+							body: formData.toString()
+						})
+						.then(function(res) { return res.json(); })
+						.then(function(data) {
+							if (data.success) {
+								alert(data.data.message || 'All vendor records deleted successfully.');
+								window.location.reload();
+							} else {
+								alert('Error: ' + (data.data ? data.data.message : 'Failed to delete vendor records.'));
+								btnDeleteAllVendor.disabled = false;
+								btnDeleteAllVendor.innerHTML = '<span class="dashicons dashicons-warning"></span> Delete All';
+							}
+						})
+						.catch(function(err) {
+							alert('Network error: ' + err.message);
+							btnDeleteAllVendor.disabled = false;
+							btnDeleteAllVendor.innerHTML = '<span class="dashicons dashicons-warning"></span> Delete All';
+						});
+					});
+				}
 
 				function escapeHtml(text) {
 					if (typeof text !== 'string') return text;
