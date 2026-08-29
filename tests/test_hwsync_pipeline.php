@@ -136,6 +136,16 @@ if ( ! function_exists( 'esc_url' ) ) {
 		return filter_var( $url, FILTER_SANITIZE_URL );
 	}
 }
+if ( ! function_exists( 'esc_url_raw' ) ) {
+	function esc_url_raw( $url ) {
+		return filter_var( $url, FILTER_SANITIZE_URL );
+	}
+}
+if ( ! function_exists( 'wp_unslash' ) ) {
+	function wp_unslash( $val ) {
+		return is_string( $val ) ? stripslashes( $val ) : $val;
+	}
+}
 
 if ( ! function_exists( 'wp_trim_words' ) ) {
 	function wp_trim_words( $text, $num_words = 55, $more = null ) {
