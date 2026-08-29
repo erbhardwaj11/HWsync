@@ -493,13 +493,13 @@ echo "=============================================\n\n";
 $passed = 0;
 $failed = 0;
 
-function assert_test( $name, $condition ) {
+function assert_test( $name, $condition, $details = '' ) {
 	global $passed, $failed;
 	if ( $condition ) {
 		echo " [PASS] {$name}\n";
 		$passed++;
 	} else {
-		echo " [FAIL] {$name}\n";
+		echo " [FAIL] {$name}" . ( $details ? " (Details: {$details})" : '' ) . "\n";
 		$failed++;
 	}
 }
