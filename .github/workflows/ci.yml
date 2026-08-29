@@ -29,7 +29,7 @@ jobs:
 
       - name: Check PHP Syntax (lint)
         run: |
-          find . -name "*.php" ! -path "./vendor/*" -print0 | xargs -0 -n 1 -P 4 php -l
+          find . -name "*.php" ! -path "./vendor/*" ! -path "./.git/*" -exec php -l {} +
 
       - name: Run Test Suite
         run: |
