@@ -435,6 +435,38 @@ class MockWPDB {
 				}
 			}
 		}
+		if ( preg_match( '/SELECT\s+image_url\s+FROM\s+(\w+)\s+WHERE\s+(.+)/i', $query, $m ) ) {
+			$tbl = $m[1];
+			$cond = $m[2];
+			if ( ! empty( $this->tables[ $tbl ] ) ) {
+				preg_match( '/id\s*!=\s*(\d+)/i', $cond, $excl_m );
+				$excl_id = $excl_m ? $excl_m[1] : null;
+
+				preg_match( '/mpn\s*=\s*\'([^\']+)\'/i', $cond, $mpn_m );
+				$mpn_val = $mpn_m ? $mpn_m[1] : null;
+
+				preg_match( '/brand\s*=\s*\'([^\']+)\'/i', $cond, $brand_m );
+				$brand_val = $brand_m ? $brand_m[1] : null;
+
+				preg_match( '/model_name\s*=\s*\'([^\']+)\'/i', $cond, $model_m );
+				$model_val = $model_m ? $model_m[1] : null;
+
+				foreach ( $this->tables[ $tbl ] as $r ) {
+					if ( $excl_id && (string)$r['id'] === (string)$excl_id ) {
+						continue;
+					}
+					if ( empty( $r['image_url'] ) || strpos( $r['image_url'], '/uploads/' ) === false ) {
+						continue;
+					}
+					if ( $mpn_val && ! empty( $r['mpn'] ) && strcasecmp( $r['mpn'], $mpn_val ) === 0 ) {
+						return $r['image_url'];
+					}
+					if ( $brand_val && $model_val && isset( $r['brand'], $r['model_name'] ) && strcasecmp( $r['brand'], $brand_val ) === 0 && strcasecmp( $r['model_name'], $model_val ) === 0 ) {
+						return $r['image_url'];
+					}
+				}
+			}
+		}
 		if ( preg_match( '/SELECT\s+(?:pm\.)?post_id\s+FROM/i', $query ) ) {
 			if ( preg_match( '/meta_value\s*=\s*(\d+)/i', $query, $m ) ) {
 				$cid = $m[1];
