@@ -857,6 +857,29 @@ class Specs_Sync_Manager {
 	}
 
 	/**
+	 * Get missing specification keys for a component according to its category schema.
+	 *
+	 * @param array $specs
+	 * @param string $category
+	 * @return array List of missing attribute names
+	 */
+	public static function get_missing_specs( $specs, $category ) {
+		$cat = self::normalize_category_slug( $category );
+		$allowed = isset( self::$allowed_specs_by_category[ $cat ] ) ? self::$allowed_specs_by_category[ $cat ] : array();
+		if ( empty( $allowed ) ) {
+			return array();
+		}
+
+		$missing = array();
+		foreach ( $allowed as $key ) {
+			if ( ! isset( $specs[ $key ] ) || trim( (string) $specs[ $key ] ) === '' ) {
+				$missing[] = $key;
+			}
+		}
+		return $missing;
+	}
+
+	/**
 	 * Check if a component's specifications are complete according to its category schema.
 	 *
 	 * @param array $specs
@@ -868,23 +891,8 @@ class Specs_Sync_Manager {
 			return false;
 		}
 
-		$cat = self::normalize_category_slug( $category );
-		$core_list = isset( self::$core_specs_by_category[ $cat ] ) ? self::$core_specs_by_category[ $cat ] : array();
-
-		if ( empty( $core_list ) ) {
-			return count( $specs ) >= 3;
-		}
-
-		$present_count = 0;
-		foreach ( $core_list as $core_key ) {
-			if ( isset( $specs[ $core_key ] ) && $specs[ $core_key ] !== '' ) {
-				$present_count++;
-			}
-		}
-
-		// Complete if at least 70% of core schema attributes are filled, or at least 5 attributes
-		$threshold = max( 2, intval( ceil( count( $core_list ) * 0.7 ) ) );
-		return ( $present_count >= $threshold || count( $specs ) >= count( $core_list ) );
+		$missing = self::get_missing_specs( $specs, $category );
+		return empty( $missing );
 	}
 
 	/**
@@ -1075,16 +1083,17 @@ class Specs_Sync_Manager {
 
 		foreach ( $components_raw as $c_row ) {
 			$component = new Component( $c_row );
-			$existing_specs = $component->get_specs();
+			$existing_specs = $component->get_specs() ?: array();
 
-			// Skip if already completely populated and not forcing re-sync
-			if ( ! $force && self::is_specs_complete( $existing_specs, $component->category ) ) {
+			// Skip if already completely populated with all category specs and not forcing re-sync
+			$missing_keys = self::get_missing_specs( $existing_specs, $component->category );
+			if ( empty( $missing_keys ) && ! $force ) {
 				$report['skipped']++;
-				$this->emit( $logger, 'info', "[SKIPPED] Component #{$component->id} [{$component->brand} {$component->model_name}] already has complete specifications." );
+				$this->emit( $logger, 'info', "[SKIPPED] Component #{$component->id} [{$component->brand} {$component->model_name}] already has all specifications." );
 				continue;
 			}
 
-			$this->emit( $logger, 'info', "Syncing specs for Component #{$component->id}: [{$component->brand} {$component->model_name}] ({$component->category})..." );
+			$this->emit( $logger, 'info', "Syncing specs for Component #{$component->id}: [{$component->brand} {$component->model_name}] ({$component->category}). Missing " . count( $missing_keys ) . " specs..." );
 
 			$prices = $component->get_prices();
 			if ( empty( $prices ) ) {
@@ -1092,40 +1101,50 @@ class Specs_Sync_Manager {
 				continue;
 			}
 
-			$clean_specs = array();
 			$collected_text = $component->brand . ' ' . $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
+			$current_specs = $existing_specs;
 
-			// Multi-vendor aggregation: query all vendor listings until complete
+			// Multi-vendor cascading sync: scan vendor 1; if complete, stop; else scan next vendor only for missing specs
 			foreach ( $prices as $p ) {
 				if ( empty( $p->product_url ) ) {
 					continue;
 				}
 
+				$missing_keys = self::get_missing_specs( $current_specs, $component->category );
+				if ( empty( $missing_keys ) ) {
+					$this->emit( $logger, 'debug', "All required specifications gathered. Skipping remaining vendor stores." );
+					break;
+				}
+
 				$vendor = Vendor::find_by_id( $p->vendor_id );
+				$vendor_name = $vendor ? $vendor->vendor_name : 'Retailer';
 				$vendor_slug = $vendor ? $vendor->vendor_slug : '';
 
 				$fetched_specs = $this->fetch_specs_from_product_url( $p->product_url, $vendor_slug, $component->category );
 				if ( ! empty( $fetched_specs ) ) {
+					$clean_fetched = self::merge_and_clean_specs( $component->category, $fetched_specs, array(), $collected_text );
 					$new_attrs = 0;
-					foreach ( $fetched_specs as $fk => $fv ) {
-						if ( ! isset( $clean_specs[ $fk ] ) || $clean_specs[ $fk ] === '' ) {
-							$clean_specs[ $fk ] = $fv;
+
+					foreach ( $missing_keys as $m_key ) {
+						if ( isset( $clean_fetched[ $m_key ] ) && trim( (string) $clean_fetched[ $m_key ] ) !== '' ) {
+							$current_specs[ $m_key ] = $clean_fetched[ $m_key ];
 							$new_attrs++;
 						}
 					}
-					$this->emit( $logger, 'info', "Extracted " . count( $fetched_specs ) . " specs ({$new_attrs} new/missing) from " . ( $vendor ? $vendor->vendor_name : 'retailer' ) . " product page." );
+
+					$this->emit( $logger, 'info', "Extracted " . count( $fetched_specs ) . " raw specs ({$new_attrs} missing attributes filled) from {$vendor_name}." );
 				}
 
-				// Check if full specification coverage has been attained
-				$interim_merged = self::merge_and_clean_specs( $component->category, $clean_specs, $existing_specs, $collected_text );
-				if ( self::is_specs_complete( $interim_merged, $component->category ) ) {
-					$this->emit( $logger, 'debug', "All required category specifications gathered across vendor sources." );
+				// Re-check missing keys after this vendor
+				$missing_keys = self::get_missing_specs( $current_specs, $component->category );
+				if ( empty( $missing_keys ) ) {
+					$this->emit( $logger, 'success', "All specifications now fully obtained from {$vendor_name}." );
 					break;
 				}
 			}
 
-			// Clean, normalize, deduplicate and merge specs according to exact category schema
-			$merged_specs = self::merge_and_clean_specs( $component->category, $clean_specs, $existing_specs, $collected_text );
+			// Clean, normalize and merge specs
+			$merged_specs = self::merge_and_clean_specs( $component->category, $current_specs, array(), $collected_text );
 
 			if ( ! empty( $merged_specs ) ) {
 				$component->specs_json = $merged_specs;
@@ -1175,52 +1194,67 @@ class Specs_Sync_Manager {
 
 		foreach ( $components_raw as $c_row ) {
 			$component = new Component( $c_row );
-			$existing_specs = $component->get_specs();
+			$existing_specs = $component->get_specs() ?: array();
 
 			// Skip if already complete and not force re-syncing
-			if ( ! $force && self::is_specs_complete( $existing_specs, $component->category ) ) {
+			$missing_keys = self::get_missing_specs( $existing_specs, $component->category );
+			if ( empty( $missing_keys ) && ! $force ) {
 				$skipped++;
 				$logs[] = array(
 					'level'   => 'info',
-					'message' => "[SKIPPED] Component #{$component->id} [{$component->brand} {$component->model_name}] already has complete specifications.",
+					'message' => "[SKIPPED] Component #{$component->id} [{$component->brand} {$component->model_name}] already has all specifications.",
 				);
 				continue;
 			}
 
 			$prices = $component->get_prices();
-			$clean_specs = array();
 			$collected_text = $component->brand . ' ' . $component->model_name . ' ' . ( $component->mpn ?: '' ) . ' ' . ( $component->sku ?: '' );
+			$current_specs = $existing_specs;
 
-			// Multi-vendor aggregation
+			// Multi-vendor cascading sync
 			foreach ( $prices as $p ) {
 				if ( empty( $p->product_url ) ) {
 					continue;
 				}
+
+				$missing_keys = self::get_missing_specs( $current_specs, $component->category );
+				if ( empty( $missing_keys ) ) {
+					break;
+				}
+
 				$vendor = Vendor::find_by_id( $p->vendor_id );
+				$vendor_name = $vendor ? $vendor->vendor_name : 'Retailer';
 				$vendor_slug = $vendor ? $vendor->vendor_slug : '';
 
 				$fetched = $this->fetch_specs_from_product_url( $p->product_url, $vendor_slug, $component->category );
 				if ( ! empty( $fetched ) ) {
+					$clean_fetched = self::merge_and_clean_specs( $component->category, $fetched, array(), $collected_text );
 					$new_count = 0;
-					foreach ( $fetched as $fk => $fv ) {
-						if ( ! isset( $clean_specs[ $fk ] ) || $clean_specs[ $fk ] === '' ) {
-							$clean_specs[ $fk ] = $fv;
+
+					foreach ( $missing_keys as $m_key ) {
+						if ( isset( $clean_fetched[ $m_key ] ) && trim( (string) $clean_fetched[ $m_key ] ) !== '' ) {
+							$current_specs[ $m_key ] = $clean_fetched[ $m_key ];
 							$new_count++;
 						}
 					}
+
 					$logs[] = array(
 						'level'   => 'match',
-						'message' => "[{$component->brand} {$component->model_name}] Extracted " . count( $fetched ) . " specs ({$new_count} new/missing) from " . ( $vendor ? $vendor->vendor_name : 'vendor' ) . " product page.",
+						'message' => "[{$component->brand} {$component->model_name}] Extracted " . count( $fetched ) . " specs ({$new_count} missing attributes filled) from {$vendor_name}.",
 					);
 				}
 
-				$interim_merged = self::merge_and_clean_specs( $component->category, $clean_specs, $existing_specs, $collected_text );
-				if ( self::is_specs_complete( $interim_merged, $component->category ) ) {
+				$missing_keys = self::get_missing_specs( $current_specs, $component->category );
+				if ( empty( $missing_keys ) ) {
+					$logs[] = array(
+						'level'   => 'success',
+						'message' => "[{$component->brand} {$component->model_name}] All specifications fully obtained. Done!",
+					);
 					break;
 				}
 			}
 
-			$merged_specs = self::merge_and_clean_specs( $component->category, $clean_specs, $existing_specs, $collected_text );
+			$merged_specs = self::merge_and_clean_specs( $component->category, $current_specs, array(), $collected_text );
 
 			if ( ! empty( $merged_specs ) ) {
 				$component->specs_json = $merged_specs;

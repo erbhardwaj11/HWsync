@@ -2064,35 +2064,24 @@ class Admin {
 						</div>
 
 						<div id="edit-specs-content" style="display: none;">
-							<div style="margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+							<div style="margin-bottom: 14px;">
 								<p style="margin: 0; font-size: 13px; color: #475569; line-height: 1.4;">
-									<?php esc_html_e( 'Review and edit technical specifications. Delete incorrect entries, edit values, or add new specification attributes.', 'hwsync' ); ?>
+									<?php esc_html_e( 'Standard fixed specification attributes for this component. Update or enter specification values below.', 'hwsync' ); ?>
 								</p>
-								<button type="button" id="btn-add-spec-row" class="button" style="border-color: #2563eb; color: #2563eb; font-size: 12px; font-weight: 600; background: #eff6ff; display: inline-flex; align-items: center; gap: 4px; border-radius: 6px;">
-									<span class="dashicons dashicons-plus-alt2" style="font-size: 14px; width: 14px; height: 14px; margin-top: 1px;"></span> <?php esc_html_e( 'Add Attribute', 'hwsync' ); ?>
-								</button>
 							</div>
 
-							<div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-bottom: 16px; background: #fff;">
+							<div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-bottom: 16px; background: #fff; max-height: 52vh; overflow-y: auto;">
 								<table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
 									<thead>
-										<tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #334155; font-weight: 600;">
-											<th style="padding: 10px 12px; width: 42%;"><?php esc_html_e( 'Specification Attribute (Key)', 'hwsync' ); ?></th>
-											<th style="padding: 10px 12px; width: 48%;"><?php esc_html_e( 'Specification Value', 'hwsync' ); ?></th>
-											<th style="padding: 10px 12px; width: 10%; text-align: center;"><?php esc_html_e( 'Remove', 'hwsync' ); ?></th>
+										<tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #334155; font-weight: 600; position: sticky; top: 0; z-index: 1;">
+											<th style="padding: 10px 14px; width: 40%;"><?php esc_html_e( 'Specification Attribute', 'hwsync' ); ?></th>
+											<th style="padding: 10px 14px; width: 60%;"><?php esc_html_e( 'Specification Value', 'hwsync' ); ?></th>
 										</tr>
 									</thead>
 									<tbody id="edit-specs-tbody">
-										<!-- Dynamic Rows -->
+										<!-- Fixed Category Attribute Rows -->
 									</tbody>
 								</table>
-							</div>
-
-							<div id="edit-specs-suggestions-box" style="margin-bottom: 16px; background: #f8fafc; padding: 12px 14px; border-radius: 8px; border: 1px dashed #cbd5e1;">
-								<small style="font-weight: 700; color: #475569; display: block; margin-bottom: 8px;"><?php esc_html_e( 'Suggested attributes for this category (click to add):', 'hwsync' ); ?></small>
-								<div id="edit-specs-pills" style="display: flex; gap: 6px; flex-wrap: wrap;">
-									<!-- Dynamic Category Pills -->
-								</div>
 							</div>
 
 							<div id="edit-specs-alert-box" style="display: none; padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; font-weight: 600;"></div>
@@ -2678,13 +2667,12 @@ class Admin {
 				var modalEditSpecs = document.getElementById('modal-edit-specs');
 				var editSpecsTbody = document.getElementById('edit-specs-tbody');
 				var editSpecsAlert = document.getElementById('edit-specs-alert-box');
-				var editSpecsPills = document.getElementById('edit-specs-pills');
 				var editSpecsLoading = document.getElementById('edit-specs-loading');
 				var editSpecsContent = document.getElementById('edit-specs-content');
 				var currentEditCompId = null;
 				var currentEditCompCat = '';
 
-				var catSpecSuggestions = {
+				var catFixedSpecs = {
 					'gpu': ['GPU Name', 'Architecture', 'Shading Units', 'TMUs', 'ROPs', 'Compute Units', 'Matrix Cores', 'RT Cores', 'Base Clock', 'Game Clock', 'Boost Clock', 'Memory Clock', 'Memory Size', 'Memory Type', 'Memory Bus', 'Bandwidth', 'Slot Width', 'TDP', 'Suggested PSU', 'Outputs', 'Power Connectors'],
 					'cpu': ['Socket', 'Frequency', 'Turbo Clock', 'Number of Cores', 'Number of Threads', 'Integrated Graphics', 'Codename', 'Generation', 'Memory Support', 'Rated Speed', 'Memory Bus', 'Memory Bandwidth', 'TDP', 'PPT', 'ECC Memory', 'PCI-Express', 'Chipsets', 'Cache L1', 'Cache L2', 'Cache L3', 'Features'],
 					'motherboard': ['Platform', 'Socket', 'Cpu Type', 'Chipset', 'Memory Speed', 'Max Memory Support', 'Supported Memory Type', 'Channel Supported', 'Memory Feature', 'Graphics Port', 'Expansion Slots', 'Back Panel I/O Ports', 'Internal I/O Connector', 'Form Factor', 'Warranty'],
@@ -2695,29 +2683,18 @@ class Admin {
 					'storage': ['Category', 'Series', 'Capacity', 'Form Factor', 'NVMe', 'Interface', 'Write Speed', 'Read Speed', 'TBW', 'Warranty']
 				};
 
-				function createSpecRow(key, val) {
+				function createFixedSpecRow(key, val) {
 					var tr = document.createElement('tr');
 					tr.style.borderBottom = '1px solid #f1f5f9';
 
 					tr.innerHTML = 
-						'<td style="padding: 6px 10px;">' +
-							'<input type="text" class="spec-input-key" value="' + escapeHtml(key || '') + '" placeholder="e.g. CPU Socket Type" style="width: 100%; height: 32px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 0 8px; font-size: 13px;" />' +
+						'<td style="padding: 10px 14px; font-weight: 600; color: #1e293b; background: #fafafa; border-right: 1px solid #f1f5f9;">' +
+							'<input type="hidden" class="spec-input-key" value="' + escapeHtml(key || '') + '" />' +
+							escapeHtml(key || '') +
 						'</td>' +
-						'<td style="padding: 6px 10px;">' +
-							'<input type="text" class="spec-input-val" value="' + escapeHtml(val || '') + '" placeholder="e.g. LGA1700" style="width: 100%; height: 32px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 0 8px; font-size: 13px;" />' +
-						'</td>' +
-						'<td style="padding: 6px 10px; text-align: center;">' +
-							'<button type="button" class="button btn-remove-spec-row" style="color: #dc2626; border-color: #fecaca; background: #fff; padding: 0 6px; height: 30px; border-radius: 4px;" title="Remove this attribute">' +
-								'<span class="dashicons dashicons-trash" style="margin-top: 4px; font-size: 15px; width: 15px; height: 15px;"></span>' +
-							'</button>' +
+						'<td style="padding: 6px 14px;">' +
+							'<input type="text" class="spec-input-val" value="' + escapeHtml(val || '') + '" placeholder="Enter ' + escapeHtml(key || '') + ' value..." style="width: 100%; height: 34px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 0 10px; font-size: 13px;" />' +
 						'</td>';
-
-					tr.querySelector('.btn-remove-spec-row').addEventListener('click', function() {
-						tr.remove();
-						if (editSpecsTbody.children.length === 0) {
-							createSpecRow('', '');
-						}
-					});
 
 					editSpecsTbody.appendChild(tr);
 					return tr;
@@ -2728,10 +2705,10 @@ class Admin {
 					editBtn.addEventListener('click', function() {
 						var compId = this.getAttribute('data-id');
 						var compName = this.getAttribute('data-name');
-						var compCat = this.getAttribute('data-category') || '';
+						var compCat = (this.getAttribute('data-category') || '').toLowerCase();
 
 						currentEditCompId = compId;
-						currentEditCompCat = compCat.toLowerCase();
+						currentEditCompCat = compCat;
 
 						document.getElementById('modal-edit-specs-title').textContent = compName;
 						document.getElementById('modal-edit-specs-cat').textContent = compCat;
@@ -2741,40 +2718,7 @@ class Admin {
 						editSpecsLoading.style.display = 'block';
 						editSpecsContent.style.display = 'none';
 						editSpecsTbody.innerHTML = '';
-						editSpecsPills.innerHTML = '';
 						modalEditSpecs.style.display = 'flex';
-
-						// Render suggested pills
-						var suggestions = catSpecSuggestions[currentEditCompCat] || ['CPU Socket Type', 'Chipset', 'VRAM Size', 'Memory Types', 'Total Cores', 'Warranty'];
-						suggestions.forEach(function(sKey) {
-							var pill = document.createElement('button');
-							pill.type = 'button';
-							pill.className = 'button';
-							pill.style.fontSize = '11px';
-							pill.style.padding = '1px 8px';
-							pill.style.height = '24px';
-							pill.style.borderRadius = '12px';
-							pill.style.background = '#fff';
-							pill.style.borderColor = '#cbd5e1';
-							pill.textContent = '+ ' + sKey;
-
-							pill.addEventListener('click', function() {
-								var existingInputs = editSpecsTbody.querySelectorAll('.spec-input-key');
-								var found = false;
-								existingInputs.forEach(function(inp) {
-									if (inp.value.trim().toLowerCase() === sKey.toLowerCase()) {
-										found = true;
-										inp.focus();
-									}
-								});
-								if (!found) {
-									var newRow = createSpecRow(sKey, '');
-									var valInp = newRow.querySelector('.spec-input-val');
-									if (valInp) valInp.focus();
-								}
-							});
-							editSpecsPills.appendChild(pill);
-						});
 
 						// Fetch specs via AJAX
 						var postData = new URLSearchParams();
@@ -2792,27 +2736,30 @@ class Admin {
 							editSpecsLoading.style.display = 'none';
 							editSpecsContent.style.display = 'block';
 
-							if (json.success && json.data && json.data.specs && json.data.specs.length > 0) {
-								json.data.specs.forEach(function(item) {
-									createSpecRow(item.key, item.value);
+							var allowedList = (json.data && json.data.allowed_specs && json.data.allowed_specs.length > 0)
+								? json.data.allowed_specs
+								: (catFixedSpecs[currentEditCompCat] || []);
+
+							var existingMap = (json.data && json.data.specs_map) ? json.data.specs_map : {};
+
+							if (allowedList.length > 0) {
+								allowedList.forEach(function(sKey) {
+									var curVal = existingMap[sKey] || '';
+									createFixedSpecRow(sKey, curVal);
 								});
 							} else {
-								createSpecRow('', '');
-								createSpecRow('', '');
+								createFixedSpecRow('Model', existingMap['Model'] || '');
+								createFixedSpecRow('Specifications', existingMap['Specifications'] || '');
 							}
 						}).catch(function(err) {
 							editSpecsLoading.style.display = 'none';
 							editSpecsContent.style.display = 'block';
-							createSpecRow('', '');
+							var fallbackList = catFixedSpecs[currentEditCompCat] || [];
+							fallbackList.forEach(function(sKey) {
+								createFixedSpecRow(sKey, '');
+							});
 						});
 					});
-				});
-
-				// Add Spec Row Button
-				document.getElementById('btn-add-spec-row').addEventListener('click', function() {
-					var row = createSpecRow('', '');
-					var keyInp = row.querySelector('.spec-input-key');
-					if (keyInp) keyInp.focus();
 				});
 
 				// Close / Cancel Edit Specs Modal
@@ -2870,7 +2817,7 @@ class Admin {
 						} else {
 							editSpecsAlert.style.display = 'block';
 							editSpecsAlert.style.background = '#fee2e2';
-							editSpecsAlert.style.color = '#dc2626';
+							editSpecsAlert.style.color = '#b91c1c';
 							editSpecsAlert.textContent = (json.data && json.data.message) ? json.data.message : 'Error saving specifications.';
 						}
 					}).catch(function(err) {
@@ -2878,8 +2825,8 @@ class Admin {
 						saveBtn.innerHTML = '<span class="dashicons dashicons-saved"></span> <?php esc_html_e( "Save Specifications", "hwsync" ); ?>';
 						editSpecsAlert.style.display = 'block';
 						editSpecsAlert.style.background = '#fee2e2';
-						editSpecsAlert.style.color = '#dc2626';
-						editSpecsAlert.textContent = 'Network error: ' + err.message;
+						editSpecsAlert.style.color = '#b91c1c';
+						editSpecsAlert.textContent = 'Network or server error while saving specifications.';
 					});
 				});
 
@@ -3700,25 +3647,16 @@ class Admin {
 			wp_send_json_error( array( 'message' => __( 'Component not found.', 'hwsync' ) ) );
 		}
 
-		$specs = $comp->get_specs();
-		$flat_specs = array();
-		if ( is_array( $specs ) ) {
-			foreach ( $specs as $k => $v ) {
-				if ( $k === 'raw_specs_table' || ! is_scalar( $v ) ) {
-					continue;
-				}
-				$flat_specs[] = array(
-					'key'   => (string) $k,
-					'value' => (string) $v,
-				);
-			}
-		}
+		$specs = $comp->get_specs() ?: array();
+		$cat = Specs_Sync_Manager::normalize_category_slug( $comp->category );
+		$allowed = isset( Specs_Sync_Manager::$allowed_specs_by_category[ $cat ] ) ? Specs_Sync_Manager::$allowed_specs_by_category[ $cat ] : array();
 
 		wp_send_json_success( array(
-			'component_id' => $comp->id,
-			'title'        => $comp->brand . ' ' . $comp->model_name,
-			'category'     => $comp->category,
-			'specs'        => $flat_specs,
+			'component_id'  => $comp->id,
+			'title'         => $comp->brand . ' ' . $comp->model_name,
+			'category'      => $comp->category,
+			'allowed_specs' => $allowed,
+			'specs_map'     => (object) $specs,
 		) );
 	}
 

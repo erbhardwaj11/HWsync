@@ -1423,6 +1423,67 @@ assert_test( 'Strict Cabinet Matching isolates Fractal Design Epoch XL from Mesh
 	$is_same_check === false
 ) );
 
+// Test 44: Fixed Category Specs Schema & Cascading Missing Specs Extraction
+$allowed_gpu = \HWsync\Specs_Sync_Manager::$allowed_specs_by_category['gpu'];
+$allowed_cpu = \HWsync\Specs_Sync_Manager::$allowed_specs_by_category['cpu'];
+$allowed_mobo = \HWsync\Specs_Sync_Manager::$allowed_specs_by_category['motherboard'];
+$allowed_cooler = \HWsync\Specs_Sync_Manager::$allowed_specs_by_category['cooler'];
+$allowed_ram = \HWsync\Specs_Sync_Manager::$allowed_specs_by_category['ram'];
+$allowed_psu = \HWsync\Specs_Sync_Manager::$allowed_specs_by_category['psu'];
+$allowed_case = \HWsync\Specs_Sync_Manager::$allowed_specs_by_category['cabinet'];
+$allowed_ssd = \HWsync\Specs_Sync_Manager::$allowed_specs_by_category['storage'];
+
+// Partial CPU specs simulating Vendor A having 5 specs
+$vendor_a_cpu_specs = array(
+	'Socket'           => 'AM5',
+	'Frequency'        => '4.2 GHz',
+	'Turbo Clock'      => '5.0 GHz',
+	'Number of Cores'  => '8',
+	'Number of Threads'=> '16',
+);
+
+$missing_before = \HWsync\Specs_Sync_Manager::get_missing_specs( $vendor_a_cpu_specs, 'cpu' );
+$is_complete_before = \HWsync\Specs_Sync_Manager::is_specs_complete( $vendor_a_cpu_specs, 'cpu' );
+
+// Vendor B supplies additional missing specs
+$vendor_b_cpu_specs = array(
+	'Integrated Graphics' => 'AMD Radeon Graphics',
+	'Codename'            => 'Raphael',
+	'Generation'          => 'Ryzen 7000 Series',
+	'Memory Support'      => 'DDR5',
+	'Rated Speed'         => '5200 MT/s',
+	'Memory Bus'          => '128-bit',
+	'Memory Bandwidth'    => '83.2 GB/s',
+	'TDP'                 => '65W',
+	'PPT'                 => '88W',
+	'ECC Memory'          => 'Yes',
+	'PCI-Express'         => 'PCIe 5.0',
+	'Chipsets'            => 'X670E, X670, B650E, B650, A620',
+	'Cache L1'            => '512 KB',
+	'Cache L2'            => '8 MB',
+	'Cache L3'            => '32 MB',
+	'Features'            => 'Precision Boost 2',
+);
+
+$merged_cpu_specs = array_merge( $vendor_a_cpu_specs, $vendor_b_cpu_specs );
+$missing_after = \HWsync\Specs_Sync_Manager::get_missing_specs( $merged_cpu_specs, 'cpu' );
+$is_complete_after = \HWsync\Specs_Sync_Manager::is_specs_complete( $merged_cpu_specs, 'cpu' );
+
+assert_test( 'Fixed Category Specs Schema and Cascading Multi-Vendor Spec Gathering validates completeness and missing specs', (
+	count( $allowed_gpu ) === 21 &&
+	count( $allowed_cpu ) === 21 &&
+	count( $allowed_mobo ) === 15 &&
+	count( $allowed_cooler ) === 7 &&
+	count( $allowed_ram ) === 12 &&
+	count( $allowed_psu ) === 8 &&
+	count( $allowed_case ) === 16 &&
+	count( $allowed_ssd ) === 10 &&
+	count( $missing_before ) === 16 &&
+	$is_complete_before === false &&
+	empty( $missing_after ) &&
+	$is_complete_after === true
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";
