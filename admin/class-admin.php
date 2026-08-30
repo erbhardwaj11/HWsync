@@ -3705,6 +3705,10 @@ class Admin {
 					update_post_meta( $comp->wp_post_id, '_pcspecs_socket', $clean_specs['Socket'] );
 					update_post_meta( $comp->wp_post_id, '_hwsync_socket', $clean_specs['Socket'] );
 				}
+				if ( ! empty( $clean_specs['Wattage'] ) ) {
+					update_post_meta( $comp->wp_post_id, '_pcspecs_wattage', $clean_specs['Wattage'] );
+					update_post_meta( $comp->wp_post_id, '_hwsync_wattage', $clean_specs['Wattage'] );
+				}
 			} else {
 				delete_post_meta( $comp->wp_post_id, '_pcspecs_specs' );
 				delete_post_meta( $comp->wp_post_id, '_hwsync_specs' );

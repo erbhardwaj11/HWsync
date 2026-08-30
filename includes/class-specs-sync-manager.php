@@ -1099,8 +1099,39 @@ class Specs_Sync_Manager {
 	}
 
 	/**
+	 * Accurately resolves canonical PSU Wattage from product title/model context.
+	 *
+	 * @param string $title
+	 * @return string|null e.g. '750W', '850W', '1000W', '650W'
+	 */
+	public static function resolve_psu_wattage_from_title( $title ) {
+		if ( empty( $title ) || ! is_string( $title ) ) {
+			return null;
+		}
+
+		// 1. Explicit wattage pattern in title (e.g. 750W, 750 Watt, 750 Watts, 750-Watt, 750 WW, 750 WattsW)
+		if ( preg_match( '/(\d{3,4})\s*(?:W|Watt|Watts|WW|WattsW)\b/i', $title, $m ) ) {
+			$w_num = intval( $m[1] );
+			if ( $w_num >= 200 && $w_num <= 3500 ) {
+				return $w_num . 'W';
+			}
+		}
+
+		// 2. Embedded in model code (e.g. RM750e -> 750, A850GL -> 850, MWE650 -> 650, PK550D -> 550)
+		if ( preg_match( '/\b[A-Za-z]*(\d{3,4})[A-Za-z0-9]*\b/', $title, $m ) ) {
+			$w_num = intval( $m[1] );
+			$standard_wattages = array( 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 1000, 1050, 1200, 1250, 1300, 1500, 1550, 1600, 1650, 2000, 3000 );
+			if ( in_array( $w_num, $standard_wattages, true ) ) {
+				return $w_num . 'W';
+			}
+		}
+
+		return null;
+	}
+
+	/**
 	 * Strictly sanitizes and validates an extracted specification value against domain rules,
-	 * rejecting package sizes (e.g. "45.0 mm x 37.5 mm"), scalability codes ("1P"), and garbage.
+	 * rejecting package sizes (e.g. "45.0 mm x 37.5 mm"), scalability codes ("1P"), and duplicate Wattage units ("1250 WW", "450 WattsW").
 	 *
 	 * @param string $key Canonical or raw spec key.
 	 * @param string $val Raw spec value.
@@ -1215,14 +1246,15 @@ class Specs_Sync_Manager {
 			}
 		}
 
-		// 7. Suggested PSU / Wattage
+		// 7. Suggested PSU / Wattage (Strict single 'W' e.g. '450W', '550W', '750W', '1250W', never 'WW' or 'WattsW')
 		if ( in_array( $k_lower, array( 'suggested psu', 'wattage' ), true ) ) {
-			if ( preg_match( '/(\d{3,4})\s*W(?:att)?/i', $v, $m ) ) {
-				return $m[1] . ' W';
+			if ( preg_match( '/(\d{3,4})\s*(?:W(?:att(?:s)?)?|WW|WattsW|W\s*W)?/i', $v, $m ) ) {
+				$w_num = intval( $m[1] );
+				if ( $w_num >= 200 && $w_num <= 3500 ) {
+					return $w_num . 'W';
+				}
 			}
-			if ( preg_match( '/^\d{3,4}$/', $v ) ) {
-				return $v . ' W';
-			}
+			return self::resolve_psu_wattage_from_title( $text_context );
 		}
 
 		// 8. Motherboard Form Factor
@@ -1236,19 +1268,19 @@ class Specs_Sync_Manager {
 	}
 
 	/**
-	 * Scans components in database and fixes any corrupted socket values
-	 * (e.g. "45.0 mm x 37.5 mm" or "1P"), updating both DB specs_json and postmeta.
+	 * Scans components in database and fixes any corrupted socket or wattage values
+	 * (e.g. "45.0 mm x 37.5 mm", "1P", "1250 WW", "450 WattsW"), updating both DB specs_json and postmeta.
 	 *
 	 * @return int Number of components repaired.
 	 */
-	public static function sanitize_database_cpu_sockets() {
+	public static function sanitize_database_spec_values() {
 		global $wpdb;
 		$comp_table = Database::get_table_name( 'components' );
 		if ( empty( $comp_table ) || ! isset( $wpdb ) || ! is_object( $wpdb ) ) {
 			return 0;
 		}
 
-		$rows = $wpdb->get_results( "SELECT * FROM {$comp_table} WHERE category IN ('cpu', 'motherboard', 'cooler')", \ARRAY_A );
+		$rows = $wpdb->get_results( "SELECT * FROM {$comp_table} WHERE category IN ('cpu', 'motherboard', 'cooler', 'psu')", \ARRAY_A );
 		if ( empty( $rows ) ) {
 			return 0;
 		}
@@ -1258,8 +1290,9 @@ class Specs_Sync_Manager {
 			$comp = new Component( $row );
 			$specs = $comp->get_specs() ?: array();
 			$title = trim( $comp->brand . ' ' . $comp->model_name );
-
 			$changed = false;
+
+			// 1. Socket Sanitization
 			if ( isset( $specs['Socket'] ) ) {
 				$cur_sock = (string) $specs['Socket'];
 				$clean_sock = self::sanitize_and_validate_spec_value( 'Socket', $cur_sock, $comp->category, $title );
@@ -1280,6 +1313,28 @@ class Specs_Sync_Manager {
 				}
 			}
 
+			// 2. PSU Wattage Sanitization
+			if ( $comp->category === 'psu' ) {
+				if ( isset( $specs['Wattage'] ) ) {
+					$cur_watt = (string) $specs['Wattage'];
+					$clean_watt = self::sanitize_and_validate_spec_value( 'Wattage', $cur_watt, 'psu', $title );
+					if ( $clean_watt !== $cur_watt ) {
+						if ( ! empty( $clean_watt ) ) {
+							$specs['Wattage'] = $clean_watt;
+						} else {
+							unset( $specs['Wattage'] );
+						}
+						$changed = true;
+					}
+				} else {
+					$inferred_w = self::resolve_psu_wattage_from_title( $title );
+					if ( ! empty( $inferred_w ) ) {
+						$specs['Wattage'] = $inferred_w;
+						$changed = true;
+					}
+				}
+			}
+
 			if ( $changed ) {
 				$comp->specs_json = $specs;
 				$comp->save();
@@ -1291,12 +1346,20 @@ class Specs_Sync_Manager {
 						update_post_meta( $comp->wp_post_id, '_pcspecs_socket', $specs['Socket'] );
 						update_post_meta( $comp->wp_post_id, '_hwsync_socket', $specs['Socket'] );
 					}
+					if ( ! empty( $specs['Wattage'] ) ) {
+						update_post_meta( $comp->wp_post_id, '_pcspecs_wattage', $specs['Wattage'] );
+						update_post_meta( $comp->wp_post_id, '_hwsync_wattage', $specs['Wattage'] );
+					}
 				}
 				$repaired++;
 			}
 		}
 
 		return $repaired;
+	}
+
+	public static function sanitize_database_cpu_sockets() {
+		return self::sanitize_database_spec_values();
 	}
 
 	/**
@@ -1463,6 +1526,16 @@ class Specs_Sync_Manager {
 		$logs = array();
 		$updated = 0;
 		$skipped = 0;
+
+		if ( $offset === 0 ) {
+			$repaired = self::sanitize_database_spec_values();
+			if ( $repaired > 0 ) {
+				$logs[] = array(
+					'level'   => 'info',
+					'message' => "Sanitized & Repaired {$repaired} component specification records (Sockets & Wattages) in database.",
+				);
+			}
+		}
 
 		foreach ( $components_raw as $c_row ) {
 			$component = new Component( $c_row );
@@ -1932,8 +2005,11 @@ class Specs_Sync_Manager {
 				break;
 
 			case 'psu':
-				if ( empty( $merged['Wattage'] ) && preg_match( '/\b(\d{3,4})\s*W(?:att)?\b/i', $text, $m ) ) {
-					$merged['Wattage'] = $m[1] . ' W';
+				if ( empty( $merged['Wattage'] ) ) {
+					$inferred_wattage = self::resolve_psu_wattage_from_title( $text );
+					if ( ! empty( $inferred_wattage ) ) {
+						$merged['Wattage'] = $inferred_wattage;
+					}
 				}
 				if ( empty( $merged['Certification'] ) && preg_match( '/(80\s*Plus\s*(?:Titanium|Platinum|Gold|Silver|Bronze|White|Standard)|80\+?\s*Gold)/i', $text, $m ) ) {
 					$merged['Certification'] = ucwords( $m[1] );

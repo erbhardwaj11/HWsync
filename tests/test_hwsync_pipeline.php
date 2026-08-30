@@ -1566,6 +1566,25 @@ assert_test( 'CPU Socket validation strictly rejects package dimensions (45.0 mm
 	$val_ultra_res === 'LGA1851'
 ) );
 
+// Test 47: PSU Wattage Normalization & Duplicate Unit Rejection (Single 'W' only)
+$watt_1250ww    = \HWsync\Specs_Sync_Manager::sanitize_and_validate_spec_value( 'Wattage', '1250 WW', 'psu', '' );
+$watt_450wattsw = \HWsync\Specs_Sync_Manager::sanitize_and_validate_spec_value( 'Wattage', '450 WattsW', 'psu', '' );
+$watt_550watts  = \HWsync\Specs_Sync_Manager::sanitize_and_validate_spec_value( 'Wattage', '550 Watts', 'psu', '' );
+$watt_750w      = \HWsync\Specs_Sync_Manager::sanitize_and_validate_spec_value( 'Wattage', '750W', 'psu', '' );
+$watt_850pure   = \HWsync\Specs_Sync_Manager::sanitize_and_validate_spec_value( 'Wattage', '850', 'psu', '' );
+$watt_title_inf = \HWsync\Specs_Sync_Manager::resolve_psu_wattage_from_title( 'Corsair RM750e (2023) Fully Modular Low-Noise Power Supply' );
+$watt_msi_inf   = \HWsync\Specs_Sync_Manager::resolve_psu_wattage_from_title( 'MSI MAG A850GL PCIE5 850W 80 Plus Gold Power Supply' );
+
+assert_test( 'PSU Wattage validation strictly standardizes to single "W" (e.g. 450W, 750W, 1250W) and rejects "WW" or "WattsW"', (
+	$watt_1250ww === '1250W' &&
+	$watt_450wattsw === '450W' &&
+	$watt_550watts === '550W' &&
+	$watt_750w === '750W' &&
+	$watt_850pure === '850W' &&
+	$watt_title_inf === '750W' &&
+	$watt_msi_inf === '850W'
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";
