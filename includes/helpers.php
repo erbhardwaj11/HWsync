@@ -15,6 +15,14 @@ if ( ! function_exists( 'pcspecs_get_vendor_prices' ) ) {
 			$id = get_the_ID();
 		}
 
+		if ( ! isset( $wpdb ) || ! is_object( $wpdb ) || ! isset( $wpdb->prefix ) ) {
+			$prices = get_post_meta( $id, '_pcspecs_vendor_prices', true );
+			if ( ! empty( $prices ) && is_array( $prices ) ) {
+				return $prices;
+			}
+			return get_post_meta( $id, '_hwsync_vendor_prices', true ) ?: array();
+		}
+
 		// 1. Direct query from native pcspecs table (wp_pc_vendor_prices)
 		$pc_table = $wpdb->prefix . 'pc_vendor_prices';
 		if ( $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $pc_table ) ) === $pc_table ) {
