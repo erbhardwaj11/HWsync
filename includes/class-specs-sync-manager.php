@@ -1246,8 +1246,18 @@ class Specs_Sync_Manager {
 			}
 		}
 
-		// 7. Suggested PSU / Wattage (Strict single 'W' e.g. '450W', '550W', '750W', '1250W', never 'WW' or 'WattsW')
-		if ( in_array( $k_lower, array( 'suggested psu', 'wattage' ), true ) ) {
+		// 7. Suggested PSU (GPU category: '750 W')
+		if ( $k_lower === 'suggested psu' ) {
+			if ( preg_match( '/(\d{3,4})\s*(?:W(?:att(?:s)?)?|WW|WattsW|W\s*W)?/i', $v, $m ) ) {
+				return $m[1] . ' W';
+			}
+			if ( preg_match( '/^\d{3,4}$/', $v ) ) {
+				return $v . ' W';
+			}
+		}
+
+		// 8. PSU Wattage (Strict single 'W' e.g. '450W', '550W', '750W', '1250W', never 'WW' or 'WattsW')
+		if ( $k_lower === 'wattage' ) {
 			if ( preg_match( '/(\d{3,4})\s*(?:W(?:att(?:s)?)?|WW|WattsW|W\s*W)?/i', $v, $m ) ) {
 				$w_num = intval( $m[1] );
 				if ( $w_num >= 200 && $w_num <= 3500 ) {
@@ -1257,7 +1267,7 @@ class Specs_Sync_Manager {
 			return self::resolve_psu_wattage_from_title( $text_context );
 		}
 
-		// 8. Motherboard Form Factor
+		// 9. Motherboard Form Factor
 		if ( $k_lower === 'form factor' && $cat === 'motherboard' ) {
 			if ( preg_match( '/\b(E-ATX|Extended ATX|ATX|Micro-ATX|Micro ATX|mATX|Mini-ITX|Mini ITX|ITX)\b/i', $v, $m ) ) {
 				return strtoupper( str_replace( ' ', '-', $m[1] ) );
