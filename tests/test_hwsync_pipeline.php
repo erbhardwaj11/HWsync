@@ -1484,6 +1484,35 @@ assert_test( 'Fixed Category Specs Schema and Cascading Multi-Vendor Spec Gather
 	$is_complete_after === true
 ) );
 
+// Test 45: Local-First Image Discovery & Existing Saved Image Association
+$comp_img_sibling = new \HWsync\Models\Component( array(
+	'brand'      => 'ASUS',
+	'model_name' => 'TUF Gaming GeForce RTX 4070 Ti Super 16GB',
+	'category'   => 'gpu',
+	'mpn'        => 'TUF-RTX4070TIS-16G-GAMING',
+	'image_url'  => 'https://example.com/wp-content/uploads/hwsync/asus-tuf-rtx-4070-ti-super.webp',
+) );
+$comp_img_sibling->save();
+
+$comp_img_target = new \HWsync\Models\Component( array(
+	'brand'      => 'ASUS',
+	'model_name' => 'TUF Gaming GeForce RTX 4070 Ti Super 16GB',
+	'category'   => 'gpu',
+	'mpn'        => 'TUF-RTX4070TIS-16G-GAMING',
+	'image_url'  => '',
+) );
+$comp_img_target->save();
+
+$img_sync_mgr = new \HWsync\Image_Sync_Manager();
+$local_match_found = $img_sync_mgr->try_associate_existing_local_image( $comp_img_target );
+
+assert_test( 'Local-First Image Sync finds existing saved photos and creates associations first without remote download', (
+	$local_match_found === true &&
+	! empty( $comp_img_target->image_url ) &&
+	\HWsync\Image_Sync_Manager::is_local_image_url( $comp_img_target->image_url ) &&
+	$comp_img_target->image_url === 'https://example.com/wp-content/uploads/hwsync/asus-tuf-rtx-4070-ti-super.webp'
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

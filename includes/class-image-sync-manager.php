@@ -82,6 +82,204 @@ class Image_Sync_Manager {
 	}
 
 	/**
+	 * Check local sources first to associate an existing saved image to the component
+	 * without performing any remote network requests.
+	 *
+	 * Checks:
+	 * 1. Current component image_url if already local.
+	 * 2. Associated WordPress post featured image thumbnail.
+	 * 3. Local disk files in wp-content/uploads/hwsync/ or wp-content/uploads/.
+	 * 4. WordPress Media Library attachments matching component name / slug / MPN.
+	 * 5. Other canonical components in DB matching same model / MPN with a local image.
+	 *
+	 * @param Component $component Hardware component.
+	 * @param callable|null $logger Progress logger.
+	 * @return bool True if local image was found and associated, false otherwise.
+	 */
+	public function try_associate_existing_local_image( Component $component, $logger = null ) {
+		global $wpdb;
+
+		$comp_name = trim( (string) $component->brand . ' ' . (string) $component->model_name );
+
+		// 1. Current component image_url is already local
+		if ( ! empty( $component->image_url ) && self::is_local_image_url( $component->image_url ) ) {
+			if ( ! empty( $component->wp_post_id ) && function_exists( 'update_post_meta' ) ) {
+				update_post_meta( $component->wp_post_id, '_pcspecs_image_url', $component->image_url );
+				update_post_meta( $component->wp_post_id, '_hwsync_image_url', $component->image_url );
+			}
+			$this->emit( $logger, 'debug', "[LOCAL MATCH] Component #{$component->id} [{$comp_name}] already has local image associated." );
+			return true;
+		}
+
+		// 2. Check if associated WordPress post already has a featured image attachment
+		if ( ! empty( $component->wp_post_id ) && function_exists( 'get_post_thumbnail_id' ) && function_exists( 'wp_get_attachment_url' ) ) {
+			$thumb_id = get_post_thumbnail_id( $component->wp_post_id );
+			if ( $thumb_id ) {
+				$thumb_url = wp_get_attachment_url( $thumb_id );
+				if ( ! empty( $thumb_url ) ) {
+					$component->image_url = $thumb_url;
+					$component->save();
+					if ( function_exists( 'update_post_meta' ) ) {
+						update_post_meta( $component->wp_post_id, '_pcspecs_image_url', $thumb_url );
+						update_post_meta( $component->wp_post_id, '_hwsync_image_url', $thumb_url );
+					}
+					$this->emit( $logger, 'success', "[LOCAL ATTACHED] Associated existing WordPress featured image to [{$comp_name}]." );
+					return true;
+				}
+			}
+		}
+
+		// Generate candidate slugs and filenames based on canonical component name and MPN
+		$brand_name = trim( (string) $component->brand );
+		$model_name = trim( (string) $component->model_name );
+		$mpn        = trim( (string) $component->mpn );
+
+		if ( ! empty( $brand_name ) && stripos( $model_name, $brand_name ) === false ) {
+			$full_name = $brand_name . ' ' . $model_name;
+		} else {
+			$full_name = $model_name ?: ( $brand_name ?: 'component' );
+		}
+
+		$slug1 = function_exists( 'sanitize_title' ) ? sanitize_title( $full_name ) : preg_replace( '/[^a-z0-9]+/i', '-', strtolower( $full_name ) );
+		$slug2 = function_exists( 'sanitize_title' ) ? sanitize_title( $model_name ) : preg_replace( '/[^a-z0-9]+/i', '-', strtolower( $model_name ) );
+		$slug3 = ! empty( $mpn ) ? ( function_exists( 'sanitize_title' ) ? sanitize_title( $mpn ) : preg_replace( '/[^a-z0-9]+/i', '-', strtolower( $mpn ) ) ) : '';
+
+		$candidate_slugs = array_unique( array_filter( array( $slug1, $slug2, $slug3 ) ) );
+		$extensions = array( 'webp', 'jpg', 'png', 'jpeg' );
+
+		// 3. Check Local Disk Files in wp-content/uploads/hwsync/
+		if ( function_exists( 'wp_upload_dir' ) ) {
+			$upload_dir = wp_upload_dir();
+			$hwsync_dir = trailingslashit( $upload_dir['basedir'] ) . 'hwsync';
+			$hwsync_url = trailingslashit( $upload_dir['baseurl'] ) . 'hwsync';
+
+			if ( file_exists( $hwsync_dir ) ) {
+				foreach ( $candidate_slugs as $c_slug ) {
+					foreach ( $extensions as $ext ) {
+						$test_file = $hwsync_dir . '/' . $c_slug . '.' . $ext;
+						if ( file_exists( $test_file ) && filesize( $test_file ) > 100 ) {
+							$local_url = $hwsync_url . '/' . $c_slug . '.' . $ext;
+							$component->image_url = $local_url;
+							$component->save();
+
+							$this->attach_local_file_to_post( $component, $test_file, $local_url, $full_name );
+
+							$this->emit( $logger, 'success', "[LOCAL FILE MATCH] Found saved image '{$c_slug}.{$ext}' on disk -> Associated with [{$comp_name}]." );
+							return true;
+						}
+					}
+				}
+			}
+		}
+
+		// 4. Check WordPress Media Library Attachments
+		if ( isset( $wpdb ) && is_object( $wpdb ) && isset( $wpdb->posts ) ) {
+			foreach ( $candidate_slugs as $c_slug ) {
+				$like_pattern = '%' . $wpdb->esc_like( $c_slug ) . '%';
+				$attach_id = $wpdb->get_var( $wpdb->prepare(
+					"SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment' AND ( post_name = %s OR guid LIKE %s OR post_title LIKE %s ) LIMIT 1",
+					$c_slug,
+					$like_pattern,
+					$like_pattern
+				) );
+
+				if ( $attach_id && function_exists( 'wp_get_attachment_url' ) ) {
+					$attach_url = wp_get_attachment_url( $attach_id );
+					if ( ! empty( $attach_url ) ) {
+						$component->image_url = $attach_url;
+						$component->save();
+
+						if ( ! empty( $component->wp_post_id ) ) {
+							if ( function_exists( 'set_post_thumbnail' ) ) {
+								set_post_thumbnail( $component->wp_post_id, $attach_id );
+							}
+							if ( function_exists( 'update_post_meta' ) ) {
+								update_post_meta( $component->wp_post_id, '_pcspecs_image_url', $attach_url );
+								update_post_meta( $component->wp_post_id, '_hwsync_image_url', $attach_url );
+							}
+						}
+
+						$this->emit( $logger, 'success', "[MEDIA LIBRARY MATCH] Found media attachment #{$attach_id} -> Associated with [{$comp_name}]." );
+						return true;
+					}
+				}
+			}
+
+			// 5. Check Other Canonical Components with same Model or MPN with existing local image
+			$comp_table = Database::get_table_name( 'components' );
+			$where_parts = array();
+			$params = array();
+
+			if ( ! empty( $component->mpn ) ) {
+				$where_parts[] = "mpn = %s";
+				$params[] = $component->mpn;
+			}
+			if ( ! empty( $component->model_name ) ) {
+				$where_parts[] = "( brand = %s AND model_name = %s )";
+				$params[] = $component->brand;
+				$params[] = $component->model_name;
+			}
+
+			if ( ! empty( $where_parts ) ) {
+				$params[] = $component->id;
+				$sql = "SELECT image_url FROM {$comp_table} WHERE (" . implode( ' OR ', $where_parts ) . ") AND image_url LIKE '%/uploads/%' AND id != %d LIMIT 1";
+				$sibling_img = $wpdb->get_var( $wpdb->prepare( $sql, $params ) );
+
+				if ( ! empty( $sibling_img ) && self::is_local_image_url( $sibling_img ) ) {
+					$component->image_url = $sibling_img;
+					$component->save();
+
+					if ( ! empty( $component->wp_post_id ) && function_exists( 'update_post_meta' ) ) {
+						update_post_meta( $component->wp_post_id, '_pcspecs_image_url', $sibling_img );
+						update_post_meta( $component->wp_post_id, '_hwsync_image_url', $sibling_img );
+					}
+
+					$this->emit( $logger, 'success', "[SIBLING MATCH] Found local image from matching component -> Associated with [{$comp_name}]." );
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Attach a local file to WordPress post as thumbnail and postmeta.
+	 */
+	private function attach_local_file_to_post( Component $component, $file_path, $local_url, $title ) {
+		if ( ! empty( $component->wp_post_id ) && function_exists( 'update_post_meta' ) ) {
+			update_post_meta( $component->wp_post_id, '_pcspecs_image_url', $local_url );
+			update_post_meta( $component->wp_post_id, '_hwsync_image_url', $local_url );
+
+			if ( function_exists( 'wp_insert_attachment' ) && file_exists( $file_path ) ) {
+				$ext = pathinfo( $file_path, PATHINFO_EXTENSION );
+				$wp_filetype = function_exists( 'wp_check_filetype' ) ? wp_check_filetype( $file_path, null ) : array( 'type' => 'image/' . $ext );
+				$attachment = array(
+					'post_mime_type' => $wp_filetype['type'] ?: 'image/jpeg',
+					'post_title'     => $title,
+					'post_content'   => '',
+					'post_status'    => 'inherit',
+				);
+
+				$attachment_id = wp_insert_attachment( $attachment, $file_path );
+				if ( ! is_wp_error( $attachment_id ) && $attachment_id > 0 ) {
+					if ( function_exists( 'wp_generate_attachment_metadata' ) ) {
+						try {
+							$attach_data = @wp_generate_attachment_metadata( $attachment_id, $file_path );
+							if ( is_array( $attach_data ) && function_exists( 'wp_update_attachment_metadata' ) ) {
+								wp_update_attachment_metadata( $attachment_id, $attach_data );
+							}
+						} catch ( \Throwable $t ) {}
+					}
+					if ( function_exists( 'set_post_thumbnail' ) ) {
+						set_post_thumbnail( $component->wp_post_id, $attachment_id );
+					}
+				}
+			}
+		}
+	}
+
+	/**
 	 * Run product image synchronization for existing canonical components in DB.
 	 * First performs an internal check: components with local images already saved are skipped,
 	 * and only components without local images are downloaded and saved to disk.
@@ -137,11 +335,13 @@ class Image_Sync_Manager {
 			$component = new Component( $c_row );
 			$comp_name = trim( $component->brand . ' ' . $component->model_name );
 
-			// 2. INTERNAL CHECK: If component already has a local image saved, do NOT download again unless forced
-			if ( ! $force && ! empty( $component->image_url ) && self::is_local_image_url( $component->image_url ) ) {
-				$this->emit( $logger, 'debug', "Component #{$component->id} [{$comp_name}] already has local image. Skipping." );
-				$report['skipped']++;
-				continue;
+			// STEP 1: Check Local First (Existing saved image, local file on disk, Media Library, or Post Thumbnail)
+			if ( ! $force ) {
+				$local_associated = $this->try_associate_existing_local_image( $component, $logger );
+				if ( $local_associated ) {
+					$report['skipped']++;
+					continue;
+				}
 			}
 
 			// Gather linked vendor prices
@@ -154,7 +354,7 @@ class Image_Sync_Manager {
 
 			$image_downloaded = false;
 
-			// 3. FAST PATH: Check if any linked price listing already has image_url in raw_data
+			// STEP 2: FAST PATH - Check if any linked price listing already has image_url in raw_data
 			foreach ( $prices as $p ) {
 				$raw_data = is_array( $p->raw_data_json ) ? $p->raw_data_json : ( json_decode( (string) $p->raw_data_json, true ) ?: array() );
 				$candidate_url = '';
@@ -185,7 +385,7 @@ class Image_Sync_Manager {
 				}
 			}
 
-			// 4. FALLBACK: Visit only the PRIMARY store product page
+			// STEP 3: FALLBACK - Visit primary store product page and extract main photo
 			if ( ! $image_downloaded ) {
 				foreach ( $prices as $p ) {
 					if ( empty( $p->product_url ) ) {
