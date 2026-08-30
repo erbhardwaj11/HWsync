@@ -3686,8 +3686,11 @@ class Admin {
 			$v = trim( $v );
 
 			if ( ! empty( $k ) && ! empty( $v ) ) {
-				$norm_k = Specs_Sync_Manager::normalize_spec_key( $k );
-				$clean_specs[ $norm_k ] = $v;
+				$norm_k = Specs_Sync_Manager::normalize_spec_key( $k, $comp->category );
+				$clean_v = Specs_Sync_Manager::sanitize_and_validate_spec_value( $norm_k, $v, $comp->category, $comp->brand . ' ' . $comp->model_name );
+				if ( ! empty( $clean_v ) ) {
+					$clean_specs[ $norm_k ] = $clean_v;
+				}
 			}
 		}
 
@@ -3698,6 +3701,10 @@ class Admin {
 			if ( ! empty( $clean_specs ) ) {
 				update_post_meta( $comp->wp_post_id, '_pcspecs_specs', $clean_specs );
 				update_post_meta( $comp->wp_post_id, '_hwsync_specs', $clean_specs );
+				if ( ! empty( $clean_specs['Socket'] ) ) {
+					update_post_meta( $comp->wp_post_id, '_pcspecs_socket', $clean_specs['Socket'] );
+					update_post_meta( $comp->wp_post_id, '_hwsync_socket', $clean_specs['Socket'] );
+				}
 			} else {
 				delete_post_meta( $comp->wp_post_id, '_pcspecs_specs' );
 				delete_post_meta( $comp->wp_post_id, '_hwsync_specs' );

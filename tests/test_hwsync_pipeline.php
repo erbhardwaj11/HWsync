@@ -1549,6 +1549,23 @@ assert_test( 'Local-First Image Sync finds existing saved photos and creates ass
 	$comp_img_target->image_url === 'https://example.com/wp-content/uploads/hwsync/asus-tuf-rtx-4070-ti-super.webp'
 ) );
 
+// Test 46: CPU Socket Garbage Value Rejection & Accurate Model Resolution
+$val_dim_rejected = \HWsync\Specs_Sync_Manager::sanitize_and_validate_spec_value( 'Socket', '45.0 mm x 37.5 mm', 'cpu', '' );
+$val_1p_rejected  = \HWsync\Specs_Sync_Manager::sanitize_and_validate_spec_value( 'Socket', '1P', 'cpu', '' );
+$val_12400f_res   = \HWsync\Specs_Sync_Manager::sanitize_and_validate_spec_value( 'Socket', '45.0 mm x 37.5 mm', 'cpu', 'Intel Core i5-12400F Desktop Processor' );
+$val_7800x3d_res  = \HWsync\Specs_Sync_Manager::sanitize_and_validate_spec_value( 'Socket', '1P', 'cpu', 'AMD Ryzen 7 7800X3D Desktop Processor' );
+$val_fclga1700    = \HWsync\Specs_Sync_Manager::sanitize_and_validate_spec_value( 'Socket', 'FCLGA1700', 'cpu', '' );
+$val_ultra_res    = \HWsync\Specs_Sync_Manager::resolve_cpu_socket_from_title( 'Intel Core Ultra 7 265K Processor' );
+
+assert_test( 'CPU Socket validation strictly rejects package dimensions (45.0 mm x 37.5 mm) and scalability codes (1P), resolving canonical sockets', (
+	$val_dim_rejected === null &&
+	$val_1p_rejected === null &&
+	$val_12400f_res === 'LGA1700' &&
+	$val_7800x3d_res === 'AM5' &&
+	$val_fclga1700 === 'LGA1700' &&
+	$val_ultra_res === 'LGA1851'
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

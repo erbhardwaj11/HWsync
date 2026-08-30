@@ -168,7 +168,6 @@ class Specs_Sync_Manager {
 			'socket type'                           => 'Socket',
 			'sockets supported'                     => 'Socket',
 			'socket'                                => 'Socket',
-			'package'                               => 'Socket',
 
 			'processor base frequency'              => 'Frequency',
 			'base clock'                            => 'Frequency',
@@ -1036,6 +1035,271 @@ class Specs_Sync_Manager {
 	}
 
 	/**
+	 * Accurately resolves canonical CPU socket from CPU model title/text context.
+	 *
+	 * @param string $title
+	 * @return string|null e.g. 'LGA1700', 'AM5', 'LGA1851', 'LGA1200', 'AM4', 'sTR5', 'sTRX4', 'LGA1151'
+	 */
+	public static function resolve_cpu_socket_from_title( $title ) {
+		if ( empty( $title ) || ! is_string( $title ) ) {
+			return null;
+		}
+		$t = strtoupper( $title );
+
+		// 1. Explicit socket mentions
+		if ( preg_match( '/\b(AM5|AM4|AM3\+?|LGA\s*1851|LGA\s*1700|LGA\s*1200|LGA\s*1151|LGA\s*2066|LGA\s*1150|LGA\s*1155|sTR5|sTRX4|TR4|SP5|SP3|FCLGA1700|FCLGA1851|FCLGA1200|FCLGA1151)\b/i', $t, $m ) ) {
+			$s = strtoupper( str_replace( ' ', '', $m[1] ) );
+			if ( strpos( $s, 'FCLGA' ) === 0 ) {
+				$s = substr( $s, 2 );
+			}
+			return $s;
+		}
+
+		// 2. Intel Core Ultra 200 series -> LGA1851
+		if ( preg_match( '/\b(?:CORE\s+ULTRA\s+[579]\s+2\d{2}[A-Z0-9]*)\b/i', $t ) ) {
+			return 'LGA1851';
+		}
+
+		// 3. Intel 12th, 13th, 14th Gen -> LGA1700
+		if ( preg_match( '/\b(?:I[3579]-?1[234]\d{3}[A-Z0-9]*|1[234]TH\s*GEN)\b/i', $t ) ) {
+			return 'LGA1700';
+		}
+
+		// 4. Intel 10th, 11th Gen -> LGA1200
+		if ( preg_match( '/\b(?:I[3579]-?1[01]\d{3}[A-Z0-9]*|1[01]TH\s*GEN)\b/i', $t ) ) {
+			return 'LGA1200';
+		}
+
+		// 5. Intel 6th, 7th, 8th, 9th Gen -> LGA1151
+		if ( preg_match( '/\b(?:I[3579]-?[6789]\d{3}[A-Z0-9]*|[6789]TH\s*GEN)\b/i', $t ) ) {
+			return 'LGA1151';
+		}
+
+		// 6. AMD Ryzen 7000, 8000, 9000 series -> AM5
+		if ( preg_match( '/\b(?:RYZEN\s+[3579]\s+[789]\d{3}[A-Z0-9]*|RYZEN\s+AI\s+9\s+\w+)\b/i', $t ) ) {
+			return 'AM5';
+		}
+
+		// 7. AMD Ryzen 1000, 2000, 3000, 4000, 5000 series -> AM4
+		if ( preg_match( '/\b(?:RYZEN\s+[3579]\s+[12345]\d{3}[A-Z0-9]*)\b/i', $t ) ) {
+			return 'AM4';
+		}
+
+		// 8. Threadripper 7000 -> sTR5
+		if ( preg_match( '/\bTHREADRIPPER\s+(?:PRO\s+)?7\d{3}\b/i', $t ) ) {
+			return 'sTR5';
+		}
+
+		// 9. Threadripper 3000 -> sTRX4
+		if ( preg_match( '/\bTHREADRIPPER\s+(?:PRO\s+)?3\d{3}\b/i', $t ) ) {
+			return 'sTRX4';
+		}
+
+		return null;
+	}
+
+	/**
+	 * Strictly sanitizes and validates an extracted specification value against domain rules,
+	 * rejecting package sizes (e.g. "45.0 mm x 37.5 mm"), scalability codes ("1P"), and garbage.
+	 *
+	 * @param string $key Canonical or raw spec key.
+	 * @param string $val Raw spec value.
+	 * @param string $category Hardware category slug.
+	 * @param string $text_context Full title or model context for inference.
+	 * @return string|null Cleaned value or null if garbage/invalid.
+	 */
+	public static function sanitize_and_validate_spec_value( $key, $val, $category = '', $text_context = '' ) {
+		if ( empty( $val ) || ! is_scalar( $val ) ) {
+			return null;
+		}
+		$v = trim( (string) $val );
+		$k_lower = strtolower( trim( (string) $key ) );
+		$v_lower = strtolower( $v );
+		$cat = self::normalize_category_slug( $category );
+
+		// 1. Strict Socket Validation
+		if ( in_array( $k_lower, array( 'socket', 'cpu socket', 'socket support', 'sockets supported' ), true ) ) {
+			// Reject pure dimensions (e.g. "45.0 mm x 37.5 mm", "37.5 x 37.5 mm", "45 x 37.5")
+			if ( preg_match( '/\d+(?:\.\d+)?\s*mm\s*x\s*\d+(?:\.\d+)?\s*mm/i', $v_lower ) ||
+			     preg_match( '/^\d+(?:\.\d+)?\s*x\s*\d+(?:\.\d+)?\s*(?:mm|cm|inch)?$/i', $v_lower ) ) {
+				return self::resolve_cpu_socket_from_title( $text_context );
+			}
+
+			// Reject scalability/packaging codes ("1P", "2P", "1S", "2S", "Single", "Dual", "Box", "Tray", "OEM", "Embedded", "FCBGA...")
+			if ( preg_match( '/^[1248][PS]$/i', $v ) || in_array( $v_lower, array( 'single', 'dual', 'box', 'tray', 'oem', 'w/o cooler', 'with cooler', 'embedded', 'fcbga' ), true ) ) {
+				return self::resolve_cpu_socket_from_title( $text_context );
+			}
+
+			// Extract genuine socket from string (e.g. "FCLGA1700" -> "LGA1700", "Socket AM5 (LGA 1718)" -> "AM5")
+			if ( preg_match( '/\b(AM5|AM4|AM3\+?|LGA\s*1851|LGA\s*1700|LGA\s*1200|LGA\s*1151|LGA\s*2066|LGA\s*1150|LGA\s*1155|sTR5|sTRX4|TR4|SP5|SP3|FCLGA1700|FCLGA1851|FCLGA1200|FCLGA1151)\b/i', $v, $sm ) ) {
+				$s = strtoupper( str_replace( ' ', '', $sm[1] ) );
+				if ( strpos( $s, 'FCLGA' ) === 0 ) {
+					$s = substr( $s, 2 );
+				}
+				return $s;
+			}
+
+			// For coolers supporting multiple sockets (e.g. "LGA1700 / LGA1200 / AM5 / AM4")
+			if ( $cat === 'cooler' && preg_match( '/(LGA|AM\d)/i', $v ) ) {
+				return $v;
+			}
+
+			// Fallback to model context inference
+			return self::resolve_cpu_socket_from_title( $text_context );
+		}
+
+		// 2. Number of Cores
+		if ( $k_lower === 'number of cores' || $k_lower === 'cores' ) {
+			if ( preg_match( '/(\d+)\s*(?:cores?|p-cores?|\(|$)/i', $v, $m ) ) {
+				return $m[1];
+			}
+			if ( preg_match( '/^\d+$/', $v ) ) {
+				return $v;
+			}
+			return null;
+		}
+
+		// 3. Number of Threads
+		if ( $k_lower === 'number of threads' || $k_lower === 'threads' ) {
+			if ( preg_match( '/(\d+)\s*(?:threads?|$)/i', $v, $m ) ) {
+				return $m[1];
+			}
+			if ( preg_match( '/^\d+$/', $v ) ) {
+				return $v;
+			}
+			return null;
+		}
+
+		// 4. Frequency / Turbo Clock
+		if ( in_array( $k_lower, array( 'frequency', 'turbo clock', 'base clock', 'boost clock', 'game clock', 'memory speed' ), true ) ) {
+			if ( preg_match( '/(\d+(?:\.\d+)?)\s*(?:GHz|G)/i', $v, $m ) ) {
+				return $m[1] . ' GHz';
+			}
+			if ( preg_match( '/(\d{3,5})\s*(?:MHz|MT\/s|M)/i', $v, $m ) ) {
+				if ( intval( $m[1] ) >= 1000 && in_array( $k_lower, array( 'frequency', 'turbo clock', 'base clock', 'boost clock', 'game clock' ), true ) ) {
+					$ghz = round( floatval( $m[1] ) / 1000.0, 2 );
+					return $ghz . ' GHz';
+				}
+				return $m[1] . ' MHz';
+			}
+			if ( preg_match( '/^\d+(?:\.\d+)?$/', $v ) ) {
+				return floatval( $v ) < 10.0 ? $v . ' GHz' : $v . ' MHz';
+			}
+			return null;
+		}
+
+		// 5. TDP / PPT
+		if ( in_array( $k_lower, array( 'tdp', 'ppt' ), true ) ) {
+			if ( preg_match( '/(\d+(?:\.\d+)?)\s*W(?:att)?/i', $v, $m ) ) {
+				return $m[1] . ' W';
+			}
+			if ( preg_match( '/^\d+$/', $v ) ) {
+				return $v . ' W';
+			}
+			return null;
+		}
+
+		// 6. Memory Size / Capacity (GPU & RAM & Storage)
+		if ( in_array( $k_lower, array( 'memory size', 'capacity' ), true ) ) {
+			if ( $cat === 'gpu' || $cat === 'ram' ) {
+				if ( preg_match( '/(\d+)\s*(?:GB|G)\b/i', $v, $m ) ) {
+					return $m[1] . ' GB';
+				}
+				if ( preg_match( '/^\d+$/', $v ) ) {
+					return $v . ' GB';
+				}
+			} elseif ( $cat === 'storage' ) {
+				if ( preg_match( '/(\d+)\s*(TB|GB)\b/i', $v, $m ) ) {
+					return $m[1] . ' ' . strtoupper( $m[2] );
+				}
+			}
+		}
+
+		// 7. Suggested PSU / Wattage
+		if ( in_array( $k_lower, array( 'suggested psu', 'wattage' ), true ) ) {
+			if ( preg_match( '/(\d{3,4})\s*W(?:att)?/i', $v, $m ) ) {
+				return $m[1] . ' W';
+			}
+			if ( preg_match( '/^\d{3,4}$/', $v ) ) {
+				return $v . ' W';
+			}
+		}
+
+		// 8. Motherboard Form Factor
+		if ( $k_lower === 'form factor' && $cat === 'motherboard' ) {
+			if ( preg_match( '/\b(E-ATX|Extended ATX|ATX|Micro-ATX|Micro ATX|mATX|Mini-ITX|Mini ITX|ITX)\b/i', $v, $m ) ) {
+				return strtoupper( str_replace( ' ', '-', $m[1] ) );
+			}
+		}
+
+		return $v;
+	}
+
+	/**
+	 * Scans components in database and fixes any corrupted socket values
+	 * (e.g. "45.0 mm x 37.5 mm" or "1P"), updating both DB specs_json and postmeta.
+	 *
+	 * @return int Number of components repaired.
+	 */
+	public static function sanitize_database_cpu_sockets() {
+		global $wpdb;
+		$comp_table = Database::get_table_name( 'components' );
+		if ( empty( $comp_table ) || ! isset( $wpdb ) || ! is_object( $wpdb ) ) {
+			return 0;
+		}
+
+		$rows = $wpdb->get_results( "SELECT * FROM {$comp_table} WHERE category IN ('cpu', 'motherboard', 'cooler')", \ARRAY_A );
+		if ( empty( $rows ) ) {
+			return 0;
+		}
+
+		$repaired = 0;
+		foreach ( $rows as $row ) {
+			$comp = new Component( $row );
+			$specs = $comp->get_specs() ?: array();
+			$title = trim( $comp->brand . ' ' . $comp->model_name );
+
+			$changed = false;
+			if ( isset( $specs['Socket'] ) ) {
+				$cur_sock = (string) $specs['Socket'];
+				$clean_sock = self::sanitize_and_validate_spec_value( 'Socket', $cur_sock, $comp->category, $title );
+
+				if ( $clean_sock !== $cur_sock ) {
+					if ( ! empty( $clean_sock ) ) {
+						$specs['Socket'] = $clean_sock;
+					} else {
+						unset( $specs['Socket'] );
+					}
+					$changed = true;
+				}
+			} elseif ( $comp->category === 'cpu' || $comp->category === 'motherboard' ) {
+				$inferred = self::resolve_cpu_socket_from_title( $title );
+				if ( ! empty( $inferred ) ) {
+					$specs['Socket'] = $inferred;
+					$changed = true;
+				}
+			}
+
+			if ( $changed ) {
+				$comp->specs_json = $specs;
+				$comp->save();
+
+				if ( ! empty( $comp->wp_post_id ) && function_exists( 'update_post_meta' ) ) {
+					update_post_meta( $comp->wp_post_id, '_pcspecs_specs', $specs );
+					update_post_meta( $comp->wp_post_id, '_hwsync_specs', $specs );
+					if ( ! empty( $specs['Socket'] ) ) {
+						update_post_meta( $comp->wp_post_id, '_pcspecs_socket', $specs['Socket'] );
+						update_post_meta( $comp->wp_post_id, '_hwsync_socket', $specs['Socket'] );
+					}
+				}
+				$repaired++;
+			}
+		}
+
+		return $repaired;
+	}
+
+	/**
 	 * Run manual specs synchronization for existing canonical components in DB.
 	 * Visits product pages across ALL linked retailers, aggregates missing specifications,
 	 * skips components that already have complete specifications, and updates posts.
@@ -1055,6 +1319,14 @@ class Specs_Sync_Manager {
 		$force        = ! empty( $options['force'] );
 
 		$this->emit( $logger, 'info', "Starting Technical Specifications Multi-Vendor Aggregator..." );
+
+		// 1. Database Sockets Pre-Sanitization & Repair on Initial Step
+		if ( $offset === 0 ) {
+			$repaired = self::sanitize_database_cpu_sockets();
+			if ( $repaired > 0 ) {
+				$this->emit( $logger, 'info', "Sanitized & Repaired {$repaired} component socket records in database." );
+			}
+		}
 
 		$where_clauses = array( "1=1" );
 		if ( $component_id > 0 ) {
@@ -1543,7 +1815,10 @@ class Specs_Sync_Manager {
 				if ( self::is_valid_spec_pair( $k, $v ) ) {
 					$norm_k = self::normalize_spec_key( $k, $category );
 					if ( empty( $allowed ) || in_array( $norm_k, $allowed, true ) ) {
-						$merged[ $norm_k ] = (string) $v;
+						$clean_v = self::sanitize_and_validate_spec_value( $norm_k, $v, $category, $text_context );
+						if ( ! empty( $clean_v ) ) {
+							$merged[ $norm_k ] = (string) $clean_v;
+						}
 					}
 				}
 			}
@@ -1556,7 +1831,10 @@ class Specs_Sync_Manager {
 					$norm_k = self::normalize_spec_key( $k, $category );
 					if ( empty( $allowed ) || in_array( $norm_k, $allowed, true ) ) {
 						if ( ! isset( $merged[ $norm_k ] ) || empty( $merged[ $norm_k ] ) ) {
-							$merged[ $norm_k ] = (string) $v;
+							$clean_v = self::sanitize_and_validate_spec_value( $norm_k, $v, $category, $text_context );
+							if ( ! empty( $clean_v ) ) {
+								$merged[ $norm_k ] = (string) $clean_v;
+							}
 						}
 					}
 				}
@@ -1568,8 +1846,11 @@ class Specs_Sync_Manager {
 
 		switch ( $cat ) {
 			case 'cpu':
-				if ( empty( $merged['Socket'] ) && preg_match( '/\b(AM5|AM4|LGA1700|LGA1851|LGA1200|LGA1151|sTR5|SP5)\b/i', $text, $m ) ) {
-					$merged['Socket'] = strtoupper( $m[1] );
+				if ( empty( $merged['Socket'] ) ) {
+					$inferred_socket = self::resolve_cpu_socket_from_title( $text );
+					if ( ! empty( $inferred_socket ) ) {
+						$merged['Socket'] = $inferred_socket;
+					}
 				}
 				if ( empty( $merged['Number of Cores'] ) && preg_match( '/\b(\d+)\s*(?:-|\s*)?(?:core|cores)\b/i', $text, $m ) ) {
 					$merged['Number of Cores'] = $m[1];
@@ -1618,8 +1899,11 @@ class Specs_Sync_Manager {
 				break;
 
 			case 'motherboard':
-				if ( empty( $merged['Socket'] ) && preg_match( '/\b(AM5|AM4|LGA1700|LGA1851|LGA1200|LGA1151)\b/i', $text, $m ) ) {
-					$merged['Socket'] = strtoupper( $m[1] );
+				if ( empty( $merged['Socket'] ) ) {
+					$inferred_socket = self::resolve_cpu_socket_from_title( $text );
+					if ( ! empty( $inferred_socket ) ) {
+						$merged['Socket'] = $inferred_socket;
+					}
 				}
 				if ( empty( $merged['Chipset'] ) && preg_match( '/\b(X870E|X870|X670E|X670|B850|B650E|B650|A620|Z890|Z790|Z690|B760|B660|H610)\b/i', $text, $m ) ) {
 					$merged['Chipset'] = strtoupper( $m[1] );
