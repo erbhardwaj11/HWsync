@@ -13,8 +13,10 @@ class Matching_Engine {
 		'AMD', 'Intel', 'NVIDIA', 'ASUS', 'MSI', 'Gigabyte', 'Zotac', 'Inno3D', 'Galax', 'Colorful',
 		'Sapphire', 'PowerColor', 'ASRock', 'Corsair', 'G.Skill', 'Kingston', 'Crucial', 'XPG', 'Adata',
 		'TeamGroup', 'Western Digital', 'WD', 'Samsung', 'Seagate', 'Kioxia',
-		'Deepcool', 'Cooler Master', 'Lian Li', 'NZXT', 'Ant Esports', 'Thermaltake', 'Antec', 'Montech',
-		'Seasonic', 'SilverStone', 'MSI MAG', 'ROG', 'TUF Gaming'
+		'Fractal Design', 'Fractal', 'NZXT', 'Lian Li', 'Phanteks', 'Montech', 'Ant Esports', 'Thermaltake',
+		'Antec', 'Cooler Master', 'Deepcool', 'SilverStone', 'InWin', 'Be Quiet', 'Cougar', 'Gamdias',
+		'Thermalright', 'Arctic', 'Noctua', 'EKWB', 'Seasonic', 'Super Flower', 'FSP', 'EVGA', 'Gainward',
+		'Palit', 'MSI MAG', 'ROG', 'TUF Gaming'
 	);
 
 	/**
@@ -69,11 +71,16 @@ class Matching_Engine {
 				continue;
 			}
 
+			// Strict MPN Conflict Guard: If both have an MPN and they differ, NEVER match
+			if ( ! empty( $mpn ) && ! empty( $candidate->mpn ) && strcasecmp( $mpn, $candidate->mpn ) !== 0 ) {
+				continue;
+			}
+
 			// Validate that Core Hardware IDs match strictly
 			if ( ! empty( $core_hw_id ) ) {
 				$candidate_core_id = self::extract_core_hardware_id( $candidate->model_name, $category );
 				if ( ! empty( $candidate_core_id ) && strcasecmp( $core_hw_id, $candidate_core_id ) !== 0 ) {
-					// Different hardware model (e.g. RTX 5050 vs RTX 4070 or RX 9060 XT vs RX 7900 XTX) -> DO NOT MATCH!
+					// Different hardware model (e.g. Epoch XL vs Meshify 3 XL or RTX 5050 vs RTX 4070) -> DO NOT MATCH!
 					continue;
 				}
 			}
@@ -119,7 +126,7 @@ class Matching_Engine {
 	}
 
 	/**
-	 * Extract critical hardware model identifier (e.g. RTX 5050, RX 9060 XT, Ryzen 7 7800X3D, i7-14700K)
+	 * Extract critical hardware model identifier (e.g. RTX 5050, RX 9060 XT, Ryzen 7 7800X3D, Epoch XL, Meshify 3 XL)
 	 * to prevent cross-model collision during fuzzy matching.
 	 */
 	public static function extract_core_hardware_id( $title, $category ) {
@@ -151,6 +158,17 @@ class Matching_Engine {
 			if ( preg_match( '/\b(\d{3,4})\s*W\b/i', $t, $m ) ) {
 				return $m[1] . 'W';
 			}
+		} elseif ( $cat === 'cabinet' ) {
+			if ( preg_match( '/\b(MESHIFY(?:\s*2|\s*3)?(?:\s*XL|\s*COMPACT|\s*LITE)?|EPOCH(?:\s*XL)?|NORTH(?:\s*XL)?|TORRENT(?:\s*COMPACT|\s*NANO)?|DEFINE\s*\d*(?:\s*XL|\s*MINI)?|POP(?:\s*AIR|\s*SILENT|\s*MINI|\s*XL)?|FOCUS\s*\d*|O11\s*DYNAMIC(?:\s*MINI|\s*EVO|\s*XL)?|LANCOOL\s*(?:205|215|216|III|II|IV|I)(?:\s*MESH|\s*RGB)?|H[579]\s*(?:FLOW|ELITE)?|H510(?:\s*FLOW|\s*ELITE)?|4000D(?:\s*AIRFLOW|\s*RGB)?|5000D(?:\s*AIRFLOW|\s*RGB)?|3000D|6500X|2500X|TD500(?:\s*MESH)?|CH370|CH510|CH560|MACUBE\s*\d+|MATREXX\s*\d+)\b/i', $t, $m ) ) {
+				return preg_replace( '/\s+/', ' ', trim( $m[1] ) );
+			}
+			if ( preg_match( '/\b(FD-C-[A-Z0-9]+-\d+|CC-[0-9]{7}-[A-Z0-9]+|CA-[A-Z0-9-]+)\b/i', $t, $m ) ) {
+				return strtoupper( trim( $m[1] ) );
+			}
+		} elseif ( $cat === 'cooler' ) {
+			if ( preg_match( '/\b(AK400|AK500|AK620|AG400|AG500|AG620|LT520|LT720|LS520|LS720|KRAKEN\s*(?:ELITE\s*)?(?:240|280|360|120)|NAUTILUS\s*(?:240|360)|HYPER\s*212|MASTERLIQUID\s*(?:240|360)|PEERLESS\s*ASSASSIN|PHANTOM\s*SPIRIT|LIQMAX\s*(?:III\s*)?(?:240|360))\b/i', $t, $m ) ) {
+				return preg_replace( '/\s+/', ' ', trim( $m[1] ) );
+			}
 		}
 
 		return null;
@@ -164,6 +182,9 @@ class Matching_Engine {
 				}
 				if ( strcasecmp( $brand, 'ROG' ) === 0 || strcasecmp( $brand, 'TUF Gaming' ) === 0 ) {
 					return 'ASUS';
+				}
+				if ( strcasecmp( $brand, 'Fractal' ) === 0 ) {
+					return 'Fractal Design';
 				}
 				return $brand;
 			}
@@ -195,7 +216,7 @@ class Matching_Engine {
 		if ( preg_match( '/\b(cooler|aio|liquid cooler|air cooler|radiator|heatsink)\b/i', $title_lower ) ) {
 			return 'cooler';
 		}
-		if ( preg_match( '/\b(cabinet|chassis|pc case|mid tower|mini itx case)\b/i', $title_lower ) ) {
+		if ( preg_match( '/\b(cabinet|case|chassis|mid tower|full tower|mini tower)\b/i', $title_lower ) ) {
 			return 'cabinet';
 		}
 
@@ -207,6 +228,27 @@ class Matching_Engine {
 			return $sku;
 		}
 
+		// Fractal Design MPNs (e.g. FD-C-EPO1X-01, FD-C-MES3X-01, FD-C-NOR1X-01)
+		if ( preg_match( '/\b(FD-C-[A-Z0-9]+-\d+)\b/i', $title, $m ) ) {
+			return strtoupper( $m[1] );
+		}
+
+		// Deepcool MPNs (e.g. R-AK620-BKNNMT-G-1)
+		if ( preg_match( '/\b(R-[A-Z0-9]+-[A-Z0-9-]+)\b/i', $title, $m ) ) {
+			return strtoupper( $m[1] );
+		}
+
+		// Lian Li MPNs (e.g. G99.O11DEX.00)
+		if ( preg_match( '/\b(G99\.[A-Z0-9\.]+)\b/i', $title, $m ) ) {
+			return strtoupper( $m[1] );
+		}
+
+		// Corsair MPNs (e.g. CC-9011200-WW, CP-9020263-IN)
+		if ( preg_match( '/\b(CC-[0-9]{7}-[A-Z0-9]+|CP-[0-9]{7}-[A-Z0-9]+)\b/i', $title, $m ) ) {
+			return strtoupper( $m[1] );
+		}
+
+		// General CPU & Hardware MPNs
 		if ( preg_match( '/\b([0-9]{3}-[0-9]{9}[A-Z0-9]{3})\b/i', $title, $m ) ) {
 			return strtoupper( $m[1] );
 		}
@@ -288,8 +330,8 @@ class Matching_Engine {
 		}
 
 		// 2. MPN Match (Manufacturer Part Number)
-		if ( ! empty( $a->mpn ) && ! empty( $b->mpn ) && strcasecmp( $a->mpn, $b->mpn ) === 0 ) {
-			return true;
+		if ( ! empty( $a->mpn ) && ! empty( $b->mpn ) ) {
+			return ( strcasecmp( $a->mpn, $b->mpn ) === 0 );
 		}
 
 		// 3. Normalized SKU Match
@@ -308,7 +350,7 @@ class Matching_Engine {
 
 		if ( ! empty( $core_a ) && ! empty( $core_b ) ) {
 			if ( strcasecmp( $core_a, $core_b ) !== 0 ) {
-				// Different hardware chipsets (e.g. RTX 5050 vs RTX 4070) -> CANNOT MERGE!
+				// Different hardware models (e.g. Epoch XL vs Meshify 3 XL or RTX 5050 vs RTX 4070) -> CANNOT MERGE!
 				return false;
 			}
 			return true;
@@ -347,19 +389,24 @@ class Matching_Engine {
 		}
 
 		similar_text( strtolower( $norm_a ), strtolower( $norm_b ), $percent );
-		if ( $percent >= 85.0 ) {
+		if ( $percent >= 90.0 ) {
 			return true;
 		}
 
 		// 8. Significant Token Overlap Check
-		$stop_words = array( 'with', 'for', 'the', 'and', 'case', 'cabinet', 'chassis', 'fan', 'cooler', 'master', 'gaming', 'edition', 'desktop', 'pc', 'box', 'pack', 'series', 'rgb', 'argb', 'oc' );
+		$stop_words = array(
+			'with', 'for', 'the', 'and', 'case', 'cabinet', 'chassis', 'fan', 'cooler', 'master',
+			'gaming', 'edition', 'desktop', 'pc', 'box', 'pack', 'series', 'rgb', 'argb', 'oc',
+			'black', 'white', 'solid', 'tempered', 'glass', 'tg', 'mid', 'tower', 'full', 'mini',
+			'itx', 'atx', 'matx', 'eatx', 'fd', 'c', '01', '02', '03'
+		);
 		$get_tokens = function( $str, $brand ) use ( $stop_words ) {
 			preg_match_all( '/[a-zA-Z0-9]+/', strtolower( (string)$str ), $m );
 			$words = $m[0] ?? array();
 			$filtered = array();
 			$brand_lower = strtolower( (string) $brand );
 			foreach ( $words as $w ) {
-				if ( ! in_array( $w, $stop_words, true ) && $w !== $brand_lower && strlen( $w ) >= 1 ) {
+				if ( ! in_array( $w, $stop_words, true ) && $w !== $brand_lower && strlen( $w ) >= 2 ) {
 					$filtered[] = $w;
 				}
 			}
@@ -371,7 +418,7 @@ class Matching_Engine {
 		if ( ! empty( $tok_a ) && ! empty( $tok_b ) ) {
 			$intersect = array_intersect( $tok_a, $tok_b );
 			$min_count = min( count( $tok_a ), count( $tok_b ) );
-			if ( $min_count >= 2 && ( count( $intersect ) / $min_count ) >= 0.8 ) {
+			if ( $min_count >= 2 && ( count( $intersect ) / $min_count ) >= 0.85 ) {
 				return true;
 			}
 		}

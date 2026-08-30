@@ -1393,6 +1393,36 @@ assert_test( 'Automated Scheduling configures and registers Cron events for Pric
 	$image_opt === 'twicedaily'
 ) );
 
+// Test 43: Strict Cabinet & Hardware Series Matching Isolation (Epoch XL vs Meshify 3 XL)
+$raw_epoch = array(
+	'title'    => 'FRACTAL DESIGN EPOCH XL BLACK SOLID PC CASE (FD-C-EPO1X-01)',
+	'category' => 'cabinet',
+	'price'    => 18325.0,
+	'sku'      => 'FD-C-EPO1X-01',
+);
+$raw_meshify = array(
+	'title'    => 'Fractal Design Meshify 3 XL Black Solid Mid Tower Case (FD-C-MES3X-01)',
+	'category' => 'cabinet',
+	'price'    => 19499.0,
+	'sku'      => 'FD-C-MES3X-01',
+);
+
+$comp_epoch   = \HWsync\Matching_Engine::match_or_create_component( $raw_epoch );
+$comp_meshify = \HWsync\Matching_Engine::match_or_create_component( $raw_meshify );
+
+$is_same_check = \HWsync\Matching_Engine::is_same_hardware_component( $comp_epoch, $comp_meshify );
+
+assert_test( 'Strict Cabinet Matching isolates Fractal Design Epoch XL from Meshify 3 XL without false-positive pairing', (
+	$comp_epoch !== null &&
+	$comp_meshify !== null &&
+	$comp_epoch->id !== $comp_meshify->id &&
+	$comp_epoch->brand === 'Fractal Design' &&
+	$comp_meshify->brand === 'Fractal Design' &&
+	$comp_epoch->mpn === 'FD-C-EPO1X-01' &&
+	$comp_meshify->mpn === 'FD-C-MES3X-01' &&
+	$is_same_check === false
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";
