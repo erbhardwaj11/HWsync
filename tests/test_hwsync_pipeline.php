@@ -1585,6 +1585,39 @@ assert_test( 'PSU Wattage validation strictly standardizes to single "W" (e.g. 4
 	$watt_msi_inf === '850W'
 ) );
 
+// Test 48: Motherboard Intel vs AMD Chipset & Platform Isolation (H410 LGA1200 vs A520 AM4)
+$raw_h410 = array(
+	'title'    => 'MSI H410M-A PRO Motherboard',
+	'category' => 'motherboard',
+	'price'    => 5100.0,
+	'sku'      => 'H410M-A-PRO',
+);
+$raw_a520 = array(
+	'title'    => 'MSI A520M-A PRO Motherboard',
+	'category' => 'motherboard',
+	'price'    => 5100.0,
+	'sku'      => 'A520M-A-PRO',
+);
+
+$comp_h410 = \HWsync\Matching_Engine::match_or_create_component( $raw_h410 );
+$comp_a520 = \HWsync\Matching_Engine::match_or_create_component( $raw_a520 );
+
+$h410_specs = \HWsync\Specs_Sync_Manager::merge_and_clean_specs( 'motherboard', array(), array(), $comp_h410->brand . ' ' . $comp_h410->model_name );
+$a520_specs = \HWsync\Specs_Sync_Manager::merge_and_clean_specs( 'motherboard', array(), array(), $comp_a520->brand . ' ' . $comp_a520->model_name );
+
+$is_same_mb = \HWsync\Matching_Engine::is_same_hardware_component( $comp_h410, $comp_a520 );
+
+assert_test( 'Motherboard Chipset Isolation strictly separates Intel (H410 LGA1200) from AMD (A520 AM4) without cross-matching', (
+	$comp_h410->id !== $comp_a520->id &&
+	$is_same_mb === false &&
+	isset( $h410_specs['Platform'] ) && $h410_specs['Platform'] === 'Intel' &&
+	isset( $h410_specs['Socket'] ) && $h410_specs['Socket'] === 'LGA1200' &&
+	isset( $h410_specs['Chipset'] ) && $h410_specs['Chipset'] === 'H410' &&
+	isset( $a520_specs['Platform'] ) && $a520_specs['Platform'] === 'AMD' &&
+	isset( $a520_specs['Socket'] ) && $a520_specs['Socket'] === 'AM4' &&
+	isset( $a520_specs['Chipset'] ) && $a520_specs['Chipset'] === 'A520'
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

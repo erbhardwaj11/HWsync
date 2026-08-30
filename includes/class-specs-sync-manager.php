@@ -145,12 +145,95 @@ class Specs_Sync_Manager {
 	);
 
 	/**
+	 * Canonical Motherboard Chipset Map (Platform, Socket, Default Supported Memory).
+	 */
+	public static $motherboard_chipsets = array(
+		// AMD AM5 Chipsets
+		'X870E' => array( 'platform' => 'AMD', 'socket' => 'AM5', 'mem' => 'DDR5' ),
+		'X870'  => array( 'platform' => 'AMD', 'socket' => 'AM5', 'mem' => 'DDR5' ),
+		'X670E' => array( 'platform' => 'AMD', 'socket' => 'AM5', 'mem' => 'DDR5' ),
+		'X670'  => array( 'platform' => 'AMD', 'socket' => 'AM5', 'mem' => 'DDR5' ),
+		'B850'  => array( 'platform' => 'AMD', 'socket' => 'AM5', 'mem' => 'DDR5' ),
+		'B840'  => array( 'platform' => 'AMD', 'socket' => 'AM5', 'mem' => 'DDR5' ),
+		'B650E' => array( 'platform' => 'AMD', 'socket' => 'AM5', 'mem' => 'DDR5' ),
+		'B650'  => array( 'platform' => 'AMD', 'socket' => 'AM5', 'mem' => 'DDR5' ),
+		'A620'  => array( 'platform' => 'AMD', 'socket' => 'AM5', 'mem' => 'DDR5' ),
+
+		// AMD AM4 Chipsets
+		'X570S' => array( 'platform' => 'AMD', 'socket' => 'AM4', 'mem' => 'DDR4' ),
+		'X570'  => array( 'platform' => 'AMD', 'socket' => 'AM4', 'mem' => 'DDR4' ),
+		'B550'  => array( 'platform' => 'AMD', 'socket' => 'AM4', 'mem' => 'DDR4' ),
+		'A520'  => array( 'platform' => 'AMD', 'socket' => 'AM4', 'mem' => 'DDR4' ),
+		'X470'  => array( 'platform' => 'AMD', 'socket' => 'AM4', 'mem' => 'DDR4' ),
+		'B450'  => array( 'platform' => 'AMD', 'socket' => 'AM4', 'mem' => 'DDR4' ),
+		'X370'  => array( 'platform' => 'AMD', 'socket' => 'AM4', 'mem' => 'DDR4' ),
+		'B350'  => array( 'platform' => 'AMD', 'socket' => 'AM4', 'mem' => 'DDR4' ),
+		'A320'  => array( 'platform' => 'AMD', 'socket' => 'AM4', 'mem' => 'DDR4' ),
+
+		// AMD Threadripper
+		'WRX90' => array( 'platform' => 'AMD', 'socket' => 'sTR5', 'mem' => 'DDR5' ),
+		'TRX50' => array( 'platform' => 'AMD', 'socket' => 'sTR5', 'mem' => 'DDR5' ),
+		'WRX80' => array( 'platform' => 'AMD', 'socket' => 'sWRX8', 'mem' => 'DDR4' ),
+		'TRX40' => array( 'platform' => 'AMD', 'socket' => 'sTRX4', 'mem' => 'DDR4' ),
+		'X399'  => array( 'platform' => 'AMD', 'socket' => 'TR4', 'mem' => 'DDR4' ),
+
+		// Intel LGA1851 Chipsets
+		'Z890'  => array( 'platform' => 'Intel', 'socket' => 'LGA1851', 'mem' => 'DDR5' ),
+		'B860'  => array( 'platform' => 'Intel', 'socket' => 'LGA1851', 'mem' => 'DDR5' ),
+		'H810'  => array( 'platform' => 'Intel', 'socket' => 'LGA1851', 'mem' => 'DDR5' ),
+
+		// Intel LGA1700 Chipsets
+		'Z790'  => array( 'platform' => 'Intel', 'socket' => 'LGA1700', 'mem' => '' ),
+		'B760'  => array( 'platform' => 'Intel', 'socket' => 'LGA1700', 'mem' => '' ),
+		'H770'  => array( 'platform' => 'Intel', 'socket' => 'LGA1700', 'mem' => '' ),
+		'Z690'  => array( 'platform' => 'Intel', 'socket' => 'LGA1700', 'mem' => '' ),
+		'B660'  => array( 'platform' => 'Intel', 'socket' => 'LGA1700', 'mem' => '' ),
+		'H670'  => array( 'platform' => 'Intel', 'socket' => 'LGA1700', 'mem' => '' ),
+		'H610'  => array( 'platform' => 'Intel', 'socket' => 'LGA1700', 'mem' => '' ),
+
+		// Intel LGA1200 Chipsets
+		'Z590'  => array( 'platform' => 'Intel', 'socket' => 'LGA1200', 'mem' => 'DDR4' ),
+		'B560'  => array( 'platform' => 'Intel', 'socket' => 'LGA1200', 'mem' => 'DDR4' ),
+		'H570'  => array( 'platform' => 'Intel', 'socket' => 'LGA1200', 'mem' => 'DDR4' ),
+		'H510'  => array( 'platform' => 'Intel', 'socket' => 'LGA1200', 'mem' => 'DDR4' ),
+		'Z490'  => array( 'platform' => 'Intel', 'socket' => 'LGA1200', 'mem' => 'DDR4' ),
+		'B460'  => array( 'platform' => 'Intel', 'socket' => 'LGA1200', 'mem' => 'DDR4' ),
+		'H470'  => array( 'platform' => 'Intel', 'socket' => 'LGA1200', 'mem' => 'DDR4' ),
+		'H410'  => array( 'platform' => 'Intel', 'socket' => 'LGA1200', 'mem' => 'DDR4' ),
+
+		// Intel LGA1151 Chipsets
+		'Z390'  => array( 'platform' => 'Intel', 'socket' => 'LGA1151', 'mem' => 'DDR4' ),
+		'Z370'  => array( 'platform' => 'Intel', 'socket' => 'LGA1151', 'mem' => 'DDR4' ),
+		'B365'  => array( 'platform' => 'Intel', 'socket' => 'LGA1151', 'mem' => 'DDR4' ),
+		'B360'  => array( 'platform' => 'Intel', 'socket' => 'LGA1151', 'mem' => 'DDR4' ),
+		'H370'  => array( 'platform' => 'Intel', 'socket' => 'LGA1151', 'mem' => 'DDR4' ),
+		'H310'  => array( 'platform' => 'Intel', 'socket' => 'LGA1151', 'mem' => 'DDR4' ),
+		'Z270'  => array( 'platform' => 'Intel', 'socket' => 'LGA1151', 'mem' => 'DDR4' ),
+		'H270'  => array( 'platform' => 'Intel', 'socket' => 'LGA1151', 'mem' => 'DDR4' ),
+		'B250'  => array( 'platform' => 'Intel', 'socket' => 'LGA1151', 'mem' => 'DDR4' ),
+		'Z170'  => array( 'platform' => 'Intel', 'socket' => 'LGA1151', 'mem' => 'DDR4' ),
+		'H170'  => array( 'platform' => 'Intel', 'socket' => 'LGA1151', 'mem' => 'DDR4' ),
+		'B150'  => array( 'platform' => 'Intel', 'socket' => 'LGA1151', 'mem' => 'DDR4' ),
+		'H110'  => array( 'platform' => 'Intel', 'socket' => 'LGA1151', 'mem' => 'DDR4' ),
+
+		// Intel LGA2066 / LGA2011-3 / LGA1150
+		'X299'  => array( 'platform' => 'Intel', 'socket' => 'LGA2066', 'mem' => 'DDR4' ),
+		'X99'   => array( 'platform' => 'Intel', 'socket' => 'LGA2011-v3', 'mem' => 'DDR4' ),
+		'Z97'   => array( 'platform' => 'Intel', 'socket' => 'LGA1150', 'mem' => 'DDR3' ),
+		'H97'   => array( 'platform' => 'Intel', 'socket' => 'LGA1150', 'mem' => 'DDR3' ),
+		'Z87'   => array( 'platform' => 'Intel', 'socket' => 'LGA1150', 'mem' => 'DDR3' ),
+		'H87'   => array( 'platform' => 'Intel', 'socket' => 'LGA1150', 'mem' => 'DDR3' ),
+		'B85'   => array( 'platform' => 'Intel', 'socket' => 'LGA1150', 'mem' => 'DDR3' ),
+		'H81'   => array( 'platform' => 'Intel', 'socket' => 'LGA1150', 'mem' => 'DDR3' ),
+	);
+
+	/**
 	 * Core/essential attributes per category for completeness evaluation.
 	 */
 	public static $core_specs_by_category = array(
 		'cpu'         => array( 'Socket', 'Number of Cores', 'Number of Threads', 'Frequency', 'Turbo Clock', 'Cache L3', 'TDP', 'Memory Support' ),
 		'gpu'         => array( 'GPU Name', 'Memory Size', 'Memory Type', 'Memory Bus', 'Suggested PSU', 'TDP' ),
-		'motherboard' => array( 'Socket', 'Chipset', 'Form Factor', 'Supported Memory Type' ),
+		'motherboard' => array( 'Platform', 'Socket', 'Chipset', 'Form Factor', 'Supported Memory Type' ),
 		'cooler'      => array( 'Cooling Type', 'Socket Support', 'Fan Size' ),
 		'ram'         => array( 'Memory Type', 'Capacity', 'Speed', 'Tested Latency' ),
 		'psu'         => array( 'Wattage', 'Certification', 'Modular' ),
@@ -1095,6 +1178,14 @@ class Specs_Sync_Manager {
 			return 'sTRX4';
 		}
 
+		// 10. Motherboard Chipset Context (e.g. H410M -> LGA1200, B650 -> AM5, A520 -> AM4, Z790 -> LGA1700)
+		if ( preg_match( '/\b(X870E|X870|X670E|X670|B850|B840|B650E|B650|A620|X570S|X570|B550|A520|X470|B450|X370|B350|A320|WRX90|TRX50|WRX80|TRX40|X399|Z890|B860|H810|Z790|B760|H770|Z690|B660|H670|H610|Z590|B560|H570|H510|Z490|B460|H470|H410|Z390|Z370|B365|B360|H370|H310|Z270|H270|B250|Z170|H170|B150|H110|X299|X99|Z97|H97|Z87|H87|B85|H81)(?:\b|[MIAE\-])/i', $t, $cm ) ) {
+			$chip = strtoupper( $cm[1] );
+			if ( isset( self::$motherboard_chipsets[ $chip ] ) ) {
+				return self::$motherboard_chipsets[ $chip ]['socket'];
+			}
+		}
+
 		return null;
 	}
 
@@ -1341,6 +1432,53 @@ class Specs_Sync_Manager {
 					if ( ! empty( $inferred_w ) ) {
 						$specs['Wattage'] = $inferred_w;
 						$changed = true;
+					}
+				}
+			}
+
+			// 3. Motherboard Platform, Socket & Chipset Sanitization
+			if ( $comp->category === 'motherboard' ) {
+				$mb_chip = null;
+				if ( preg_match( '/\b(X870E|X870|X670E|X670|B850|B840|B650E|B650|A620|X570S|X570|B550|A520|X470|B450|X370|B350|A320|WRX90|TRX50|WRX80|TRX40|X399|Z890|B860|H810|Z790|B760|H770|Z690|B660|H670|H610|Z590|B560|H570|H510|Z490|B460|H470|H410|Z390|Z370|B365|B360|H370|H310|Z270|H270|B250|Z170|H170|B150|H110|X299|X99|Z97|H97|Z87|H87|B85|H81)(?:\b|[MIAE\-])/i', $title, $cm ) ) {
+					$mb_chip = strtoupper( $cm[1] );
+				}
+
+				if ( $mb_chip && isset( self::$motherboard_chipsets[ $mb_chip ] ) ) {
+					$mb_info = self::$motherboard_chipsets[ $mb_chip ];
+					if ( empty( $specs['Chipset'] ) || $specs['Chipset'] !== $mb_chip ) {
+						$specs['Chipset'] = $mb_chip;
+						$changed = true;
+					}
+					if ( empty( $specs['Platform'] ) || $specs['Platform'] !== $mb_info['platform'] ) {
+						$specs['Platform'] = $mb_info['platform'];
+						$changed = true;
+					}
+					if ( empty( $specs['Socket'] ) || $specs['Socket'] !== $mb_info['socket'] ) {
+						$specs['Socket'] = $mb_info['socket'];
+						$changed = true;
+					}
+					if ( empty( $specs['Cpu Type'] ) ) {
+						$specs['Cpu Type'] = ( $mb_info['platform'] === 'Intel' ) ? 'Intel Core' : 'AMD Ryzen';
+						$changed = true;
+					}
+					if ( ! empty( $mb_info['mem'] ) && empty( $specs['Supported Memory Type'] ) ) {
+						$specs['Supported Memory Type'] = $mb_info['mem'];
+						$changed = true;
+					}
+				}
+
+				// Check for incorrectly merged vendor prices with conflicting chipsets (e.g. A520 price on H410 board)
+				$prices = $comp->get_prices();
+				foreach ( $prices as $p ) {
+					if ( ! empty( $p->vendor_product_title ) && $mb_chip ) {
+						if ( preg_match( '/\b(X870E|X870|X670E|X670|B850|B840|B650E|B650|A620|X570S|X570|B550|A520|X470|B450|X370|B350|A320|WRX90|TRX50|WRX80|TRX40|X399|Z890|B860|H810|Z790|B760|H770|Z690|B660|H670|H610|Z590|B560|H570|H510|Z490|B460|H470|H410|Z390|Z370|B365|B360|H370|H310|Z270|H270|B250|Z170|H170|B150|H110|X299|X99|Z97|H97|Z87|H87|B85|H81)(?:\b|[MIAE\-])/i', $p->vendor_product_title, $vcm ) ) {
+							$v_chip = strtoupper( $vcm[1] );
+							if ( $v_chip !== $mb_chip ) {
+								// Conflicting chipset listing! Automatically unmerge into separate component
+								Matching_Engine::unmerge_vendor_price( $p->id );
+								$changed = true;
+							}
+						}
 					}
 				}
 			}
@@ -2134,14 +2272,35 @@ class Specs_Sync_Manager {
 				break;
 
 			case 'motherboard':
+				$chip_match = null;
+				if ( preg_match( '/\b(X870E|X870|X670E|X670|B850|B840|B650E|B650|A620|X570S|X570|B550|A520|X470|B450|X370|B350|A320|WRX90|TRX50|WRX80|TRX40|X399|Z890|B860|H810|Z790|B760|H770|Z690|B660|H670|H610|Z590|B560|H570|H510|Z490|B460|H470|H410|Z390|Z370|B365|B360|H370|H310|Z270|H270|B250|Z170|H170|B150|H110|X299|X99|Z97|H97|Z87|H87|B85|H81)(?:\b|[MIAE\-])/i', $text, $cm ) ) {
+					$chip_match = strtoupper( $cm[1] );
+					if ( empty( $merged['Chipset'] ) ) {
+						$merged['Chipset'] = $chip_match;
+					}
+				}
+
+				if ( $chip_match && isset( self::$motherboard_chipsets[ $chip_match ] ) ) {
+					$info = self::$motherboard_chipsets[ $chip_match ];
+					if ( empty( $merged['Platform'] ) || ( $merged['Platform'] !== $info['platform'] ) ) {
+						$merged['Platform'] = $info['platform'];
+					}
+					if ( empty( $merged['Socket'] ) ) {
+						$merged['Socket'] = $info['socket'];
+					}
+					if ( empty( $merged['Cpu Type'] ) ) {
+						$merged['Cpu Type'] = ( $info['platform'] === 'Intel' ) ? 'Intel Core' : 'AMD Ryzen';
+					}
+					if ( ! empty( $info['mem'] ) && empty( $merged['Supported Memory Type'] ) ) {
+						$merged['Supported Memory Type'] = $info['mem'];
+					}
+				}
+
 				if ( empty( $merged['Socket'] ) ) {
 					$inferred_socket = self::resolve_cpu_socket_from_title( $text );
 					if ( ! empty( $inferred_socket ) ) {
 						$merged['Socket'] = $inferred_socket;
 					}
-				}
-				if ( empty( $merged['Chipset'] ) && preg_match( '/\b(X870E|X870|X670E|X670|B850|B650E|B650|A620|Z890|Z790|Z690|B760|B660|H610)\b/i', $text, $m ) ) {
-					$merged['Chipset'] = strtoupper( $m[1] );
 				}
 				if ( empty( $merged['Form Factor'] ) && preg_match( '/\b(E-ATX|Extended ATX|ATX|Micro-ATX|Micro ATX|mATX|Mini-ITX|Mini ITX|ITX)\b/i', $text, $m ) ) {
 					$merged['Form Factor'] = strtoupper( str_replace( ' ', '-', $m[1] ) );

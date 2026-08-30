@@ -142,8 +142,8 @@ class Matching_Engine {
 				return preg_replace( '/\s+/', ' ', $m[1] );
 			}
 		} elseif ( $cat === 'motherboard' ) {
-			if ( preg_match( '/\b(X870E|X870|X670E|X670|B850|B650E|B650|A620|Z890|Z790|Z690|B760|B660|H610)\b/i', $t, $m ) ) {
-				return $m[1];
+			if ( preg_match( '/\b(X870E|X870|X670E|X670|B850|B840|B650E|B650|A620|X570S|X570|B550|A520|X470|B450|X370|B350|A320|WRX90|TRX50|WRX80|TRX40|X399|Z890|B860|H810|Z790|B760|H770|Z690|B660|H670|H610|Z590|B560|H570|H510|Z490|B460|H470|H410|Z390|Z370|B365|B360|H370|H310|Z270|H270|B250|Z170|H170|B150|H110|X299|X99|Z97|H97|Z87|H87|B85|H81)(?:\b|[MIAE\-])/i', $t, $m ) ) {
+				return strtoupper( $m[1] );
 			}
 		} elseif ( $cat === 'ram' ) {
 			$cap = preg_match( '/\b(\d+)\s*GB\b/i', $t, $cm ) ? $cm[1] . 'GB' : '';
@@ -301,8 +301,19 @@ class Matching_Engine {
 			$specs['form_factor'] = strtoupper( $m[1] );
 		}
 
-		if ( preg_match( '/\b(AM4|AM5|LGA\s*1700|LGA\s*1851|LGA\s*1200)\b/i', $title, $m ) ) {
+		if ( preg_match( '/\b(AM4|AM5|LGA\s*1851|LGA\s*1700|LGA\s*1200|LGA\s*1151|sTR5|sTRX4)\b/i', $title, $m ) ) {
 			$specs['socket'] = strtoupper( str_replace( ' ', '', $m[1] ) );
+		}
+
+		if ( $category === 'motherboard' || empty( $category ) ) {
+			$mb_chip = self::extract_core_hardware_id( $title, 'motherboard' );
+			if ( ! empty( $mb_chip ) ) {
+				$specs['chipset'] = $mb_chip;
+				if ( isset( Specs_Sync_Manager::$motherboard_chipsets[ $mb_chip ] ) ) {
+					$specs['socket']   = Specs_Sync_Manager::$motherboard_chipsets[ $mb_chip ]['socket'];
+					$specs['platform'] = Specs_Sync_Manager::$motherboard_chipsets[ $mb_chip ]['platform'];
+				}
+			}
 		}
 
 		if ( preg_match( '/\b(\d+)\s*(TB|GB)\b/i', $title, $m ) ) {
@@ -344,16 +355,18 @@ class Matching_Engine {
 			return false;
 		}
 
-		// 5. Core Hardware ID Check
+		// 5. Core Hardware ID Check (e.g. Epoch XL vs Meshify 3 XL, RTX 5050 vs RTX 4070, H410 vs A520)
 		$core_a = self::extract_core_hardware_id( $a->model_name, $a->category );
 		$core_b = self::extract_core_hardware_id( $b->model_name, $b->category );
 
 		if ( ! empty( $core_a ) && ! empty( $core_b ) ) {
 			if ( strcasecmp( $core_a, $core_b ) !== 0 ) {
-				// Different hardware models (e.g. Epoch XL vs Meshify 3 XL or RTX 5050 vs RTX 4070) -> CANNOT MERGE!
+				// Different hardware models -> CANNOT MERGE!
 				return false;
 			}
-			return true;
+		} elseif ( $a->category === 'motherboard' && ( ! empty( $core_a ) || ! empty( $core_b ) ) ) {
+			// One has an identified motherboard chipset and the other doesn't or differs -> CANNOT MERGE!
+			return false;
 		}
 
 		// 6. Check critical hardware specs: Socket / RAM Capacity / SSD Capacity / PSU Wattage
