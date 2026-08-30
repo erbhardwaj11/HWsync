@@ -175,7 +175,8 @@ class Image_Sync_Manager {
 		// 4. Check WordPress Media Library Attachments
 		if ( isset( $wpdb ) && is_object( $wpdb ) && isset( $wpdb->posts ) ) {
 			foreach ( $candidate_slugs as $c_slug ) {
-				$like_pattern = '%' . $wpdb->esc_like( $c_slug ) . '%';
+				$safe_slug = method_exists( $wpdb, 'esc_like' ) ? $wpdb->esc_like( $c_slug ) : addcslashes( (string) $c_slug, '_%\\' );
+				$like_pattern = '%' . $safe_slug . '%';
 				$attach_id = $wpdb->get_var( $wpdb->prepare(
 					"SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment' AND ( post_name = %s OR guid LIKE %s OR post_title LIKE %s ) LIMIT 1",
 					$c_slug,
