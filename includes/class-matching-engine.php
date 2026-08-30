@@ -159,7 +159,7 @@ class Matching_Engine {
 				return $m[1] . 'W';
 			}
 		} elseif ( $cat === 'cabinet' ) {
-			if ( preg_match( '/\b(MESHIFY(?:\s*2|\s*3)?(?:\s*XL|\s*COMPACT|\s*LITE)?|EPOCH(?:\s*XL)?|NORTH(?:\s*XL)?|TORRENT(?:\s*COMPACT|\s*NANO)?|DEFINE\s*\d*(?:\s*XL|\s*MINI)?|POP(?:\s*AIR|\s*SILENT|\s*MINI|\s*XL)?|FOCUS\s*\d*|O11\s*DYNAMIC(?:\s*MINI|\s*EVO|\s*XL)?|LANCOOL\s*(?:205|215|216|III|II|IV|I)(?:\s*MESH|\s*RGB)?|H[579]\s*(?:FLOW|ELITE)?|H510(?:\s*FLOW|\s*ELITE)?|4000D(?:\s*AIRFLOW|\s*RGB)?|5000D(?:\s*AIRFLOW|\s*RGB)?|3000D|6500X|2500X|TD500(?:\s*MESH)?|CH370|CH510|CH560|MACUBE\s*\d+|MATREXX\s*\d+)\b/i', $t, $m ) ) {
+			if ( preg_match( '/\b(MESHIFY(?:\s*2|\s*3)?(?:\s*XL|\s*COMPACT|\s*LITE)?|EPOCH(?:\s*XL)?|NORTH(?:\s*XL)?|TORRENT(?:\s*COMPACT|\s*NANO)?|DEFINE\s*\d*(?:\s*XL|\s*MINI)?|POP(?:\s*AIR|\s*SILENT|\s*MINI|\s*XL)?|FOCUS\s*\d*|O11\s*DYNAMIC(?:\s*MINI|\s*EVO|\s*XL)?|LANCOOL\s*(?:205|215|216|III|II|IV|I)(?:\s*MESH|\s*RGB)?|H[579]\s*(?:FLOW|ELITE)?|H510(?:\s*FLOW|\s*ELITE)?|4000D(?:\s*AIRFLOW|\s*RGB)?|5000D(?:\s*AIRFLOW|\s*RGB)?|3000D|6500X|2500X|TD500(?:\s*MESH)?|CH370|CH510|CH560|MACUBE\s*\d+|MATREXX\s*\d+|SHARK\s*X|SNEAKER\s*X|NR200(?:\s*P)?|Q300L|Q500L|HAF\s*\d+|COSMOS\s*\w+|MASTERBOX\s*\w+|MASTERCASE\s*\w+|SILENCIO\s*\w+)\b/i', $t, $m ) ) {
 				return preg_replace( '/\s+/', ' ', trim( $m[1] ) );
 			}
 			if ( preg_match( '/\b(FD-C-[A-Z0-9]+-\d+|CC-[0-9]{7}-[A-Z0-9]+|CA-[A-Z0-9-]+)\b/i', $t, $m ) ) {
@@ -398,15 +398,17 @@ class Matching_Engine {
 			'with', 'for', 'the', 'and', 'case', 'cabinet', 'chassis', 'fan', 'cooler', 'master',
 			'gaming', 'edition', 'desktop', 'pc', 'box', 'pack', 'series', 'rgb', 'argb', 'oc',
 			'black', 'white', 'solid', 'tempered', 'glass', 'tg', 'mid', 'tower', 'full', 'mini',
-			'itx', 'atx', 'matx', 'eatx', 'fd', 'c', '01', '02', '03'
+			'itx', 'atx', 'matx', 'eatx', 'fd', 'c', '01', '02', '03', 'xl', 'compact', 'nano',
+			'mesh', 'airflow', 'flow', 'elite'
 		);
 		$get_tokens = function( $str, $brand ) use ( $stop_words ) {
 			preg_match_all( '/[a-zA-Z0-9]+/', strtolower( (string)$str ), $m );
 			$words = $m[0] ?? array();
+			preg_match_all( '/[a-zA-Z0-9]+/', strtolower( (string)$brand ), $bm );
+			$brand_words = $bm[0] ?? array();
 			$filtered = array();
-			$brand_lower = strtolower( (string) $brand );
 			foreach ( $words as $w ) {
-				if ( ! in_array( $w, $stop_words, true ) && $w !== $brand_lower && strlen( $w ) >= 2 ) {
+				if ( ! in_array( $w, $stop_words, true ) && ! in_array( $w, $brand_words, true ) && strlen( $w ) >= 2 && ! is_numeric( $w ) ) {
 					$filtered[] = $w;
 				}
 			}
@@ -418,7 +420,7 @@ class Matching_Engine {
 		if ( ! empty( $tok_a ) && ! empty( $tok_b ) ) {
 			$intersect = array_intersect( $tok_a, $tok_b );
 			$min_count = min( count( $tok_a ), count( $tok_b ) );
-			if ( $min_count >= 2 && ( count( $intersect ) / $min_count ) >= 0.85 ) {
+			if ( $min_count >= 1 && ( count( $intersect ) / $min_count ) >= 0.85 ) {
 				return true;
 			}
 		}
