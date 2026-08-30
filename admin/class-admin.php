@@ -3688,32 +3688,16 @@ class Admin {
 			if ( ! empty( $k ) && ! empty( $v ) ) {
 				$norm_k = Specs_Sync_Manager::normalize_spec_key( $k, $comp->category );
 				$clean_v = Specs_Sync_Manager::sanitize_and_validate_spec_value( $norm_k, $v, $comp->category, $comp->brand . ' ' . $comp->model_name );
-				if ( ! empty( $clean_v ) ) {
-					$clean_specs[ $norm_k ] = $clean_v;
-				}
+				$final_v = ( $clean_v !== null && $clean_v !== '' ) ? $clean_v : $v;
+				$clean_specs[ $norm_k ] = $final_v;
 			}
 		}
 
 		$comp->specs_json = $clean_specs;
 		$comp->save();
 
-		if ( ! empty( $comp->wp_post_id ) ) {
-			if ( ! empty( $clean_specs ) ) {
-				update_post_meta( $comp->wp_post_id, '_pcspecs_specs', $clean_specs );
-				update_post_meta( $comp->wp_post_id, '_hwsync_specs', $clean_specs );
-				if ( ! empty( $clean_specs['Socket'] ) ) {
-					update_post_meta( $comp->wp_post_id, '_pcspecs_socket', $clean_specs['Socket'] );
-					update_post_meta( $comp->wp_post_id, '_hwsync_socket', $clean_specs['Socket'] );
-				}
-				if ( ! empty( $clean_specs['Wattage'] ) ) {
-					update_post_meta( $comp->wp_post_id, '_pcspecs_wattage', $clean_specs['Wattage'] );
-					update_post_meta( $comp->wp_post_id, '_hwsync_wattage', $clean_specs['Wattage'] );
-				}
-			} else {
-				delete_post_meta( $comp->wp_post_id, '_pcspecs_specs' );
-				delete_post_meta( $comp->wp_post_id, '_hwsync_specs' );
-			}
-		}
+		// Synchronize across all backend stores (wp_hwsync_components, wp_pc_components, and WordPress posts/postmeta)
+		Specs_Sync_Manager::sync_post_specs( $comp, $clean_specs );
 
 		wp_send_json_success( array(
 			'message'     => sprintf( __( 'Specifications successfully updated (%d attributes).', 'hwsync' ), count( $clean_specs ) ),

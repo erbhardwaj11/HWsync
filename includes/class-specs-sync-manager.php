@@ -1346,21 +1346,7 @@ class Specs_Sync_Manager {
 			}
 
 			if ( $changed ) {
-				$comp->specs_json = $specs;
-				$comp->save();
-
-				if ( ! empty( $comp->wp_post_id ) && function_exists( 'update_post_meta' ) ) {
-					update_post_meta( $comp->wp_post_id, '_pcspecs_specs', $specs );
-					update_post_meta( $comp->wp_post_id, '_hwsync_specs', $specs );
-					if ( ! empty( $specs['Socket'] ) ) {
-						update_post_meta( $comp->wp_post_id, '_pcspecs_socket', $specs['Socket'] );
-						update_post_meta( $comp->wp_post_id, '_hwsync_socket', $specs['Socket'] );
-					}
-					if ( ! empty( $specs['Wattage'] ) ) {
-						update_post_meta( $comp->wp_post_id, '_pcspecs_wattage', $specs['Wattage'] );
-						update_post_meta( $comp->wp_post_id, '_hwsync_wattage', $specs['Wattage'] );
-					}
-				}
+				self::sync_post_specs( $comp, $specs );
 				$repaired++;
 			}
 		}
@@ -1370,6 +1356,186 @@ class Specs_Sync_Manager {
 
 	public static function sanitize_database_cpu_sockets() {
 		return self::sanitize_database_spec_values();
+	}
+
+	/**
+	 * Synchronize component specifications across all backend destinations:
+	 * 1. HWsync canonical components table (wp_hwsync_components)
+	 * 2. Native PCSpecs theme components table (wp_pc_components) if installed
+	 * 3. Linked WordPress post and individual postmeta attributes
+	 *
+	 * @param Component|object $component Component instance or database row.
+	 * @param array|null $specs Normalized specifications array.
+	 * @return bool True on success.
+	 */
+	public static function sync_post_specs( $component, $specs = array() ) {
+		global $wpdb;
+		if ( ! $component || empty( $component->id ) ) {
+			return false;
+		}
+
+		if ( ! is_array( $specs ) ) {
+			$specs = is_string( $specs ) ? json_decode( $specs, true ) : array();
+		}
+		$specs = is_array( $specs ) ? $specs : array();
+
+		// 1. Direct update to HWsync components table
+		$comp_table = Database::get_table_name( 'components' );
+		$wpdb->update(
+			$comp_table,
+			array( 'specs_json' => ! empty( $specs ) ? wp_json_encode( $specs ) : null ),
+			array( 'id' => $component->id )
+		);
+		$component->specs_json = $specs;
+
+		// 2. Direct update to native PCSpecs theme components table (wp_pc_components) if present
+		$pc_comp_table = ( isset( $wpdb->prefix ) ? $wpdb->prefix : 'wp_' ) . 'pc_components';
+		$has_pc_table = ( $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $pc_comp_table ) ) === $pc_comp_table );
+		if ( $has_pc_table ) {
+			$pc_update_data = array(
+				'specs'      => ! empty( $specs ) ? wp_json_encode( $specs ) : null,
+				'specs_json' => ! empty( $specs ) ? wp_json_encode( $specs ) : null,
+			);
+			if ( ! empty( $specs['Socket'] ) ) {
+				$pc_update_data['socket'] = $specs['Socket'];
+			}
+			if ( ! empty( $specs['Wattage'] ) ) {
+				$pc_update_data['wattage'] = $specs['Wattage'];
+			}
+			$wpdb->update( $pc_comp_table, $pc_update_data, array( 'id' => $component->id ) );
+			if ( ! empty( $component->model_name ) ) {
+				$wpdb->update( $pc_comp_table, $pc_update_data, array( 'model_name' => $component->model_name ) );
+			}
+		}
+
+		// 3. Resolve WordPress Post ID (from $component->wp_post_id, postmeta search, or title)
+		$post_id = ! empty( $component->wp_post_id ) ? intval( $component->wp_post_id ) : 0;
+		if ( ! $post_id && isset( $wpdb->postmeta ) ) {
+			$post_id = intval( $wpdb->get_var( $wpdb->prepare(
+				"SELECT post_id FROM {$wpdb->postmeta} WHERE (meta_key = '_pcspecs_component_id' OR meta_key = '_hwsync_component_id') AND meta_value = %d LIMIT 1",
+				$component->id
+			) ) );
+		}
+		if ( ! $post_id && function_exists( 'get_post' ) ) {
+			$maybe_post = get_post( $component->id );
+			if ( $maybe_post && in_array( $maybe_post->post_type, array( 'pc_component', 'pcspecs_component', 'product', 'component', 'post' ), true ) ) {
+				$post_id = $maybe_post->ID;
+			}
+		}
+		if ( ! $post_id && isset( $wpdb->posts ) && ! empty( $component->brand ) && ! empty( $component->model_name ) ) {
+			$full_title = trim( $component->brand . ' ' . $component->model_name );
+			$post_id = intval( $wpdb->get_var( $wpdb->prepare(
+				"SELECT ID FROM {$wpdb->posts} WHERE post_title = %s AND post_status NOT IN ('trash', 'auto-draft') LIMIT 1",
+				$full_title
+			) ) );
+		}
+
+		// 4. Update WordPress Post Meta
+		if ( $post_id > 0 && function_exists( 'update_post_meta' ) ) {
+			if ( ! empty( $specs ) ) {
+				update_post_meta( $post_id, '_pcspecs_specs', $specs );
+				update_post_meta( $post_id, '_hwsync_specs', $specs );
+				update_post_meta( $post_id, '_pcspecs_component_id', $component->id );
+				update_post_meta( $post_id, '_hwsync_component_id', $component->id );
+
+				// Socket
+				if ( ! empty( $specs['Socket'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_socket', $specs['Socket'] );
+					update_post_meta( $post_id, '_hwsync_socket', $specs['Socket'] );
+				} elseif ( ! empty( $specs['Socket Support'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_socket', $specs['Socket Support'] );
+					update_post_meta( $post_id, '_hwsync_socket', $specs['Socket Support'] );
+				}
+
+				// Wattage
+				if ( ! empty( $specs['Wattage'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_wattage', $specs['Wattage'] );
+					update_post_meta( $post_id, '_hwsync_wattage', $specs['Wattage'] );
+				}
+
+				// Cores & Threads
+				if ( ! empty( $specs['Number of Cores'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_cores', $specs['Number of Cores'] );
+					update_post_meta( $post_id, '_hwsync_cores', $specs['Number of Cores'] );
+				}
+				if ( ! empty( $specs['Number of Threads'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_threads', $specs['Number of Threads'] );
+					update_post_meta( $post_id, '_hwsync_threads', $specs['Number of Threads'] );
+				}
+
+				// Frequency & Boost Clock
+				if ( ! empty( $specs['Frequency'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_frequency', $specs['Frequency'] );
+					update_post_meta( $post_id, '_hwsync_frequency', $specs['Frequency'] );
+				}
+				if ( ! empty( $specs['Turbo Clock'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_turbo_clock', $specs['Turbo Clock'] );
+					update_post_meta( $post_id, '_hwsync_turbo_clock', $specs['Turbo Clock'] );
+				} elseif ( ! empty( $specs['Boost Clock'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_boost_clock', $specs['Boost Clock'] );
+					update_post_meta( $post_id, '_hwsync_boost_clock', $specs['Boost Clock'] );
+				}
+
+				// Chipset
+				if ( ! empty( $specs['Chipset'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_chipset', $specs['Chipset'] );
+					update_post_meta( $post_id, '_hwsync_chipset', $specs['Chipset'] );
+				}
+
+				// Form Factor
+				if ( ! empty( $specs['Form Factor'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_form_factor', $specs['Form Factor'] );
+					update_post_meta( $post_id, '_hwsync_form_factor', $specs['Form Factor'] );
+				} elseif ( ! empty( $specs['Cabinet Size'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_form_factor', $specs['Cabinet Size'] );
+					update_post_meta( $post_id, '_hwsync_form_factor', $specs['Cabinet Size'] );
+				}
+
+				// Memory Type & Capacity & Speed
+				if ( ! empty( $specs['Memory Type'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_memory_type', $specs['Memory Type'] );
+					update_post_meta( $post_id, '_hwsync_memory_type', $specs['Memory Type'] );
+				} elseif ( ! empty( $specs['Supported Memory Type'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_memory_type', $specs['Supported Memory Type'] );
+					update_post_meta( $post_id, '_hwsync_memory_type', $specs['Supported Memory Type'] );
+				}
+				if ( ! empty( $specs['Capacity'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_capacity', $specs['Capacity'] );
+					update_post_meta( $post_id, '_hwsync_capacity', $specs['Capacity'] );
+				} elseif ( ! empty( $specs['Memory Size'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_capacity', $specs['Memory Size'] );
+					update_post_meta( $post_id, '_hwsync_capacity', $specs['Memory Size'] );
+				}
+				if ( ! empty( $specs['Speed'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_speed', $specs['Speed'] );
+					update_post_meta( $post_id, '_hwsync_speed', $specs['Speed'] );
+				} elseif ( ! empty( $specs['Rated Speed'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_speed', $specs['Rated Speed'] );
+					update_post_meta( $post_id, '_hwsync_speed', $specs['Rated Speed'] );
+				}
+
+				// TDP & Suggested PSU
+				if ( ! empty( $specs['TDP'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_tdp', $specs['TDP'] );
+					update_post_meta( $post_id, '_hwsync_tdp', $specs['TDP'] );
+				}
+				if ( ! empty( $specs['Suggested PSU'] ) ) {
+					update_post_meta( $post_id, '_pcspecs_suggested_psu', $specs['Suggested PSU'] );
+					update_post_meta( $post_id, '_hwsync_suggested_psu', $specs['Suggested PSU'] );
+				}
+
+				// Link wp_post_id back to component if it was missing
+				if ( empty( $component->wp_post_id ) ) {
+					$component->wp_post_id = $post_id;
+					$wpdb->update( $comp_table, array( 'wp_post_id' => $post_id ), array( 'id' => $component->id ) );
+				}
+			} else {
+				delete_post_meta( $post_id, '_pcspecs_specs' );
+				delete_post_meta( $post_id, '_hwsync_specs' );
+			}
+		}
+
+		return true;
 	}
 
 	/**
@@ -1492,15 +1658,8 @@ class Specs_Sync_Manager {
 			$merged_specs = self::merge_and_clean_specs( $component->category, $current_specs, array(), $collected_text );
 
 			if ( ! empty( $merged_specs ) ) {
-				$component->specs_json = $merged_specs;
-				$component->save();
-
-				if ( ! empty( $component->wp_post_id ) ) {
-					update_post_meta( $component->wp_post_id, '_pcspecs_specs', $merged_specs );
-					update_post_meta( $component->wp_post_id, '_hwsync_specs', $merged_specs );
-					$report['posts_refreshed']++;
-				}
-
+				self::sync_post_specs( $component, $merged_specs );
+				$report['posts_refreshed']++;
 				$report['specs_updated']++;
 				$this->emit( $logger, 'success', "Specs Saved for #{$component->id} [{$component->brand} {$component->model_name}]: " . self::format_specs_summary( $merged_specs ) );
 			} else {
@@ -1612,14 +1771,7 @@ class Specs_Sync_Manager {
 			$merged_specs = self::merge_and_clean_specs( $component->category, $current_specs, array(), $collected_text );
 
 			if ( ! empty( $merged_specs ) ) {
-				$component->specs_json = $merged_specs;
-				$component->save();
-
-				if ( ! empty( $component->wp_post_id ) ) {
-					update_post_meta( $component->wp_post_id, '_pcspecs_specs', $merged_specs );
-					update_post_meta( $component->wp_post_id, '_hwsync_specs', $merged_specs );
-				}
-
+				self::sync_post_specs( $component, $merged_specs );
 				$updated++;
 				$logs[] = array(
 					'level'   => 'success',

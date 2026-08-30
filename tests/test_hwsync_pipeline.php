@@ -1200,17 +1200,17 @@ for ( $i = 0; $i < count( $manual_keys ); $i++ ) {
 	}
 }
 
-$comp_for_edit->specs_json = $edited_specs;
-$comp_for_edit->save();
+\HWsync\Specs_Sync_Manager::sync_post_specs( $comp_for_edit, $edited_specs );
 
 $refreshed_edited = \HWsync\Models\Component::find_by_id( $comp_for_edit->id );
+$refreshed_specs = $refreshed_edited ? $refreshed_edited->get_specs() : array();
 assert_test( 'Component Specifications Manual Edit persists customized attributes and removes unwanted specs', (
 	$refreshed_edited !== null &&
-	count( $refreshed_edited->specs_json ) === 3 &&
-	isset( $refreshed_edited->specs_json['Socket'] ) && $refreshed_edited->specs_json['Socket'] === 'AM5' &&
-	isset( $refreshed_edited->specs_json['Number of Cores'] ) && $refreshed_edited->specs_json['Number of Cores'] === '6' &&
-	isset( $refreshed_edited->specs_json['TDP'] ) && $refreshed_edited->specs_json['TDP'] === '65 W' &&
-	! isset( $refreshed_edited->specs_json['Note**'] )
+	count( $refreshed_specs ) === 3 &&
+	isset( $refreshed_specs['Socket'] ) && $refreshed_specs['Socket'] === 'AM5' &&
+	isset( $refreshed_specs['Number of Cores'] ) && $refreshed_specs['Number of Cores'] === '6' &&
+	isset( $refreshed_specs['TDP'] ) && $refreshed_specs['TDP'] === '65 W' &&
+	! isset( $refreshed_specs['Note**'] )
 ) );
 
 // Test 36: Cloudflare Bot Challenge Interstitial Detection & Script Stripping
