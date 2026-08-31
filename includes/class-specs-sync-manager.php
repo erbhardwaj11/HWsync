@@ -1431,6 +1431,13 @@ class Specs_Sync_Manager {
 			}
 		}
 
+		// 10. Fan Size (e.g. '120 mm', '140 mm')
+		if ( in_array( $k_lower, array( 'fan size', 'fan dimensions', 'dimensions' ), true ) && ( $cat === 'case_fan' || $cat === 'cooler' ) ) {
+			if ( preg_match( '/\b(120|140|80|92|200)\s*(?:mm)?\b/i', $v, $m ) ) {
+				return $m[1] . ' mm';
+			}
+		}
+
 		return $v;
 	}
 
