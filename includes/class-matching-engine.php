@@ -175,7 +175,11 @@ class Matching_Engine {
 				return strtoupper( trim( $m[1] ) );
 			}
 		} elseif ( $cat === 'cooler' ) {
-			if ( preg_match( '/\b(AK400|AK500|AK620|AG400|AG500|AG620|LT520|LT720|LS520|LS720|KRAKEN\s*(?:ELITE\s*)?(?:240|280|360|120)|NAUTILUS\s*(?:240|360)|HYPER\s*212|MASTERLIQUID\s*(?:240|360)|PEERLESS\s*ASSASSIN|PHANTOM\s*SPIRIT|LIQMAX\s*(?:III\s*)?(?:240|360))\b/i', $t, $m ) ) {
+			if ( preg_match( '/\b(AK400|AK500|AK620|AG400|AG500|AG620|LT520|LT720|LS520|LS720|KRAKEN\s*(?:ELITE\s*)?(?:240|280|360|120)|NAUTILUS\s*(?:240|360)|HYPER\s*212|MASTERLIQUID\s*(?:240|360)|PEERLESS\s*ASSASSIN|PHANTOM\s*SPIRIT|LIQMAX\s*(?:III\s*)?(?:240|360)|NH-D15|NH-U12S|H100I|H150I)\b/i', $t, $m ) ) {
+				return preg_replace( '/\s+/', ' ', trim( $m[1] ) );
+			}
+		} elseif ( $cat === 'case_fan' ) {
+			if ( preg_match( '/\b(SL-INFINITY|SL-INF|UNI\s*FAN|SICKLEFLOW|AF120|LL120|QL120|SP120|PRISM\s*4|NF-A12X25|NF-A14|P12\s*PWM|P14\s*PWM|FC120|MF120|TL-C12|SWAFAN|SUPERFLOW)\b/i', $t, $m ) ) {
 				return preg_replace( '/\s+/', ' ', trim( $m[1] ) );
 			}
 		}
@@ -210,30 +214,43 @@ class Matching_Engine {
 	}
 
 	public static function detect_category( $title ) {
-		$title_lower = strtolower( $title );
+		$t = strtolower( (string) $title );
 
-		if ( preg_match( '/\b(ryzen|intel core|processor|cpu|i3|i5|i7|i9|threadripper)\b/i', $title_lower ) ) {
-			return 'cpu';
+		if ( preg_match( '/\b(ryzen|intel core|processor|cpu|i3|i5|i7|i9|threadripper)\b/i', $t ) ) {
+			if ( ! preg_match( '/\b(cooler|aio|liquid|heatsink|case\s*fan|cabinet\s*fan)\b/i', $t ) ) {
+				return 'cpu';
+			}
 		}
-		if ( preg_match( '/\b(rtx|gtx|radeon|rx\s*\d+|geforce|graphics card|gpu)\b/i', $title_lower ) ) {
+		if ( preg_match( '/\b(rtx|gtx|radeon|rx\s*\d+|geforce|graphics card|gpu)\b/i', $t ) ) {
 			return 'gpu';
 		}
-		if ( preg_match( '/\b(motherboard|b650|b760|z790|x670|x870|a620|b550|h610)\b/i', $title_lower ) ) {
+		if ( preg_match( '/\b(motherboard|b650|b760|z790|x670|x870|a620|b550|h610)\b/i', $t ) ) {
 			return 'motherboard';
 		}
-		if ( preg_match( '/\b(ddr4|ddr5|ram|memory|desktop memory|3200mhz|6000mhz|5600mhz)\b/i', $title_lower ) ) {
+		if ( preg_match( '/\b(ddr4|ddr5|ram|desktop memory|3200mhz|6000mhz|5600mhz)\b/i', $t ) && ! preg_match( '/\b(cooler|fan|motherboard|gpu)\b/i', $t ) ) {
 			return 'ram';
 		}
-		if ( preg_match( '/\b(nvme|ssd|solid state drive|m\.2|sata ssd|hard disk|hdd)\b/i', $title_lower ) ) {
+		if ( preg_match( '/\b(nvme|ssd|solid state drive|m\.2|sata ssd|hard disk|hdd)\b/i', $t ) ) {
 			return 'storage';
 		}
-		if ( preg_match( '/\b(smps|power supply|psu|80 plus|80\+|bronze|gold|750w|850w|650w|1000w)\b/i', $title_lower ) ) {
+		if ( preg_match( '/\b(smps|power supply|psu|80 plus|80\+|bronze|gold|750w|850w|650w|1000w)\b/i', $t ) ) {
 			return 'psu';
 		}
-		if ( preg_match( '/\b(cooler|aio|liquid cooler|air cooler|radiator|heatsink)\b/i', $title_lower ) ) {
+
+		// Case Fans vs CPU Coolers
+		$is_cpu_cooler = (bool) preg_match( '/\b(liquid\s*cpu\s*cooler|all-in-one|aio|cpu\s*air\s*cooler|cpu\s*cooler|air\s*cooler|liquid\s*cooler|dual-tower|heatsink|radiator|ak400|ak500|ak620|ag400|ag500|ag620|lt520|lt720|ls520|ls720|kraken|hyper\s*212|peerless\s*assassin|phantom\s*spirit|nh-d15|nh-u12s|h100i|h150i)\b/i', $t );
+		$is_case_fan   = (bool) preg_match( '/\b(case\s*fan|cabinet\s*fan|chassis\s*fan|triple\s*pack|single\s*pack|twin\s*pack|3-pack|2-pack|3-in-1|3\s*fan\s*pack|uni\s*fan|sickleflow|af120|ll120|ql120|sp120|prism\s*4|nf-a12|nf-a14|p12\s*pwm|p14\s*pwm|fc120|mf120|tl-c12|swafan|reverse\s*blade|cooling\s*fan|pc\s*fan|argb\s*fan)\b/i', $t );
+
+		if ( $is_case_fan && ! $is_cpu_cooler ) {
+			return 'case_fan';
+		}
+		if ( $is_cpu_cooler || preg_match( '/\b(cooler|aio|radiator|heatsink)\b/i', $t ) ) {
 			return 'cooler';
 		}
-		if ( preg_match( '/\b(cabinet|case|chassis|mid tower|full tower|mini tower)\b/i', $title_lower ) ) {
+		if ( preg_match( '/\b(fan|fans)\b/i', $t ) ) {
+			return 'case_fan';
+		}
+		if ( preg_match( '/\b(cabinet|case|chassis|mid tower|full tower|mini tower)\b/i', $t ) ) {
 			return 'cabinet';
 		}
 
@@ -289,28 +306,55 @@ class Matching_Engine {
 		$cat_lower = strtolower( (string) $category );
 		if ( $cat_lower === 'cpu' ) {
 			$cpu_noise = array(
-				'/\b\d+\s*Cores?(?:\s*(?:and|\/|,)?\s*\d+\s*Threads?)?\b/i',
-				'/\b\d+\s*Threads?\b/i',
-				'/\b(?:Upto|Up\s*To|Max\.?\s*Boost\s*Clock\s*Up\s*To)?\s*[\d\.]+\s*GHz\b/i',
-				'/\b(?:AM4|AM5|LGA\s*1700|LGA\s*1851|LGA\s*1200)\s*(?:Socket)?\b/i',
+				'/\bwith\s+(?:Radeon\s+(?:RX\s+)?Vega\s*\d+\s+Graphics|Radeon\s+Graphics|Intel\s+UHD\s+Graphics\s*\d+|Intel\s+HD\s+Graphics\s*\d+|Intel\s+Graphics|Vega\s*\d+\s*Graphics|Graphics)\b/i',
+				'/\b\d+(?:-|\s*)Cores?(?:\s*(?:and|\/|,)?\s*\d+(?:-|\s*)Threads?)?\b/i',
+				'/\b\d+(?:-|\s*)Threads?\b/i',
+				'/\b(?:Upto|Up\s*To|Max\.?\s*Boost\s*Clock\s*Up\s*To|Boost\s*Clock\s*Up\s*To|Base\s*Clock)?\s*[\d\.]+\s*GHz(?:\s*Boost)?\b/i',
+				'/\b(?:AM4|AM5|LGA\s*1851|LGA\s*1700|LGA\s*1200|LGA\s*1151|FCLGA\s*1851|FCLGA\s*1700|FCLGA\s*1200)\s*(?:Socket)?\b/i',
 				'/\b\d+\s*MB\s*Cache\b/i',
+				'/\b(?:with\s+)?3D\s*V-Cache\b/i',
 				'/\b\d+th\s*(?:Gen(?:eration)?)?\b/i',
+				'/\b(?:Desktop Processor|Processor with Radeon Graphics|Processor|Unlocked|Box Pack|Tray|w\/o Cooler|with Wraith[A-Za-z\s]*Cooler)\b/i',
 			);
 			foreach ( $cpu_noise as $p ) {
 				$clean = preg_replace( $p, ' ', $clean );
 			}
 
-			// Standardize Intel Core iX-XXXXX formatting
+			// Standardize Intel & AMD naming conventions
+			$clean = preg_replace( '/\b(Core\s+Ultra\s+[3579])[\s\-]+(\d{3}[A-Z0-9]*(?:\s+Plus)?)\b/i', '$1 $2', $clean );
 			$clean = preg_replace( '/\b(Core\s+i[3579])[\s\-]+(\d{4,5}[A-Z0-9]*)\b/i', '$1-$2', $clean );
 			$clean = preg_replace( '/\b(i[3579])[\s\-]+(\d{4,5}[A-Z0-9]*)\b/i', 'Core $1-$2', $clean );
+			$clean = preg_replace( '/\b(Ryzen\s+[3579])[\s\-]+(\d{4}[A-Z0-9]*)\b/i', '$1 $2', $clean );
 			$clean = preg_replace( '/\bCore\s+Core\b/i', 'Core', $clean );
+		} elseif ( $cat_lower === 'gpu' ) {
+			$gpu_noise = array(
+				'/\b(?:Gaming Graphics Card|Graphics Card|Video Card|DisplayCard)\b/i',
+				'/\b\d+-bit\b/i',
+				'/\bPCIe\s*\d+\.\d+\b/i',
+				'/\b(?:Triple|Dual|Single)\s*Fan\b/i',
+			);
+			foreach ( $gpu_noise as $p ) {
+				$clean = preg_replace( $p, ' ', $clean );
+			}
+		} elseif ( $cat_lower === 'cooler' ) {
+			$cooler_noise = array(
+				'/\b(?:All-in-One\s+Liquid\s+CPU\s+Cooler|Liquid\s+CPU\s+Cooler|CPU\s+Air\s+Cooler|High-Performance\s+Dual-Tower|High\s+Performance\s+AIO|CPU\s+Cooler|Air\s+Cooler|Liquid\s+Cooler)\b/i',
+			);
+			foreach ( $cooler_noise as $p ) {
+				$clean = preg_replace( $p, ' ', $clean );
+			}
+		} elseif ( $cat_lower === 'case_fan' ) {
+			$fan_noise = array(
+				'/\b(?:Chassis\s+Cooling\s+Fan|Cabinet\s+Cooling\s+Fan|Case\s+Cooling\s+Fan|Cooling\s+Fan|Case\s+Fan|Cabinet\s+Fan)\b/i',
+			);
+			foreach ( $fan_noise as $p ) {
+				$clean = preg_replace( $p, ' ', $clean );
+			}
 		}
 
 		$buzzwords = array(
-			'Desktop Processor', 'Processor with Radeon Graphics', 'Processor', 'Unlocked', 'Box Pack',
-			'Gaming Graphics Card', 'Graphics Card', 'Video Card', 'Desktop Memory',
 			'Internal Solid State Drive', 'Solid State Drive', 'PCIe NVMe M.2 SSD', 'M.2 NVMe SSD',
-			'Power Supply Unit', 'Power Supply SMPS', 'SMPS', 'Liquid CPU Cooler', 'CPU Air Cooler',
+			'Power Supply Unit', 'Power Supply SMPS', 'SMPS',
 			'Cabinet with Tempered Glass', 'Gaming Cabinet', 'Brand New', 'Special Offer'
 		);
 
@@ -405,8 +449,8 @@ class Matching_Engine {
 				// Different hardware models -> CANNOT MERGE!
 				return false;
 			}
-			// For CPU, Cooler, Cabinet: Matching Core Hardware ID under the same brand and category represents the EXACT same hardware product
-			if ( $a->category === 'cpu' || $a->category === 'cooler' || $a->category === 'cabinet' ) {
+			// For CPU, Cooler, Cabinet, Case Fan: Matching Core Hardware ID under the same brand and category represents the EXACT same hardware product
+			if ( $a->category === 'cpu' || $a->category === 'cooler' || $a->category === 'cabinet' || $a->category === 'case_fan' ) {
 				$specs_a = $a->get_specs() ?: array();
 				$specs_b = $b->get_specs() ?: array();
 				if ( ! empty( $specs_a['socket'] ) && ! empty( $specs_b['socket'] ) && strcasecmp( $specs_a['socket'], $specs_b['socket'] ) !== 0 ) {
@@ -504,7 +548,7 @@ class Matching_Engine {
 		$comp_table   = Database::get_table_name( 'components' );
 		$prices_table = Database::get_table_name( 'vendor_prices' );
 
-		$all_cats = array( 'cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet' );
+		$all_cats = array( 'cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet', 'case_fan' );
 		$categories = ( ! empty( $target_category ) && $target_category !== 'all' ) ? array( $target_category ) : $all_cats;
 
 		$total_merged_records = 0;

@@ -21,6 +21,7 @@ class TheITDepot_Adapter extends Abstract_Vendor_Adapter {
 			'psu'         => '/Power_Supply%20(PSU)?fq=1',
 			'cooler'      => '/Cooling_system?fq=1',
 			'cabinet'     => '/Cabinet%20(Case)?fq=1',
+			'case_fan'    => '/Cabinet_Fan?fq=1',
 		);
 	}
 

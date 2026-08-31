@@ -142,6 +142,19 @@ class Specs_Sync_Manager {
 			'TBW',
 			'Warranty',
 		),
+		'case_fan' => array(
+			'Fan Size',
+			'Fan Speed',
+			'Airflow',
+			'Noise Level',
+			'Bearing Type',
+			'Lighting',
+			'PWM Support',
+			'Connector',
+			'Package Quantity',
+			'Color',
+			'Warranty',
+		),
 	);
 
 	/**
@@ -239,6 +252,7 @@ class Specs_Sync_Manager {
 		'psu'         => array( 'Wattage', 'Certification', 'Modular' ),
 		'cabinet'     => array( 'Cabinet Size', 'Motherboard Size', 'Max Gpu Length' ),
 		'storage'     => array( 'Capacity', 'Form Factor', 'Interface', 'Read Speed' ),
+		'case_fan'    => array( 'Fan Size', 'Fan Speed', 'Airflow', 'Lighting' ),
 	);
 
 	/**
@@ -913,6 +927,58 @@ class Specs_Sync_Manager {
 			'limited warranty'                      => 'Warranty',
 			'warranty'                              => 'Warranty',
 		),
+		'case_fan' => array(
+			'fan size'                              => 'Fan Size',
+			'dimensions'                            => 'Fan Size',
+			'size'                                  => 'Fan Size',
+			'fan dimensions'                        => 'Fan Size',
+
+			'fan speed'                             => 'Fan Speed',
+			'speed'                                 => 'Fan Speed',
+			'rpm'                                   => 'Fan Speed',
+			'fan speed (rpm)'                       => 'Fan Speed',
+
+			'airflow'                               => 'Airflow',
+			'air flow'                              => 'Airflow',
+			'max airflow'                           => 'Airflow',
+			'fan airflow'                           => 'Airflow',
+
+			'noise'                                 => 'Noise Level',
+			'noise level'                           => 'Noise Level',
+			'fan noise level'                       => 'Noise Level',
+			'dBA'                                   => 'Noise Level',
+
+			'bearing'                               => 'Bearing Type',
+			'bearing type'                          => 'Bearing Type',
+			'fan bearing'                           => 'Bearing Type',
+
+			'led'                                   => 'Lighting',
+			'rgb'                                   => 'Lighting',
+			'argb'                                  => 'Lighting',
+			'lighting'                              => 'Lighting',
+			'led color'                             => 'Lighting',
+
+			'pwm'                                   => 'PWM Support',
+			'pwm control'                           => 'PWM Support',
+			'pwm support'                           => 'PWM Support',
+
+			'connector'                             => 'Connector',
+			'pin'                                   => 'Connector',
+			'fan connector'                         => 'Connector',
+
+			'package quantity'                      => 'Package Quantity',
+			'pack'                                  => 'Package Quantity',
+			'quantity'                              => 'Package Quantity',
+			'number of fans'                        => 'Package Quantity',
+
+			'color'                                 => 'Color',
+			'colour'                                => 'Color',
+
+			'warranty period'                       => 'Warranty',
+			'manufacturer warranty'                 => 'Warranty',
+			'limited warranty'                      => 'Warranty',
+			'warranty'                              => 'Warranty',
+		),
 	);
 
 	/**
@@ -934,6 +1000,9 @@ class Specs_Sync_Manager {
 		}
 		if ( in_array( $c, array( 'coolers', 'aio', 'cpu_cooler', 'liquid_cooler' ), true ) ) {
 			return 'cooler';
+		}
+		if ( in_array( $c, array( 'case_fan', 'case-fan', 'case_fans', 'fan', 'fans', 'cabinet_fan', 'cabinet_fans', 'cabinet-fan' ), true ) ) {
+			return 'case_fan';
 		}
 		return $c;
 	}
@@ -2372,6 +2441,21 @@ class Specs_Sync_Manager {
 				}
 				if ( empty( $merged['Interface'] ) && preg_match( '/(PCIe\s*5\.0(?:\s*x4)?|PCIe\s*4\.0(?:\s*x4)?|Gen4|Gen5|SATA\s*III|SATA\s*6Gb\/s)/i', $text, $m ) ) {
 					$merged['Interface'] = strtoupper( $m[1] );
+				}
+				break;
+
+			case 'case_fan':
+				if ( empty( $merged['Fan Size'] ) && preg_match( '/\b(120|140|80|92|200)\s*(?:mm)?\b/i', $text, $m ) ) {
+					$merged['Fan Size'] = $m[1] . ' mm';
+				}
+				if ( empty( $merged['Lighting'] ) && preg_match( '/(ARGB|Addressable\s*RGB|RGB|Auto\s*RGB|LED)/i', $text, $m ) ) {
+					$merged['Lighting'] = strtoupper( $m[1] );
+				}
+				if ( empty( $merged['Package Quantity'] ) && preg_match( '/\b(Triple\s*Pack|3-Pack|3-in-1|3\s*Fan\s*Pack|Twin\s*Pack|2-Pack|Single\s*Pack|Single\s*Fan)\b/i', $text, $m ) ) {
+					$merged['Package Quantity'] = ucwords( $m[1] );
+				}
+				if ( empty( $merged['PWM Support'] ) && preg_match( '/\b(PWM)\b/i', $text ) ) {
+					$merged['PWM Support'] = 'Yes';
 				}
 				break;
 

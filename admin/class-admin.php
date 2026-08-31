@@ -168,6 +168,7 @@ class Admin {
 									<option value="psu"><?php esc_html_e( 'Power Supply Units (PSU)', 'hwsync' ); ?></option>
 									<option value="cooler"><?php esc_html_e( 'Coolers', 'hwsync' ); ?></option>
 									<option value="cabinet"><?php esc_html_e( 'Cabinets', 'hwsync' ); ?></option>
+									<option value="case_fan"><?php esc_html_e( 'Case Fans', 'hwsync' ); ?></option>
 								</select>
 							</div>
 
@@ -447,7 +448,7 @@ class Admin {
 					}
 
 					var allCategories = (categoryChoice === 'all') 
-						? ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet'] 
+						? ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet', 'case_fan'] 
 						: [categoryChoice];
 
 					var currentVendorIdx = 0;
@@ -713,10 +714,11 @@ class Admin {
 						'storage': '/catalog/storage',
 						'psu': '/catalog/smps',
 						'cooler': '/cooling-system.html',
-						'cabinet': '/catalog/cabinet'
+						'cabinet': '/catalog/cabinet',
+						'case_fan': '/catalog/case-fan'
 					};
 
-					var allCats = ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet'];
+					var allCats = ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet', 'case_fan'];
 					var catsToSync = (categoryChoice === 'all') ? allCats : [categoryChoice];
 					var currentCatIndex = 0;
 
@@ -1245,6 +1247,7 @@ class Admin {
 										<option value="psu"><?php esc_html_e( 'PSU only', 'hwsync' ); ?></option>
 										<option value="cooler"><?php esc_html_e( 'Cooler only', 'hwsync' ); ?></option>
 										<option value="cabinet"><?php esc_html_e( 'Cabinet only', 'hwsync' ); ?></option>
+										<option value="case_fan"><?php esc_html_e( 'Case Fans only', 'hwsync' ); ?></option>
 									</select>
 								</div>
 							</div>
@@ -1279,6 +1282,7 @@ class Admin {
 										'psu' => 'PSU (Power Supply)',
 										'cooler' => 'CPU Cooler',
 										'cabinet' => 'Cabinet Chassis',
+										'case_fan' => 'Case Fans',
 									);
 									foreach ( $cats as $ckey => $clabel ) : ?>
 										<tr id="test-row-<?php echo esc_attr( $ckey ); ?>">
@@ -1404,7 +1408,7 @@ class Admin {
 							eps = JSON.parse(this.getAttribute('data-endpoints') || '{}');
 						} catch (e) {}
 
-						var cats = ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet'];
+						var cats = ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet', 'case_fan'];
 						cats.forEach(function(cat) {
 							var inp = document.getElementById('ep-' + cat);
 							if (inp) inp.value = eps[cat] || '';
@@ -1507,7 +1511,7 @@ class Admin {
 				});
 
 				function resetTestResultsTable() {
-					var cats = ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet'];
+					var cats = ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet', 'case_fan'];
 					cats.forEach(function(cat) {
 						var row = document.getElementById('test-row-' + cat);
 						if (row) {
@@ -1532,7 +1536,7 @@ class Admin {
 					testBtn.innerHTML = '<span class="dashicons dashicons-update spin" style="animation: rotation 1s infinite linear;"></span> Testing...';
 
 					var catsToTest = (scope === 'all') 
-						? ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet'] 
+						? ['cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet', 'case_fan'] 
 						: [scope];
 
 					resetTestResultsTable();
@@ -1723,6 +1727,7 @@ class Admin {
 						<option value="psu" <?php selected( $cat_filter, 'psu' ); ?>><?php esc_html_e( 'Power Supply Units', 'hwsync' ); ?></option>
 						<option value="cooler" <?php selected( $cat_filter, 'cooler' ); ?>><?php esc_html_e( 'Coolers (AIO/Air)', 'hwsync' ); ?></option>
 						<option value="cabinet" <?php selected( $cat_filter, 'cabinet' ); ?>><?php esc_html_e( 'Cabinets / Cases', 'hwsync' ); ?></option>
+						<option value="case_fan" <?php selected( $cat_filter, 'case_fan' ); ?>><?php esc_html_e( 'Case Fans', 'hwsync' ); ?></option>
 					</select>
 
 					<select name="vendor" onchange="this.form.submit()" style="height: 36px; border-radius: 6px; font-size: 13px; max-width: 190px;">
@@ -2680,7 +2685,8 @@ class Admin {
 					'ram': ['Model', 'Product Series', 'Memory Type', 'Capacity', 'Lighting', 'Kit Type', 'Speed', 'Tested Latency', 'Tested Voltage', 'Dimm Type', 'Profile Type', 'Warranty'],
 					'psu': ['Wattage', 'Series', 'Certification', 'Modular', 'PCIe Connector (6+2)', 'SATA Connector', 'Peripheral (4-Pin)', 'Warranty'],
 					'cabinet': ['Cabinet Size', 'Color', 'Material', 'Expansion Slots', 'Motherboard Size', 'Max CPU Cooler Height', 'Max PSU Length', 'Max Gpu Length', 'Max 3.5" HDD', 'Max 2.5" SSD', 'Dust Filters', 'Pre Installed Fans', 'Max Fan Support', 'Radiator Support', 'I/O Panel', 'Warranty'],
-					'storage': ['Category', 'Series', 'Capacity', 'Form Factor', 'NVMe', 'Interface', 'Write Speed', 'Read Speed', 'TBW', 'Warranty']
+					'storage': ['Category', 'Series', 'Capacity', 'Form Factor', 'NVMe', 'Interface', 'Write Speed', 'Read Speed', 'TBW', 'Warranty'],
+					'case_fan': ['Fan Size', 'Fan Speed', 'Airflow', 'Noise Level', 'Bearing Type', 'Lighting', 'PWM Support', 'Connector', 'Package Quantity', 'Color', 'Warranty']
 				};
 
 				function createFixedSpecRow(key, val) {
@@ -3080,7 +3086,7 @@ class Admin {
 		}
 
 		$clean_endpoints = array();
-		foreach ( array( 'cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet' ) as $cat ) {
+		foreach ( array( 'cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet', 'case_fan' ) as $cat ) {
 			if ( isset( $endpoints[ $cat ] ) ) {
 				$clean_endpoints[ $cat ] = sanitize_text_field( $endpoints[ $cat ] );
 			}

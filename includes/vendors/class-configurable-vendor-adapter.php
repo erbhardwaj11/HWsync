@@ -26,6 +26,7 @@ class Configurable_Vendor_Adapter extends Abstract_Vendor_Adapter {
 			'psu'         => '/power-supply',
 			'cooler'      => '/cooling',
 			'cabinet'     => '/cases',
+			'case_fan'    => '/fans',
 		);
 
 		return wp_parse_args( $this->endpoints, $defaults );

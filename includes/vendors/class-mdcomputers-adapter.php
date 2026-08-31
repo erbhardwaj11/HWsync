@@ -21,6 +21,7 @@ class MDComputers_Adapter extends Abstract_Vendor_Adapter {
 			'psu'         => '/catalog/smps',
 			'cooler'      => '/cooling-system.html',
 			'cabinet'     => '/catalog/cabinet',
+			'case_fan'    => '/cabinet-fan.html',
 		);
 	}
 

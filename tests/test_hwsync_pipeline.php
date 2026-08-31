@@ -1756,6 +1756,48 @@ assert_test( 'Intel CPU Multi-Vendor Matching consolidates CORE I3-12100F and Co
 	$tdp_sanitized_65w === '65W'
 ) );
 
+// Test 52: Basic CPU Name Simplification & Clutter Stripping
+$clean_amd_3400g   = \HWsync\Matching_Engine::normalize_model_name( 'AMD Ryzen 5 3400G with Radeon RX Vega 11 Graphics', 'AMD', 'cpu' );
+$clean_ultra_270k  = \HWsync\Matching_Engine::normalize_model_name( 'Intel Core Ultra 7 270K Plus 24 Cores up to 5.50 GHz FCLGA1851', 'Intel', 'cpu' );
+$clean_intel_14900 = \HWsync\Matching_Engine::normalize_model_name( 'Intel Core i9-14900K 24 Cores up to 6.0 GHz LGA1700 Processor with Intel UHD Graphics 770', 'Intel', 'cpu' );
+$clean_amd_7800x3d = \HWsync\Matching_Engine::normalize_model_name( 'AMD Ryzen 7 7800X3D 8-Core 16-Thread Desktop Processor with 3D V-Cache', 'AMD', 'cpu' );
+
+assert_test( 'Basic CPU Model Name Normalization retains clean hardware names without clutter', (
+	$clean_amd_3400g === 'Ryzen 5 3400G' &&
+	$clean_ultra_270k === 'Core Ultra 7 270K Plus' &&
+	$clean_intel_14900 === 'Core i9-14900K' &&
+	$clean_amd_7800x3d === 'Ryzen 7 7800X3D'
+) );
+
+// Test 53: Dedicated Case Fan Category Isolation, Specs Schema & Vector Icon Resolution
+$cat_fan1    = \HWsync\Matching_Engine::detect_category( 'Lian Li UNI FAN SL-INFINITY 120 RGB Triple Pack with Controller Black' );
+$cat_fan2    = \HWsync\Matching_Engine::detect_category( 'Corsair iCUE AF120 RGB ELITE 120mm PWM Single Fan Black' );
+$cat_cooler1 = \HWsync\Matching_Engine::detect_category( 'DeepCool AK620 High-Performance Dual-Tower CPU Air Cooler' );
+$cat_cooler2 = \HWsync\Matching_Engine::detect_category( 'NZXT Kraken 360 RGB All-in-One Liquid CPU Cooler' );
+
+$fan_specs = \HWsync\Specs_Sync_Manager::merge_and_clean_specs( 'case_fan', array(
+	'fan dimensions' => '120mm',
+	'speed'          => '2100 RPM',
+	'air flow'       => '61.3 CFM',
+	'rgb'            => 'ARGB',
+	'quantity'       => 'Triple Pack',
+	'pwm'            => 'PWM',
+), array(), 'Lian Li UNI FAN SL-INFINITY 120 ARGB Triple Pack' );
+
+$fan_svg = \HWsync\Image_Sync_Manager::get_default_category_svg( 'case_fan' );
+
+assert_test( 'Dedicated Case Fan Category isolates chassis fans from coolers, validates specs schema, and resolves vector icon', (
+	$cat_fan1 === 'case_fan' &&
+	$cat_fan2 === 'case_fan' &&
+	$cat_cooler1 === 'cooler' &&
+	$cat_cooler2 === 'cooler' &&
+	isset( $fan_specs['Fan Size'] ) && $fan_specs['Fan Size'] === '120 mm' &&
+	isset( $fan_specs['Lighting'] ) && $fan_specs['Lighting'] === 'ARGB' &&
+	isset( $fan_specs['Package Quantity'] ) && $fan_specs['Package Quantity'] === 'Triple Pack' &&
+	isset( $fan_specs['PWM Support'] ) && $fan_specs['PWM Support'] === 'Yes' &&
+	strpos( $fan_svg, '<svg' ) !== false
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

@@ -21,6 +21,7 @@ class PCStudio_Adapter extends Abstract_Vendor_Adapter {
 			'psu'         => '/product-category/smps/',
 			'cooler'      => '/product-category/cpu-cooler/',
 			'cabinet'     => '/product-category/cabinet/',
+			'case_fan'    => '/product-category/case-fan/',
 		);
 	}
 

@@ -21,6 +21,7 @@ class EliteHubs_Adapter extends Abstract_Vendor_Adapter {
 			'psu'         => 'power-supply',
 			'cooler'      => 'pc-coolers',
 			'cabinet'     => 'pc-cabinet',
+			'case_fan'    => 'case-fans',
 		);
 	}
 

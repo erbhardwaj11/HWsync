@@ -21,6 +21,7 @@ class PrimeABGB_Adapter extends Abstract_Vendor_Adapter {
 			'psu'         => '/buy-online-price-india/power-supplies-smps/',
 			'cooler'      => '/buy-online-price-india/cpu-cooler-fan-heatsink/',
 			'cabinet'     => '/buy-online-price-india/pc-cases-cabinets/',
+			'case_fan'    => '/buy-online-price-india/chassis-fan/',
 		);
 	}
 

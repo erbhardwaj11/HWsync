@@ -56,6 +56,12 @@ class Image_Sync_Manager {
 			case 'chassis':
 				return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%"><rect width="200" height="200" rx="24" fill="#0c1322"/><rect x="40" y="25" width="120" height="150" rx="10" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/><rect x="50" y="35" width="85" height="110" rx="6" fill="#1c2b4c" stroke="#38bdf8" stroke-width="2" stroke-opacity="0.8"/><rect x="60" y="45" width="30" height="30" rx="4" fill="#00f2fe" opacity="0.8"/><rect x="60" y="85" width="65" height="20" rx="3" fill="#38bdf8" opacity="0.9"/><rect x="142" y="35" width="10" height="130" rx="2" fill="#0c1322" stroke="#00f2fe" stroke-width="1.5"/><rect x="48" y="175" width="16" height="8" rx="2" fill="#38bdf8"/><rect x="136" y="175" width="16" height="8" rx="2" fill="#38bdf8"/><circle cx="147" cy="30" r="3" fill="#00f2fe"/></svg>';
 
+			case 'case_fan':
+			case 'case-fan':
+			case 'fan':
+			case 'fans':
+				return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%"><rect width="200" height="200" rx="24" fill="#0c1322"/><rect x="30" y="30" width="140" height="140" rx="16" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/><circle cx="45" cy="45" r="5" fill="#0c1322" stroke="#38bdf8" stroke-width="2"/><circle cx="155" cy="45" r="5" fill="#0c1322" stroke="#38bdf8" stroke-width="2"/><circle cx="45" cy="155" r="5" fill="#0c1322" stroke="#38bdf8" stroke-width="2"/><circle cx="155" cy="155" r="5" fill="#0c1322" stroke="#38bdf8" stroke-width="2"/><circle cx="100" cy="100" r="58" fill="#1c2b4c" stroke="#38bdf8" stroke-width="2"/><circle cx="100" cy="100" r="24" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/><circle cx="100" cy="100" r="10" fill="#00f2fe"/><path d="M100 76 C105 60 120 48 135 46 C130 58 120 69 110 77 Z" fill="#00f2fe" opacity="0.85"/><path d="M124 100 C140 105 152 120 154 135 C142 130 131 120 123 110 Z" fill="#00f2fe" opacity="0.85"/><path d="M100 124 C95 140 80 152 65 154 C70 142 80 131 90 123 Z" fill="#00f2fe" opacity="0.85"/><path d="M76 100 C60 95 48 80 46 65 C58 70 69 80 77 90 Z" fill="#00f2fe" opacity="0.85"/></svg>';
+
 			default:
 				return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%"><rect width="200" height="200" rx="24" fill="#0c1322"/><rect x="35" y="35" width="130" height="130" rx="16" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/><path d="M100 60 L140 100 L100 140 L60 100 Z" fill="#1c2b4c" stroke="#38bdf8" stroke-width="2.5"/><circle cx="100" cy="100" r="16" fill="#00f2fe"/></svg>';
 		}
@@ -80,7 +86,7 @@ class Image_Sync_Manager {
 	 */
 	public static function get_default_category_image_url( $category ) {
 		$cat = strtolower( trim( (string) $category ) );
-		$valid_cats = array( 'cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet' );
+		$valid_cats = array( 'cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet', 'case_fan' );
 		$slug = in_array( $cat, $valid_cats, true ) ? $cat : 'other';
 
 		if ( defined( 'HWSYNC_PLUGIN_URL' ) ) {

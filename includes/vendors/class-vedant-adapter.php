@@ -21,6 +21,7 @@ class Vedant_Adapter extends Abstract_Vendor_Adapter {
 			'psu'         => array( '/pc-components/power-supply', '/power-supply', '/smps' ),
 			'cooler'      => array( '/cooling-system', '/cpu-cooler' ),
 			'cabinet'     => array( '/pc-components/cabinet', '/cabinet' ),
+			'case_fan'    => array( '/case-fan', '/cabinet-fan', '/case-fans' ),
 		);
 	}
 

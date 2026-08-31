@@ -33,7 +33,7 @@ class Sync_Manager {
 		$target_vendor_slug = isset( $options['vendor'] ) ? $options['vendor'] : 'all';
 		$target_category    = isset( $options['category'] ) ? $options['category'] : 'all';
 		$categories_to_sync = ( $target_category === 'all' )
-			? array( 'cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet' )
+			? array( 'cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet', 'case_fan' )
 			: array( $target_category );
 
 		$vendors = ( $target_vendor_slug === 'all' )

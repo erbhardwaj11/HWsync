@@ -21,6 +21,7 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 			'psu'         => '/s?k=smps+power+supply+unit&i=computers',
 			'cooler'      => '/s?k=cpu+cooler+liquid+aio&i=computers',
 			'cabinet'     => '/s?k=gaming+cabinet+case&i=computers',
+			'case_fan'    => '/s?k=pc+case+fan+cabinet+fan+120mm&i=computers',
 		);
 	}
 
