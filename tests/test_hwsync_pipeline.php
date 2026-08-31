@@ -1717,6 +1717,45 @@ assert_test( 'Multi-Vendor CPU Matching consolidates all retailer variations of 
 	$is_same_1_4 === true
 ) );
 
+// Test 51: Intel CPU Multi-Vendor Matching, Hyphen/Space Normalization, and TDP Sanitization
+$raw_intel_1 = array(
+	'title'    => 'CORE I3-12100F 12TH GEN 4 CORE UPTO 4.3 GHZ',
+	'category' => 'cpu',
+	'price'    => 10550.0,
+	'sku'      => 'MD-12100F',
+);
+$raw_intel_2 = array(
+	'title'    => 'Core i3 12100F 12th Generation ( 4.3 GHz / 4 Cores )',
+	'category' => 'cpu',
+	'price'    => 10645.0,
+	'sku'      => 'EH-12100F',
+);
+$raw_intel_3 = array(
+	'title'    => 'Intel Core i3-12100F Desktop Processor (LGA1700 / 58W TDP)',
+	'category' => 'cpu',
+	'price'    => 10499.0,
+	'sku'      => 'VED-12100F',
+);
+
+$match_intel_1 = \HWsync\Matching_Engine::match_or_create_component( $raw_intel_1 );
+$match_intel_2 = \HWsync\Matching_Engine::match_or_create_component( $raw_intel_2 );
+$match_intel_3 = \HWsync\Matching_Engine::match_or_create_component( $raw_intel_3 );
+
+$is_same_intel_1_2 = \HWsync\Matching_Engine::is_same_hardware_component( $match_intel_1, $match_intel_2 );
+$is_same_intel_1_3 = \HWsync\Matching_Engine::is_same_hardware_component( $match_intel_1, $match_intel_3 );
+
+$tdp_sanitized_58ww = \HWsync\Specs_Sync_Manager::sanitize_and_validate_spec_value( 'TDP', '58 WW', 'cpu', '' );
+$tdp_sanitized_65w  = \HWsync\Specs_Sync_Manager::sanitize_and_validate_spec_value( 'TDP', '65 Watts', 'cpu', '' );
+
+assert_test( 'Intel CPU Multi-Vendor Matching consolidates CORE I3-12100F and Core i3 12100F variations, sanitizing TDP to clean single W', (
+	$match_intel_1->id === $match_intel_2->id &&
+	$match_intel_1->id === $match_intel_3->id &&
+	$is_same_intel_1_2 === true &&
+	$is_same_intel_1_3 === true &&
+	$tdp_sanitized_58ww === '58W' &&
+	$tdp_sanitized_65w === '65W'
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

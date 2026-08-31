@@ -1310,13 +1310,10 @@ class Specs_Sync_Manager {
 			return null;
 		}
 
-		// 5. TDP / PPT
+		// 5. TDP / PPT (Strict single unit e.g. '58W', '65W', '125W', never '58 WW' or '58 W')
 		if ( in_array( $k_lower, array( 'tdp', 'ppt' ), true ) ) {
-			if ( preg_match( '/(\d+(?:\.\d+)?)\s*W(?:att)?/i', $v, $m ) ) {
-				return $m[1] . ' W';
-			}
-			if ( preg_match( '/^\d+$/', $v ) ) {
-				return $v . ' W';
+			if ( preg_match( '/(\d+(?:\.\d+)?)\s*(?:W(?:att(?:s)?)?|WW|WattsW|W\s*W)?/i', $v, $m ) ) {
+				return $m[1] . 'W';
 			}
 			return null;
 		}
@@ -1431,6 +1428,18 @@ class Specs_Sync_Manager {
 					$inferred_w = self::resolve_psu_wattage_from_title( $title );
 					if ( ! empty( $inferred_w ) ) {
 						$specs['Wattage'] = $inferred_w;
+						$changed = true;
+					}
+				}
+			}
+
+			// 3. CPU TDP Sanitization (e.g. "58 WW", "58 W", "58Watts" -> "58W")
+			if ( $comp->category === 'cpu' && isset( $specs['TDP'] ) ) {
+				$cur_tdp = (string) $specs['TDP'];
+				if ( preg_match( '/(\d+)\s*(?:W(?:att(?:s)?)?|WW|WattsW|W\s*W)?/i', $cur_tdp, $tm ) ) {
+					$clean_tdp = $tm[1] . 'W';
+					if ( $clean_tdp !== $cur_tdp ) {
+						$specs['TDP'] = $clean_tdp;
 						$changed = true;
 					}
 				}
@@ -2241,7 +2250,7 @@ class Specs_Sync_Manager {
 					$merged['Cache L3'] = $m[1] . ' MB';
 				}
 				if ( empty( $merged['TDP'] ) && preg_match( '/(\d+)\s*W(?:att)?\b/i', $text, $m ) ) {
-					$merged['TDP'] = $m[1] . ' W';
+					$merged['TDP'] = $m[1] . 'W';
 				}
 				if ( empty( $merged['Memory Support'] ) && preg_match( '/\b(DDR5(?:\s*\+\s*DDR4)?|DDR4|DDR5)\b/i', $text, $m ) ) {
 					$merged['Memory Support'] = strtoupper( $m[1] );

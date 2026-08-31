@@ -140,8 +140,11 @@ class Matching_Engine {
 		$cat = strtolower( $category );
 
 		if ( $cat === 'cpu' ) {
-			if ( preg_match( '/\b(RYZEN\s*[3579]\s*PRO\s*\d{4}[A-Z0-9]*|RYZEN\s*[3579]\s*\d{4}[A-Z0-9]*|THREADRIPPER\s*PRO\s*\d{4}[A-Z0-9]*|THREADRIPPER\s*\d{4}[A-Z0-9]*|I[3579]-\d{4,5}[A-Z0-9]*|CORE\s*ULTRA\s*[3579]\s*\d{3}[A-Z0-9]*)\b/i', $t, $m ) ) {
-				return preg_replace( '/\s+/', ' ', $m[1] );
+			if ( preg_match( '/\b(RYZEN\s*[3579]\s*PRO\s*\d{4}[A-Z0-9]*|RYZEN\s*[3579]\s*\d{4}[A-Z0-9]*|THREADRIPPER\s*PRO\s*\d{4}[A-Z0-9]*|THREADRIPPER\s*\d{4}[A-Z0-9]*|CORE\s*ULTRA\s*[3579]\s*\d{3}[A-Z0-9]*|(?:CORE\s*)?I[3579][\s\-]+\d{4,5}[A-Z0-9]*|PENTIUM\s*(?:GOLD\s*)?[A-Z0-9]+|CELERON\s*[A-Z0-9]+|XEON\s*[A-Z0-9\-]+)\b/i', $t, $m ) ) {
+				$val = $m[1];
+				$val = preg_replace( '/^CORE\s+/i', '', $val );
+				$val = preg_replace( '/^(I[3579])[\s\-]+(\d{4,5}[A-Z0-9]*)$/i', '$1-$2', $val );
+				return preg_replace( '/\s+/', ' ', trim( $val ) );
 			}
 		} elseif ( $cat === 'gpu' ) {
 			if ( preg_match( '/\b(RTX\s*\d{4}\s*TI\s*SUPER|RTX\s*\d{4}\s*SUPER|RTX\s*\d{4}\s*TI|RTX\s*\d{4}|GTX\s*\d{4}\s*TI|GTX\s*\d{4}|RX\s*\d{4}\s*XTX|RX\s*\d{4}\s*XT|RX\s*\d{4}|ARC\s*A\d{3}[A-Z]?)\b/i', $t, $m ) ) {
@@ -283,11 +286,16 @@ class Matching_Engine {
 				'/\b(?:Upto|Up\s*To|Max\.?\s*Boost\s*Clock\s*Up\s*To)?\s*[\d\.]+\s*GHz\b/i',
 				'/\b(?:AM4|AM5|LGA\s*1700|LGA\s*1851|LGA\s*1200)\s*(?:Socket)?\b/i',
 				'/\b\d+\s*MB\s*Cache\b/i',
-				'/\b\d+th\s*Generation\b/i',
+				'/\b\d+th\s*(?:Gen(?:eration)?)?\b/i',
 			);
 			foreach ( $cpu_noise as $p ) {
 				$clean = preg_replace( $p, ' ', $clean );
 			}
+
+			// Standardize Intel Core iX-XXXXX formatting
+			$clean = preg_replace( '/\b(Core\s+i[3579])[\s\-]+(\d{4,5}[A-Z0-9]*)\b/i', '$1-$2', $clean );
+			$clean = preg_replace( '/\b(i[3579])[\s\-]+(\d{4,5}[A-Z0-9]*)\b/i', 'Core $1-$2', $clean );
+			$clean = preg_replace( '/\bCore\s+Core\b/i', 'Core', $clean );
 		}
 
 		$buzzwords = array(
