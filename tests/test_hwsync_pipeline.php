@@ -1673,6 +1673,50 @@ assert_test( 'Default Category Vector Icons provide clean SVG icons for every ca
 	( strpos( $reloaded_cpu->image_url, 'defaults/cpu.svg' ) !== false || strpos( $reloaded_cpu->image_url, 'data:image/svg+xml' ) === 0 )
 ) );
 
+// Test 50: Multi-Vendor CPU Matching and Ryzen 5 7500F Deduplication & Merge
+$raw_cpu_1 = array(
+	'title'    => 'AMD RYZEN 5 7500F 6 CORES UPTO 3.7 GHZ UPTO 5 GHZ AM5',
+	'category' => 'cpu',
+	'price'    => 13899.0,
+	'sku'      => 'MD-7500F',
+);
+$raw_cpu_2 = array(
+	'title'    => 'AMD Ryzen 5 7500F (6 Cores, 12 Threads, Max. Boost Clock Up To 5GHz, AM5 Socket and 38MB Cache)',
+	'category' => 'cpu',
+	'price'    => 13500.0,
+	'sku'      => 'VED-7500F',
+);
+$raw_cpu_3 = array(
+	'title'    => 'AMD Ryzen 5 7500F 3.7GHz',
+	'category' => 'cpu',
+	'price'    => 13999.0,
+	'sku'      => 'PCS-7500F',
+);
+$raw_cpu_4 = array(
+	'title'    => 'AMD Ryzen 5 7500F 7th Generation ( 5 GHz / 6 Cores / 12 Threads )',
+	'category' => 'cpu',
+	'price'    => 13650.0,
+	'sku'      => 'EH-7500F',
+);
+
+$match_cpu_1 = \HWsync\Matching_Engine::match_or_create_component( $raw_cpu_1 );
+$match_cpu_2 = \HWsync\Matching_Engine::match_or_create_component( $raw_cpu_2 );
+$match_cpu_3 = \HWsync\Matching_Engine::match_or_create_component( $raw_cpu_3 );
+$match_cpu_4 = \HWsync\Matching_Engine::match_or_create_component( $raw_cpu_4 );
+
+$is_same_1_2 = \HWsync\Matching_Engine::is_same_hardware_component( $match_cpu_1, $match_cpu_2 );
+$is_same_1_3 = \HWsync\Matching_Engine::is_same_hardware_component( $match_cpu_1, $match_cpu_3 );
+$is_same_1_4 = \HWsync\Matching_Engine::is_same_hardware_component( $match_cpu_1, $match_cpu_4 );
+
+assert_test( 'Multi-Vendor CPU Matching consolidates all retailer variations of AMD Ryzen 5 7500F into a single canonical component', (
+	$match_cpu_1->id === $match_cpu_2->id &&
+	$match_cpu_1->id === $match_cpu_3->id &&
+	$match_cpu_1->id === $match_cpu_4->id &&
+	$is_same_1_2 === true &&
+	$is_same_1_3 === true &&
+	$is_same_1_4 === true
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

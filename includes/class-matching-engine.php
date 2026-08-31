@@ -79,9 +79,15 @@ class Matching_Engine {
 			// Validate that Core Hardware IDs match strictly
 			if ( ! empty( $core_hw_id ) ) {
 				$candidate_core_id = self::extract_core_hardware_id( $candidate->model_name, $category );
-				if ( ! empty( $candidate_core_id ) && strcasecmp( $core_hw_id, $candidate_core_id ) !== 0 ) {
-					// Different hardware model (e.g. Epoch XL vs Meshify 3 XL or RTX 5050 vs RTX 4070) -> DO NOT MATCH!
-					continue;
+				if ( ! empty( $candidate_core_id ) ) {
+					if ( strcasecmp( $core_hw_id, $candidate_core_id ) !== 0 ) {
+						// Different hardware model (e.g. Epoch XL vs Meshify 3 XL or RTX 5050 vs RTX 4070) -> DO NOT MATCH!
+						continue;
+					}
+					// For CPU, Cooler, Cabinet: Matching Core Hardware ID is an EXACT match under the same brand
+					if ( $category === 'cpu' || $category === 'cooler' || $category === 'cabinet' ) {
+						return $candidate;
+					}
 				}
 			}
 
@@ -266,6 +272,24 @@ class Matching_Engine {
 			$clean = preg_replace( '/^' . preg_quote( $brand, '/' ) . '\s+/i', '', $clean );
 		}
 
+		// Remove parenthetical noise blurbs e.g. (6 Cores, 12 Threads, Max. Boost Clock Up To 5GHz, AM5 Socket and 38MB Cache)
+		$clean = preg_replace( '/\([^\)]*\)/', ' ', $clean );
+
+		$cat_lower = strtolower( (string) $category );
+		if ( $cat_lower === 'cpu' ) {
+			$cpu_noise = array(
+				'/\b\d+\s*Cores?(?:\s*(?:and|\/|,)?\s*\d+\s*Threads?)?\b/i',
+				'/\b\d+\s*Threads?\b/i',
+				'/\b(?:Upto|Up\s*To|Max\.?\s*Boost\s*Clock\s*Up\s*To)?\s*[\d\.]+\s*GHz\b/i',
+				'/\b(?:AM4|AM5|LGA\s*1700|LGA\s*1851|LGA\s*1200)\s*(?:Socket)?\b/i',
+				'/\b\d+\s*MB\s*Cache\b/i',
+				'/\b\d+th\s*Generation\b/i',
+			);
+			foreach ( $cpu_noise as $p ) {
+				$clean = preg_replace( $p, ' ', $clean );
+			}
+		}
+
 		$buzzwords = array(
 			'Desktop Processor', 'Processor with Radeon Graphics', 'Processor', 'Unlocked', 'Box Pack',
 			'Gaming Graphics Card', 'Graphics Card', 'Video Card', 'Desktop Memory',
@@ -278,6 +302,7 @@ class Matching_Engine {
 			$clean = preg_replace( '/\b' . preg_quote( $word, '/' ) . '\b/i', '', $clean );
 		}
 
+		$clean = trim( preg_replace( '/[\s,\/\-]+$/', '', $clean ) );
 		$clean = trim( preg_replace( '/\s+/', ' ', $clean ) );
 		return $clean ?: $title;
 	}
@@ -355,7 +380,7 @@ class Matching_Engine {
 			return false;
 		}
 
-		// 5. Core Hardware ID Check (e.g. Epoch XL vs Meshify 3 XL, RTX 5050 vs RTX 4070, H410 vs A520)
+		// 5. Core Hardware ID Check (e.g. Epoch XL vs Meshify 3 XL, RTX 5050 vs RTX 4070, H410 vs A520, Ryzen 5 7500F)
 		$core_a = self::extract_core_hardware_id( $a->model_name, $a->category );
 		$core_b = self::extract_core_hardware_id( $b->model_name, $b->category );
 
@@ -363,6 +388,15 @@ class Matching_Engine {
 			if ( strcasecmp( $core_a, $core_b ) !== 0 ) {
 				// Different hardware models -> CANNOT MERGE!
 				return false;
+			}
+			// For CPU, Cooler, Cabinet: Matching Core Hardware ID under the same brand and category represents the EXACT same hardware product
+			if ( $a->category === 'cpu' || $a->category === 'cooler' || $a->category === 'cabinet' ) {
+				$specs_a = $a->get_specs() ?: array();
+				$specs_b = $b->get_specs() ?: array();
+				if ( ! empty( $specs_a['socket'] ) && ! empty( $specs_b['socket'] ) && strcasecmp( $specs_a['socket'], $specs_b['socket'] ) !== 0 ) {
+					return false;
+				}
+				return true;
 			}
 		} elseif ( $a->category === 'motherboard' && ( ! empty( $core_a ) || ! empty( $core_b ) ) ) {
 			// One has an identified motherboard chipset and the other doesn't or differs -> CANNOT MERGE!
@@ -552,12 +586,23 @@ class Matching_Engine {
 							$primary->specs_json = $merged_specs;
 						}
 
-						// Copy MPN / SKU if primary was missing it
-						if ( empty( $primary->mpn ) && ! empty( $dup->mpn ) ) {
-							$primary->mpn = $dup->mpn;
+						// Copy WP Post ID if primary was missing it
+						if ( empty( $primary->wp_post_id ) && ! empty( $dup->wp_post_id ) ) {
+							$primary->wp_post_id = $dup->wp_post_id;
 						}
-						if ( empty( $primary->sku ) && ! empty( $dup->sku ) ) {
-							$primary->sku = $dup->sku;
+
+						// Copy image_url if primary was missing it or has a default icon while dup has a real photo
+						if ( ( empty( $primary->image_url ) || strpos( $primary->image_url, 'defaults/' ) !== false || strpos( $primary->image_url, 'data:image/' ) === 0 ) && ! empty( $dup->image_url ) && strpos( $dup->image_url, '/uploads/' ) !== false ) {
+							$primary->image_url = $dup->image_url;
+						}
+
+						// Normalize primary model name if a cleaner / shorter version is found
+						$norm_primary = self::normalize_model_name( $primary->model_name, $primary->brand, $primary->category );
+						$norm_dup = self::normalize_model_name( $dup->model_name, $dup->brand, $dup->category );
+						if ( strlen( $norm_dup ) < strlen( $norm_primary ) && strlen( $norm_dup ) >= 3 ) {
+							$primary->model_name = $norm_dup;
+						} else {
+							$primary->model_name = $norm_primary;
 						}
 
 						// Delete duplicate component record from components table
