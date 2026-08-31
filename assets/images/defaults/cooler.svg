@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+  <rect width="200" height="200" rx="24" fill="#0c1322"/>
+  <!-- Radiator / Heatsink -->
+  <rect x="35" y="30" width="130" height="60" rx="8" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/>
+  <path d="M45 30v60M55 30v60M65 30v60M75 30v60M85 30v60M95 30v60M105 30v60M115 30v60M125 30v60M135 30v60M145 30v60M155 30v60" stroke="#38bdf8" stroke-width="1.5" stroke-opacity="0.6"/>
+  <!-- Dual Tubing -->
+  <path d="M70 90 C 70 125, 85 130, 85 145" fill="none" stroke="#00f2fe" stroke-width="4" stroke-linecap="round"/>
+  <path d="M95 90 C 95 120, 115 125, 115 145" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round"/>
+  <!-- Pump Block / Fan -->
+  <circle cx="100" cy="155" r="28" fill="#1c2b4c" stroke="#00f2fe" stroke-width="2.5"/>
+  <circle cx="100" cy="155" r="12" fill="#00f2fe"/>
+  <path d="M100 130v50M75 155h50M82 137l36 36M82 173l36-36" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+</svg>

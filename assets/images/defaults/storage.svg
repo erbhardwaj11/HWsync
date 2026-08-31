@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+  <rect width="200" height="200" rx="24" fill="#0c1322"/>
+  <!-- M.2 NVMe SSD -->
+  <rect x="25" y="60" width="150" height="80" rx="8" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/>
+  <!-- Controller Chip -->
+  <rect x="40" y="75" width="30" height="30" rx="4" fill="#1c2b4c" stroke="#38bdf8" stroke-width="2"/>
+  <circle cx="55" cy="90" r="5" fill="#00f2fe"/>
+  <!-- NAND Flash Chips -->
+  <rect x="85" y="75" width="36" height="50" rx="4" fill="#0c1322" stroke="#38bdf8" stroke-width="2"/>
+  <rect x="130" y="75" width="36" height="50" rx="4" fill="#0c1322" stroke="#38bdf8" stroke-width="2"/>
+  <!-- Gold Pins Key M -->
+  <rect x="25" y="112" width="40" height="18" rx="2" fill="#00f2fe"/>
+  <path d="M30 112v18M36 112v18M42 112v18M48 112v18M54 112v18M60 112v18" stroke="#0c1322" stroke-width="2"/>
+  <!-- Screw Mount Notch -->
+  <path d="M175 90 a10,10 0 0,0 0,20 Z" fill="#0c1322" stroke="#00f2fe" stroke-width="2"/>
+</svg>

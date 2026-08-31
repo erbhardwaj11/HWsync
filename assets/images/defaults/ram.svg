@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+  <rect width="200" height="200" rx="24" fill="#0c1322"/>
+  <!-- RAM Stick -->
+  <rect x="20" y="70" width="160" height="60" rx="6" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/>
+  <!-- Heatspreader top notch -->
+  <path d="M20 70 L40 54 L160 54 L180 70 Z" fill="#1c2b4c" stroke="#00f2fe" stroke-width="2"/>
+  <!-- DRAM Chips -->
+  <rect x="35" y="78" width="22" height="34" rx="3" fill="#0c1322" stroke="#38bdf8" stroke-width="1.5"/>
+  <rect x="68" y="78" width="22" height="34" rx="3" fill="#0c1322" stroke="#38bdf8" stroke-width="1.5"/>
+  <rect x="101" y="78" width="22" height="34" rx="3" fill="#0c1322" stroke="#38bdf8" stroke-width="1.5"/>
+  <rect x="134" y="78" width="22" height="34" rx="3" fill="#0c1322" stroke="#38bdf8" stroke-width="1.5"/>
+  <!-- Gold Pins -->
+  <rect x="26" y="130" width="148" height="14" rx="2" fill="#00f2fe"/>
+  <path d="M34 130v14M44 130v14M54 130v14M64 130v14M74 130v14M84 130v14M94 130v14M106 130v14M116 130v14M126 130v14M136 130v14M146 130v14M156 130v14M166 130v14" stroke="#0c1322" stroke-width="2"/>
+  <!-- Middle Notch -->
+  <rect x="97" y="132" width="6" height="12" fill="#0c1322"/>
+</svg>

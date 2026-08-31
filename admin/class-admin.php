@@ -1811,7 +1811,7 @@ class Admin {
 									<td style="vertical-align: middle;">
 										<div style="display: flex; align-items: center; gap: 10px;">
 											<?php if ( ! empty( $comp->get_image_url() ) ) : ?>
-												<img src="<?php echo esc_url( $comp->get_image_url() ); ?>" alt="" style="width: 38px; height: 38px; object-fit: contain; border-radius: 6px; border: 1px solid #e2e8f0; background: #fff; flex-shrink: 0; padding: 2px;" />
+												<img src="<?php echo esc_url( $comp->get_image_url() ); ?>" alt="" onerror="this.onerror=null; this.src='<?php echo esc_js( \HWsync\Image_Sync_Manager::get_default_category_data_uri( $comp->category ) ); ?>';" style="width: 38px; height: 38px; object-fit: contain; border-radius: 6px; border: 1px solid #e2e8f0; background: #fff; flex-shrink: 0; padding: 2px;" />
 											<?php else : ?>
 												<div style="width: 38px; height: 38px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; display: flex; align-items: center; justify-content: center; color: #cbd5e1; flex-shrink: 0;">
 													<span class="dashicons dashicons-format-image" style="font-size: 18px; width: 18px; height: 18px; line-height: 18px;"></span>
@@ -3535,7 +3535,7 @@ class Admin {
 		$image_manager = new Image_Sync_Manager();
 		$report = $image_manager->run_images_sync( array(
 			'category' => $category,
-			'limit'    => 100,
+			'limit'    => 99999,
 			'force'    => $force,
 		), $stream_logger );
 

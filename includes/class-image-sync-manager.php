@@ -12,17 +12,100 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Image_Sync_Manager {
 
 	/**
-	 * Check if an image URL is hosted locally on this WordPress installation.
+	 * Returns clean inline SVG vector icon for a specific hardware category.
+	 *
+	 * @param string $category Hardware category slug.
+	 * @return string Vector SVG markup.
+	 */
+	public static function get_default_category_svg( $category ) {
+		$cat = strtolower( trim( (string) $category ) );
+		switch ( $cat ) {
+			case 'cpu':
+			case 'processor':
+				return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%"><rect width="200" height="200" rx="24" fill="#0c1322"/><rect x="28" y="28" width="144" height="144" rx="14" fill="#131e36" stroke="#00f2fe" stroke-width="2.5" stroke-opacity="0.8"/><rect x="52" y="52" width="96" height="96" rx="8" fill="#1c2b4c" stroke="#38bdf8" stroke-width="2"/><rect x="70" y="70" width="60" height="60" rx="6" fill="#0f172a" stroke="#00f2fe" stroke-width="2.5"/><path d="M78 86h44M78 100h44M78 114h44" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-opacity="0.7"/><path d="M40 28v-12M60 28v-12M80 28v-12M100 28v-12M120 28v-12M140 28v-12M160 28v-12" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/><path d="M40 184v-12M60 184v-12M80 184v-12M100 184v-12M120 184v-12M140 184v-12M160 184v-12" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/><path d="M28 40h-12M28 60h-12M28 80h-12M28 100h-12M28 120h-12M28 140h-12M28 160h-12" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/><path d="M184 40h-12M184 60h-12M184 80h-12M184 100h-12M184 120h-12M184 140h-12M184 160h-12" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/><polygon points="34,34 46,34 34,46" fill="#00f2fe"/></svg>';
+
+			case 'gpu':
+			case 'graphics-card':
+			case 'video-card':
+				return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%"><rect width="200" height="200" rx="24" fill="#0c1322"/><rect x="24" y="55" width="152" height="85" rx="10" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/><circle cx="68" cy="97" r="28" fill="#1c2b4c" stroke="#38bdf8" stroke-width="2"/><circle cx="68" cy="97" r="10" fill="#00f2fe"/><path d="M68 73v48M44 97h48M51 80l34 34M51 114l34-34" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/><circle cx="132" cy="97" r="28" fill="#1c2b4c" stroke="#38bdf8" stroke-width="2"/><circle cx="132" cy="97" r="10" fill="#00f2fe"/><path d="M132 73v48M108 97h48M115 80l34 34M115 114l34-34" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/><rect x="40" y="140" width="80" height="12" rx="2" fill="#00f2fe"/><path d="M46 140v12M54 140v12M62 140v12M70 140v12M78 140v12M86 140v12M94 140v12M102 140v12M110 140v12" stroke="#0c1322" stroke-width="2"/><rect x="18" y="45" width="8" height="105" rx="3" fill="#38bdf8"/></svg>';
+
+			case 'motherboard':
+			case 'mobo':
+				return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%"><rect width="200" height="200" rx="24" fill="#0c1322"/><rect x="25" y="25" width="150" height="150" rx="10" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/><rect x="45" y="45" width="50" height="50" rx="6" fill="#1c2b4c" stroke="#38bdf8" stroke-width="2"/><rect x="55" y="55" width="30" height="30" rx="4" fill="#0c1322" stroke="#00f2fe" stroke-width="1.5"/><rect x="115" y="42" width="8" height="60" rx="2" fill="#00f2fe"/><rect x="128" y="42" width="8" height="60" rx="2" fill="#38bdf8"/><rect x="141" y="42" width="8" height="60" rx="2" fill="#00f2fe"/><rect x="154" y="42" width="8" height="60" rx="2" fill="#38bdf8"/><rect x="45" y="115" width="115" height="10" rx="2" fill="#38bdf8"/><rect x="45" y="135" width="80" height="8" rx="2" fill="#1c2b4c" stroke="#00f2fe" stroke-width="1.5"/><rect x="45" y="152" width="115" height="10" rx="2" fill="#38bdf8"/><rect x="25" y="40" width="12" height="40" fill="#00f2fe" opacity="0.8"/><rect x="125" y="125" width="35" height="35" rx="4" fill="#1c2b4c" stroke="#00f2fe" stroke-width="2"/></svg>';
+
+			case 'ram':
+			case 'memory':
+				return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%"><rect width="200" height="200" rx="24" fill="#0c1322"/><rect x="20" y="70" width="160" height="60" rx="6" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/><path d="M20 70 L40 54 L160 54 L180 70 Z" fill="#1c2b4c" stroke="#00f2fe" stroke-width="2"/><rect x="35" y="78" width="22" height="34" rx="3" fill="#0c1322" stroke="#38bdf8" stroke-width="1.5"/><rect x="68" y="78" width="22" height="34" rx="3" fill="#0c1322" stroke="#38bdf8" stroke-width="1.5"/><rect x="101" y="78" width="22" height="34" rx="3" fill="#0c1322" stroke="#38bdf8" stroke-width="1.5"/><rect x="134" y="78" width="22" height="34" rx="3" fill="#0c1322" stroke="#38bdf8" stroke-width="1.5"/><rect x="26" y="130" width="148" height="14" rx="2" fill="#00f2fe"/><path d="M34 130v14M44 130v14M54 130v14M64 130v14M74 130v14M84 130v14M94 130v14M106 130v14M116 130v14M126 130v14M136 130v14M146 130v14M156 130v14M166 130v14" stroke="#0c1322" stroke-width="2"/><rect x="97" y="132" width="6" height="12" fill="#0c1322"/></svg>';
+
+			case 'storage':
+			case 'ssd':
+			case 'hdd':
+				return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%"><rect width="200" height="200" rx="24" fill="#0c1322"/><rect x="25" y="60" width="150" height="80" rx="8" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/><rect x="40" y="75" width="30" height="30" rx="4" fill="#1c2b4c" stroke="#38bdf8" stroke-width="2"/><circle cx="55" cy="90" r="5" fill="#00f2fe"/><rect x="85" y="75" width="36" height="50" rx="4" fill="#0c1322" stroke="#38bdf8" stroke-width="2"/><rect x="130" y="75" width="36" height="50" rx="4" fill="#0c1322" stroke="#38bdf8" stroke-width="2"/><rect x="25" y="112" width="40" height="18" rx="2" fill="#00f2fe"/><path d="M30 112v18M36 112v18M42 112v18M48 112v18M54 112v18M60 112v18" stroke="#0c1322" stroke-width="2"/><path d="M175 90 a10,10 0 0,0 0,20 Z" fill="#0c1322" stroke="#00f2fe" stroke-width="2"/></svg>';
+
+			case 'psu':
+			case 'power-supply':
+				return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%"><rect width="200" height="200" rx="24" fill="#0c1322"/><rect x="25" y="30" width="150" height="140" rx="12" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/><circle cx="85" cy="100" r="42" fill="#1c2b4c" stroke="#38bdf8" stroke-width="2"/><circle cx="85" cy="100" r="16" fill="#00f2fe"/><path d="M85 62v76M47 100h76M58 73l54 54M58 127l54-54" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/><rect x="145" y="55" width="20" height="32" rx="4" fill="#0c1322" stroke="#38bdf8" stroke-width="1.5"/><rect x="147" y="105" width="16" height="24" rx="2" fill="#00f2fe"/><rect x="40" y="148" width="14" height="10" fill="#00f2fe"/><rect x="62" y="148" width="14" height="10" fill="#00f2fe"/><rect x="84" y="148" width="14" height="10" fill="#00f2fe"/><rect x="106" y="148" width="14" height="10" fill="#00f2fe"/></svg>';
+
+			case 'cooler':
+			case 'cpu-cooler':
+			case 'fan':
+				return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%"><rect width="200" height="200" rx="24" fill="#0c1322"/><rect x="35" y="30" width="130" height="60" rx="8" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/><path d="M45 30v60M55 30v60M65 30v60M75 30v60M85 30v60M95 30v60M105 30v60M115 30v60M125 30v60M135 30v60M145 30v60M155 30v60" stroke="#38bdf8" stroke-width="1.5" stroke-opacity="0.6"/><path d="M70 90 C 70 125, 85 130, 85 145" fill="none" stroke="#00f2fe" stroke-width="4" stroke-linecap="round"/><path d="M95 90 C 95 120, 115 125, 115 145" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round"/><circle cx="100" cy="155" r="28" fill="#1c2b4c" stroke="#00f2fe" stroke-width="2.5"/><circle cx="100" cy="155" r="12" fill="#00f2fe"/><path d="M100 130v50M75 155h50M82 137l36 36M82 173l36-36" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/></svg>';
+
+			case 'cabinet':
+			case 'case':
+			case 'chassis':
+				return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%"><rect width="200" height="200" rx="24" fill="#0c1322"/><rect x="40" y="25" width="120" height="150" rx="10" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/><rect x="50" y="35" width="85" height="110" rx="6" fill="#1c2b4c" stroke="#38bdf8" stroke-width="2" stroke-opacity="0.8"/><rect x="60" y="45" width="30" height="30" rx="4" fill="#00f2fe" opacity="0.8"/><rect x="60" y="85" width="65" height="20" rx="3" fill="#38bdf8" opacity="0.9"/><rect x="142" y="35" width="10" height="130" rx="2" fill="#0c1322" stroke="#00f2fe" stroke-width="1.5"/><rect x="48" y="175" width="16" height="8" rx="2" fill="#38bdf8"/><rect x="136" y="175" width="16" height="8" rx="2" fill="#38bdf8"/><circle cx="147" cy="30" r="3" fill="#00f2fe"/></svg>';
+
+			default:
+				return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%"><rect width="200" height="200" rx="24" fill="#0c1322"/><rect x="35" y="35" width="130" height="130" rx="16" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/><path d="M100 60 L140 100 L100 140 L60 100 Z" fill="#1c2b4c" stroke="#38bdf8" stroke-width="2.5"/><circle cx="100" cy="100" r="16" fill="#00f2fe"/></svg>';
+		}
+	}
+
+	/**
+	 * Returns clean self-contained Data URI for a hardware category vector icon.
+	 *
+	 * @param string $category
+	 * @return string Data URI format.
+	 */
+	public static function get_default_category_data_uri( $category ) {
+		$svg = self::get_default_category_svg( $category );
+		return 'data:image/svg+xml;utf8,' . rawurlencode( $svg );
+	}
+
+	/**
+	 * Returns canonical URL for default category fallback icon.
+	 *
+	 * @param string $category
+	 * @return string Absolute URL or Data URI.
+	 */
+	public static function get_default_category_image_url( $category ) {
+		$cat = strtolower( trim( (string) $category ) );
+		$valid_cats = array( 'cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet' );
+		$slug = in_array( $cat, $valid_cats, true ) ? $cat : 'other';
+
+		if ( defined( 'HWSYNC_PLUGIN_URL' ) ) {
+			return HWSYNC_PLUGIN_URL . 'assets/images/defaults/' . $slug . '.svg';
+		}
+
+		return self::get_default_category_data_uri( $category );
+	}
+
+	/**
+	 * Check if an image URL is hosted locally on this WordPress installation or is a valid SVG vector.
 	 *
 	 * @param string $url Image URL to check.
-	 * @return bool True if local, false if external link to web.
+	 * @return bool True if local or internal, false if external link to web.
 	 */
 	public static function is_local_image_url( $url ) {
 		if ( empty( $url ) || ! is_string( $url ) ) {
 			return false;
 		}
 
-		if ( strpos( $url, '/wp-content/uploads/' ) !== false ) {
+		if ( strpos( $url, 'data:image/' ) === 0 ) {
+			return true;
+		}
+
+		if ( strpos( $url, '/wp-content/' ) !== false || strpos( $url, '/plugins/hwsync/' ) !== false ) {
 			return true;
 		}
 
@@ -45,8 +128,59 @@ class Image_Sync_Manager {
 	}
 
 	/**
+	 * Synchronize a component image URL across all backend tables and postmeta destinations.
+	 *
+	 * @param Component $component Hardware component model.
+	 * @param string $image_url Target image URL.
+	 * @param int $attachment_id Optional attachment ID.
+	 * @return bool True on success.
+	 */
+	public static function sync_component_image( Component $component, $image_url, $attachment_id = 0 ) {
+		global $wpdb;
+		if ( empty( $component->id ) || empty( $image_url ) ) {
+			return false;
+		}
+
+		// 1. Update HWsync Component
+		$component->image_url = $image_url;
+		$component->save();
+
+		// 2. Update native PCSpecs theme table (wp_pc_components) if installed
+		if ( isset( $wpdb ) && is_object( $wpdb ) ) {
+			$pc_comp_table = ( isset( $wpdb->prefix ) ? $wpdb->prefix : 'wp_' ) . 'pc_components';
+			$has_pc_table = ( $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $pc_comp_table ) ) === $pc_comp_table );
+			if ( $has_pc_table ) {
+				$wpdb->update( $pc_comp_table, array( 'image_url' => $image_url ), array( 'id' => $component->id ) );
+				if ( ! empty( $component->model_name ) ) {
+					$wpdb->update( $pc_comp_table, array( 'image_url' => $image_url ), array( 'model_name' => $component->model_name ) );
+				}
+			}
+		}
+
+		// 3. Resolve WordPress Post and update postmeta & thumbnail
+		$post_id = ! empty( $component->wp_post_id ) ? intval( $component->wp_post_id ) : 0;
+		if ( ! $post_id && isset( $wpdb->postmeta ) ) {
+			$post_id = intval( $wpdb->get_var( $wpdb->prepare(
+				"SELECT post_id FROM {$wpdb->postmeta} WHERE (meta_key = '_pcspecs_component_id' OR meta_key = '_hwsync_component_id') AND meta_value = %d LIMIT 1",
+				$component->id
+			) ) );
+		}
+
+		if ( $post_id > 0 && function_exists( 'update_post_meta' ) ) {
+			update_post_meta( $post_id, '_pcspecs_image_url', $image_url );
+			update_post_meta( $post_id, '_hwsync_image_url', $image_url );
+
+			if ( $attachment_id > 0 && function_exists( 'set_post_thumbnail' ) ) {
+				set_post_thumbnail( $post_id, $attachment_id );
+			}
+		}
+
+		return true;
+	}
+
+	/**
 	 * Audit image status across canonical components in database.
-	 * Components with local images are counted as already synced.
+	 * Components with local images or default SVGs are counted as already synced.
 	 *
 	 * @param string $category Hardware category slug or 'all'.
 	 * @return array Array with total, already_synced, needing_sync counts.
@@ -103,10 +237,7 @@ class Image_Sync_Manager {
 
 		// 1. Current component image_url is already local
 		if ( ! empty( $component->image_url ) && self::is_local_image_url( $component->image_url ) ) {
-			if ( ! empty( $component->wp_post_id ) && function_exists( 'update_post_meta' ) ) {
-				update_post_meta( $component->wp_post_id, '_pcspecs_image_url', $component->image_url );
-				update_post_meta( $component->wp_post_id, '_hwsync_image_url', $component->image_url );
-			}
+			self::sync_component_image( $component, $component->image_url );
 			$this->emit( $logger, 'debug', "[LOCAL MATCH] Component #{$component->id} [{$comp_name}] already has local image associated." );
 			return true;
 		}
@@ -117,12 +248,7 @@ class Image_Sync_Manager {
 			if ( $thumb_id ) {
 				$thumb_url = wp_get_attachment_url( $thumb_id );
 				if ( ! empty( $thumb_url ) ) {
-					$component->image_url = $thumb_url;
-					$component->save();
-					if ( function_exists( 'update_post_meta' ) ) {
-						update_post_meta( $component->wp_post_id, '_pcspecs_image_url', $thumb_url );
-						update_post_meta( $component->wp_post_id, '_hwsync_image_url', $thumb_url );
-					}
+					self::sync_component_image( $component, $thumb_url, $thumb_id );
 					$this->emit( $logger, 'success', "[LOCAL ATTACHED] Associated existing WordPress featured image to [{$comp_name}]." );
 					return true;
 				}
@@ -303,7 +429,7 @@ class Image_Sync_Manager {
 		// 1. Upfront Internal Check / Audit on initial step
 		if ( $offset === 0 ) {
 			$audit = self::audit_image_status( $category );
-			$this->emit( $logger, 'info', "Image Pre-Check: Found {$audit['total']} total components ({$audit['already_synced']} local photos saved, {$audit['needing_sync']} left to download)." );
+			$this->emit( $logger, 'info', "Image Pre-Check: Found {$audit['total']} total components ({$audit['already_synced']} with local/vector photos, {$audit['needing_sync']} needing images)." );
 		}
 
 		$where_clauses = array( "1=1" );
@@ -311,6 +437,10 @@ class Image_Sync_Manager {
 			$where_clauses[] = $wpdb->prepare( "id = %d", $component_id );
 		} elseif ( $category !== 'all' && ! empty( $category ) ) {
 			$where_clauses[] = $wpdb->prepare( "category = %s", $category );
+		}
+
+		if ( ! $force ) {
+			$where_clauses[] = "(image_url IS NULL OR image_url = '' OR (image_url NOT LIKE 'data:image/%' AND image_url NOT LIKE '%/uploads/%' AND image_url NOT LIKE '%/plugins/hwsync/%'))";
 		}
 
 		$where_sql = implode( ' AND ', $where_clauses );
@@ -347,77 +477,75 @@ class Image_Sync_Manager {
 
 			// Gather linked vendor prices
 			$prices = $component->get_prices();
-			if ( empty( $prices ) ) {
-				$this->emit( $logger, 'debug', "Component #{$component->id} [{$comp_name}] has no linked vendor listings. Skipping." );
-				$report['skipped']++;
-				continue;
-			}
-
 			$image_downloaded = false;
 
-			// STEP 2: FAST PATH - Check if any linked price listing already has image_url in raw_data
-			foreach ( $prices as $p ) {
-				$raw_data = is_array( $p->raw_data_json ) ? $p->raw_data_json : ( json_decode( (string) $p->raw_data_json, true ) ?: array() );
-				$candidate_url = '';
-
-				if ( ! empty( $raw_data['image_url'] ) ) {
-					$candidate_url = $raw_data['image_url'];
-				} elseif ( ! empty( $raw_data['img_url'] ) ) {
-					$candidate_url = $raw_data['img_url'];
-				} elseif ( ! empty( $raw_data['image'] ) ) {
-					$candidate_url = $raw_data['image'];
-				}
-
-				if ( ! empty( $candidate_url ) && filter_var( $candidate_url, FILTER_VALIDATE_URL ) ) {
-					$vendor_slug = ! empty( $p->vendor_slug ) ? $p->vendor_slug : 'store';
-					$this->emit( $logger, 'debug', "Found catalog image from {$vendor_slug} for #{$component->id} [{$comp_name}]..." );
-
-					$save_res = $this->download_and_attach_image( $component, $candidate_url );
-					if ( $save_res && ! empty( $save_res['url'] ) ) {
-						$component->image_url = $save_res['url'];
-						$component->save();
-
-						$image_downloaded = true;
-						$report['images_saved']++;
-
-						$this->emit( $logger, 'success', "Downloaded & Saved 1 local photo for [{$comp_name}] -> {$save_res['file_name']}" );
-						break; // STRICTLY 1 PHOTO PER PRODUCT
-					}
-				}
-			}
-
-			// STEP 3: FALLBACK - Visit primary store product page and extract main photo
-			if ( ! $image_downloaded ) {
+			if ( ! empty( $prices ) ) {
+				// STEP 2: FAST PATH - Check if any linked price listing already has image_url in raw_data
 				foreach ( $prices as $p ) {
-					if ( empty( $p->product_url ) ) {
-						continue;
+					$raw_data = is_array( $p->raw_data_json ) ? $p->raw_data_json : ( json_decode( (string) $p->raw_data_json, true ) ?: array() );
+					$candidate_url = '';
+
+					if ( ! empty( $raw_data['image_url'] ) ) {
+						$candidate_url = $raw_data['image_url'];
+					} elseif ( ! empty( $raw_data['img_url'] ) ) {
+						$candidate_url = $raw_data['img_url'];
+					} elseif ( ! empty( $raw_data['image'] ) ) {
+						$candidate_url = $raw_data['image'];
 					}
 
-					$vendor_slug = ! empty( $p->vendor_slug ) ? $p->vendor_slug : '';
-					$this->emit( $logger, 'debug', "Checking {$vendor_slug} product page for #{$component->id} [{$comp_name}]..." );
+					if ( ! empty( $candidate_url ) && filter_var( $candidate_url, FILTER_VALIDATE_URL ) ) {
+						$vendor_slug = ! empty( $p->vendor_slug ) ? $p->vendor_slug : 'store';
+						$this->emit( $logger, 'debug', "Found catalog image from {$vendor_slug} for #{$component->id} [{$comp_name}]..." );
 
-					$remote_img_url = $this->fetch_image_from_product_url( $p->product_url, $vendor_slug );
-					if ( empty( $remote_img_url ) ) {
-						continue;
+						$save_res = $this->download_and_attach_image( $component, $candidate_url );
+						if ( $save_res && ! empty( $save_res['url'] ) ) {
+							self::sync_component_image( $component, $save_res['url'], $save_res['attachment_id'] ?? 0 );
+
+							$image_downloaded = true;
+							$report['images_saved']++;
+
+							$this->emit( $logger, 'success', "Downloaded & Saved 1 local photo for [{$comp_name}] -> {$save_res['file_name']}" );
+							break; // STRICTLY 1 PHOTO PER PRODUCT
+						}
 					}
+				}
 
-					$save_res = $this->download_and_attach_image( $component, $remote_img_url );
-					if ( $save_res && ! empty( $save_res['url'] ) ) {
-						$component->image_url = $save_res['url'];
-						$component->save();
+				// STEP 3: FALLBACK - Visit primary store product page and extract main photo
+				if ( ! $image_downloaded ) {
+					foreach ( $prices as $p ) {
+						if ( empty( $p->product_url ) ) {
+							continue;
+						}
 
-						$image_downloaded = true;
-						$report['images_saved']++;
+						$vendor_slug = ! empty( $p->vendor_slug ) ? $p->vendor_slug : '';
+						$this->emit( $logger, 'debug', "Checking {$vendor_slug} product page for #{$component->id} [{$comp_name}]..." );
 
-						$this->emit( $logger, 'success', "Downloaded & Saved 1 local photo for [{$comp_name}] -> {$save_res['file_name']}" );
-						break; // STRICTLY 1 PHOTO PER PRODUCT
+						$remote_img_url = $this->fetch_image_from_product_url( $p->product_url, $vendor_slug );
+						if ( empty( $remote_img_url ) ) {
+							continue;
+						}
+
+						$save_res = $this->download_and_attach_image( $component, $remote_img_url );
+						if ( $save_res && ! empty( $save_res['url'] ) ) {
+							self::sync_component_image( $component, $save_res['url'], $save_res['attachment_id'] ?? 0 );
+
+							$image_downloaded = true;
+							$report['images_saved']++;
+
+							$this->emit( $logger, 'success', "Downloaded & Saved 1 local photo for [{$comp_name}] -> {$save_res['file_name']}" );
+							break; // STRICTLY 1 PHOTO PER PRODUCT
+						}
 					}
 				}
 			}
 
+			// STEP 4: FALLBACK TO DEFAULT CATEGORY VECTOR ICON
+			// Never leave any component with a broken image in the catalog or UI!
 			if ( ! $image_downloaded ) {
-				$this->emit( $logger, 'warning', "Could not extract valid product photo for #{$component->id} [{$comp_name}]." );
-				$report['errors']++;
+				$default_img = self::get_default_category_image_url( $component->category );
+				self::sync_component_image( $component, $default_img );
+				$report['images_saved']++;
+				$this->emit( $logger, 'info', "[DEFAULT ICON] Linked clean vector icon for {$component->category} to [{$comp_name}]." );
 			}
 		}
 

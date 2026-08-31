@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+  <rect width="200" height="200" rx="24" fill="#0c1322"/>
+  <!-- Cabinet Chassis -->
+  <rect x="40" y="25" width="120" height="150" rx="10" fill="#131e36" stroke="#00f2fe" stroke-width="2.5"/>
+  <!-- Tempered Glass Window -->
+  <rect x="50" y="35" width="85" height="110" rx="6" fill="#1c2b4c" stroke="#38bdf8" stroke-width="2" stroke-opacity="0.8"/>
+  <!-- Inside Components silhouette -->
+  <rect x="60" y="45" width="30" height="30" rx="4" fill="#00f2fe" opacity="0.8"/>
+  <rect x="60" y="85" width="65" height="20" rx="3" fill="#38bdf8" opacity="0.9"/>
+  <!-- Front Mesh Panel -->
+  <rect x="142" y="35" width="10" height="130" rx="2" fill="#0c1322" stroke="#00f2fe" stroke-width="1.5"/>
+  <!-- Feet -->
+  <rect x="48" y="175" width="16" height="8" rx="2" fill="#38bdf8"/>
+  <rect x="136" y="175" width="16" height="8" rx="2" fill="#38bdf8"/>
+  <!-- Power Button -->
+  <circle cx="147" cy="30" r="3" fill="#00f2fe"/>
+</svg>

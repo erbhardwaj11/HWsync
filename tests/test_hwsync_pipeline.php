@@ -1618,6 +1618,52 @@ assert_test( 'Motherboard Chipset Isolation strictly separates Intel (H410 LGA12
 	isset( $a520_specs['Chipset'] ) && $a520_specs['Chipset'] === 'A520'
 ) );
 
+// Test 49: Default Hardware Category Vector Icons & UI Broken Image Protection
+$comp_no_img_cpu = new \HWsync\Models\Component( array(
+	'brand'      => 'Intel',
+	'model_name' => 'Core i9-10980XE Extreme Edition Processor',
+	'category'   => 'cpu',
+	'image_url'  => '',
+) );
+$comp_no_img_cpu->save();
+
+$comp_no_img_gpu = new \HWsync\Models\Component( array(
+	'brand'      => 'Gigabyte',
+	'model_name' => 'GeForce RTX 4060 Windforce OC 8G',
+	'category'   => 'gpu',
+	'image_url'  => '',
+) );
+$comp_no_img_gpu->save();
+
+// Test Component::get_image_url() fallback
+$fallback_cpu_url = $comp_no_img_cpu->get_image_url();
+$fallback_gpu_url = $comp_no_img_gpu->get_image_url();
+
+// Test SVG generation for all categories
+$all_cats = array( 'cpu', 'gpu', 'motherboard', 'ram', 'storage', 'psu', 'cooler', 'cabinet', 'other' );
+$svgs_valid = true;
+foreach ( $all_cats as $cat_item ) {
+	$svg_content = \HWsync\Image_Sync_Manager::get_default_category_svg( $cat_item );
+	$data_uri = \HWsync\Image_Sync_Manager::get_default_category_data_uri( $cat_item );
+	if ( empty( $svg_content ) || strpos( $svg_content, '<svg' ) === false || strpos( $data_uri, 'data:image/svg+xml' ) !== 0 ) {
+		$svgs_valid = false;
+	}
+}
+
+// Test image sync fallback assignment
+$sync_mgr = new \HWsync\Image_Sync_Manager();
+$sync_report = $sync_mgr->run_images_sync( array( 'category' => 'cpu', 'component_id' => $comp_no_img_cpu->id ) );
+$reloaded_cpu = \HWsync\Models\Component::find_by_id( $comp_no_img_cpu->id );
+
+assert_test( 'Default Category Vector Icons provide clean SVG icons for every category and protect UI from broken images', (
+	! empty( $fallback_cpu_url ) &&
+	! empty( $fallback_gpu_url ) &&
+	$svgs_valid === true &&
+	$sync_report['images_saved'] === 1 &&
+	! empty( $reloaded_cpu->image_url ) &&
+	( strpos( $reloaded_cpu->image_url, 'defaults/cpu.svg' ) !== false || strpos( $reloaded_cpu->image_url, 'data:image/svg+xml' ) === 0 )
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

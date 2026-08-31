@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+  <rect width="200" height="200" rx="24" fill="#0c1322"/>
+  <rect x="28" y="28" width="144" height="144" rx="14" fill="#131e36" stroke="#00f2fe" stroke-width="2.5" stroke-opacity="0.8"/>
+  <rect x="52" y="52" width="96" height="96" rx="8" fill="#1c2b4c" stroke="#38bdf8" stroke-width="2"/>
+  <!-- Core Die -->
+  <rect x="70" y="70" width="60" height="60" rx="6" fill="#0f172a" stroke="#00f2fe" stroke-width="2.5"/>
+  <path d="M78 86h44M78 100h44M78 114h44" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-opacity="0.7"/>
+  <!-- Pins -->
+  <path d="M40 28v-12M60 28v-12M80 28v-12M100 28v-12M120 28v-12M140 28v-12M160 28v-12" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M40 184v-12M60 184v-12M80 184v-12M100 184v-12M120 184v-12M140 184v-12M160 184v-12" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M28 40h-12M28 60h-12M28 80h-12M28 100h-12M28 120h-12M28 140h-12M28 160h-12" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M184 40h-12M184 60h-12M184 80h-12M184 100h-12M184 120h-12M184 140h-12M184 160h-12" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+  <polygon points="34,34 46,34 34,46" fill="#00f2fe"/>
+</svg>

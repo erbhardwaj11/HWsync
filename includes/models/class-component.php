@@ -213,7 +213,7 @@ class Component {
 		if ( ! empty( $specs['image_url'] ) ) {
 			return $specs['image_url'];
 		}
-		return '';
+		return \HWsync\Image_Sync_Manager::get_default_category_image_url( $this->category );
 	}
 
 	public function delete() {
