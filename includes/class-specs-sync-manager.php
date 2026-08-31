@@ -1438,6 +1438,16 @@ class Specs_Sync_Manager {
 			}
 		}
 
+		// 11. PWM Support / Control
+		if ( in_array( $k_lower, array( 'pwm support', 'pwm control', 'pwm' ), true ) ) {
+			if ( in_array( $v_lower, array( 'pwm', 'yes', 'true', '1', 'supported', 'pwm control', '4-pin pwm', '4 pin pwm' ), true ) ) {
+				return 'Yes';
+			}
+			if ( in_array( $v_lower, array( 'no', 'false', '0', 'none', '3-pin', '3 pin', 'non-pwm' ), true ) ) {
+				return 'No';
+			}
+		}
+
 		return $v;
 	}
 
