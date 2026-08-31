@@ -184,6 +184,14 @@ class Matching_Engine {
 	}
 
 	public static function extract_brand( $title ) {
+		// 1. Processor line brand inference
+		if ( preg_match( '/\b(Core\s+i[3579]|i[3579][\s\-]+\d{4,5}|Core\s+Ultra\s+[3579]|Pentium|Celeron|Xeon)\b/i', $title ) ) {
+			return 'Intel';
+		}
+		if ( preg_match( '/\b(Ryzen\s+[3579]|Ryzen\s+Threadripper|Threadripper|EPYC)\b/i', $title ) ) {
+			return 'AMD';
+		}
+
 		foreach ( self::$known_brands as $brand ) {
 			if ( preg_match( '/\b' . preg_quote( $brand, '/' ) . '\b/i', $title ) ) {
 				if ( strcasecmp( $brand, 'WD' ) === 0 ) {

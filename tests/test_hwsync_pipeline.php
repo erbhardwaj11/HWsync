@@ -1159,7 +1159,7 @@ assert_test( 'Key Normalization & Clean Dictionary Merge Engine conforms strictl
 	isset( $normalized_specs['Socket'] ) && $normalized_specs['Socket'] === 'LGA1700' &&
 	isset( $normalized_specs['Number of Cores'] ) && $normalized_specs['Number of Cores'] === '4' &&
 	isset( $normalized_specs['Number of Threads'] ) && $normalized_specs['Number of Threads'] === '8' &&
-	isset( $normalized_specs['TDP'] ) && $normalized_specs['TDP'] === '58 W' &&
+	isset( $normalized_specs['TDP'] ) && $normalized_specs['TDP'] === '58W' &&
 	! isset( $normalized_specs['raw_specs_table'] ) &&
 	! isset( $normalized_specs['CPU Socket Type'] ) &&
 	! isset( $normalized_specs['Total Cores'] )
