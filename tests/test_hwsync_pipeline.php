@@ -1777,11 +1777,11 @@ $cat_cooler2 = \HWsync\Matching_Engine::detect_category( 'NZXT Kraken 360 RGB Al
 
 $fan_specs = \HWsync\Specs_Sync_Manager::merge_and_clean_specs( 'case_fan', array(
 	'fan dimensions' => '120mm',
-	'speed'          => '2100 RPM',
+	'fan speed'      => '2100 RPM',
 	'air flow'       => '61.3 CFM',
 	'rgb'            => 'ARGB',
 	'quantity'       => 'Triple Pack',
-	'pwm'            => 'PWM',
+	'pwm control'    => 'PWM',
 ), array(), 'Lian Li UNI FAN SL-INFINITY 120 ARGB Triple Pack' );
 
 $fan_svg = \HWsync\Image_Sync_Manager::get_default_category_svg( 'case_fan' );
@@ -1794,7 +1794,7 @@ assert_test( 'Dedicated Case Fan Category isolates chassis fans from coolers, va
 	isset( $fan_specs['Fan Size'] ) && ( $fan_specs['Fan Size'] === '120 mm' || $fan_specs['Fan Size'] === '120mm' ) &&
 	isset( $fan_specs['Lighting'] ) && $fan_specs['Lighting'] === 'ARGB' &&
 	isset( $fan_specs['Package Quantity'] ) && $fan_specs['Package Quantity'] === 'Triple Pack' &&
-	isset( $fan_specs['PWM Support'] ) && in_array( $fan_specs['PWM Support'], array( 'Yes', 'PWM' ), true ) &&
+	isset( $fan_specs['PWM Support'] ) && ( $fan_specs['PWM Support'] === 'Yes' || $fan_specs['PWM Support'] === 'PWM' ) &&
 	strpos( $fan_svg, '<svg' ) !== false
 ) );
 

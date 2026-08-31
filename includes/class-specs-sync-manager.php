@@ -1128,8 +1128,9 @@ class Specs_Sync_Manager {
 			return false;
 		}
 
-		// Reject identical key-value
-		if ( strcasecmp( $k, $v ) === 0 ) {
+		// Reject identical key-value (except valid hardware spec acronyms)
+		$allowed_identical = array( 'pwm', 'argb', 'rgb', 'nvme', 'ddr4', 'ddr5', 'ddr3', 'pcie' );
+		if ( strcasecmp( $k, $v ) === 0 && ! in_array( $k_lower, $allowed_identical, true ) ) {
 			return false;
 		}
 
