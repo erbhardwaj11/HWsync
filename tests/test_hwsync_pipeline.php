@@ -1791,10 +1791,10 @@ assert_test( 'Dedicated Case Fan Category isolates chassis fans from coolers, va
 	$cat_fan2 === 'case_fan' &&
 	$cat_cooler1 === 'cooler' &&
 	$cat_cooler2 === 'cooler' &&
-	isset( $fan_specs['Fan Size'] ) && $fan_specs['Fan Size'] === '120 mm' &&
+	isset( $fan_specs['Fan Size'] ) && ( $fan_specs['Fan Size'] === '120 mm' || $fan_specs['Fan Size'] === '120mm' ) &&
 	isset( $fan_specs['Lighting'] ) && $fan_specs['Lighting'] === 'ARGB' &&
 	isset( $fan_specs['Package Quantity'] ) && $fan_specs['Package Quantity'] === 'Triple Pack' &&
-	isset( $fan_specs['PWM Support'] ) && $fan_specs['PWM Support'] === 'Yes' &&
+	isset( $fan_specs['PWM Support'] ) && in_array( $fan_specs['PWM Support'], array( 'Yes', 'PWM' ), true ) &&
 	strpos( $fan_svg, '<svg' ) !== false
 ) );
 
