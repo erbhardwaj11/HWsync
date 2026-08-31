@@ -301,6 +301,15 @@ class MockWPDB {
 				}
 				return $filtered;
 			}
+			if ( preg_match( '/\bid\s*=\s*(\d+)/i', $query, $qm ) ) {
+				$filtered = array();
+				foreach ( $rows as $r ) {
+					if ( isset( $r['id'] ) && (string)$r['id'] === (string)$qm[1] ) {
+						$filtered[] = $r;
+					}
+				}
+				return $filtered;
+			}
 			if ( preg_match( '/category\s*=\s*\'([^\']+)\'/i', $query, $qm ) ) {
 				$filtered = array();
 				foreach ( $rows as $r ) {
