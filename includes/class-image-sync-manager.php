@@ -553,11 +553,17 @@ class Image_Sync_Manager {
 			if ( ! empty( $where_parts ) ) {
 				$params[]     = $component->id;
 				$sql          = "SELECT image_url FROM {$comp_table} WHERE (" . implode( ' OR ', $where_parts ) . ") AND image_url LIKE '%/uploads/%' AND id != %d LIMIT 5";
-				$sibling_imgs = $wpdb->get_col( $wpdb->prepare( $sql, $params ) );
+				$sibling_imgs = (array) $wpdb->get_col( $wpdb->prepare( $sql, $params ) );
+				if ( empty( $sibling_imgs ) ) {
+					$single_sibling = $wpdb->get_var( $wpdb->prepare( $sql, $params ) );
+					if ( ! empty( $single_sibling ) ) {
+						$sibling_imgs = array( $single_sibling );
+					}
+				}
 
 				if ( ! empty( $sibling_imgs ) ) {
 					foreach ( $sibling_imgs as $s_img ) {
-						if ( self::is_local_image_url( $s_img ) ) {
+						if ( ! empty( $s_img ) && self::is_local_image_url( $s_img ) ) {
 							$s_ext        = strtolower( pathinfo( $s_img, PATHINFO_EXTENSION ) );
 							$candidates[] = array(
 								'url'           => $s_img,
