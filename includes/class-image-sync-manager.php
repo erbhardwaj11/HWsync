@@ -222,15 +222,203 @@ class Image_Sync_Manager {
 	}
 
 	/**
+	 * Extract candidate image file descriptors for a WordPress attachment ID,
+	 * including main file, intermediate sub-sizes (e.g. medium, medium_large, webp/avif versions),
+	 * and sibling modern format files on disk.
+	 *
+	 * @param int $attachment_id WordPress attachment ID.
+	 * @return array Array of candidate descriptors.
+	 */
+	public static function extract_attachment_candidates( $attachment_id ) {
+		$attachment_id = intval( $attachment_id );
+		if ( $attachment_id <= 0 ) {
+			return array();
+		}
+
+		$candidates = array();
+		$seen_urls  = array();
+
+		$main_url  = function_exists( 'wp_get_attachment_url' ) ? wp_get_attachment_url( $attachment_id ) : '';
+		$main_file = function_exists( 'get_attached_file' ) ? get_attached_file( $attachment_id ) : '';
+
+		if ( ! empty( $main_url ) ) {
+			$ext = strtolower( pathinfo( $main_file ?: $main_url, PATHINFO_EXTENSION ) );
+			$filesize = ( ! empty( $main_file ) && file_exists( $main_file ) ) ? filesize( $main_file ) : 0;
+
+			$candidates[] = array(
+				'url'           => $main_url,
+				'file_path'     => $main_file,
+				'format'        => $ext,
+				'filesize'      => $filesize,
+				'width'         => 0,
+				'height'        => 0,
+				'attachment_id' => $attachment_id,
+			);
+			$seen_urls[ $main_url ] = true;
+		}
+
+		// Inspect Attachment Metadata & Sub-sizes (WP native WebP/AVIF or optimizer plugin sizes)
+		if ( function_exists( 'wp_get_attachment_metadata' ) ) {
+			$meta = wp_get_attachment_metadata( $attachment_id );
+			if ( is_array( $meta ) ) {
+				$upload_dir  = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array( 'basedir' => '', 'baseurl' => '' );
+				$sub_rel_dir = ! empty( $meta['file'] ) ? dirname( $meta['file'] ) : '';
+				if ( $sub_rel_dir === '.' ) {
+					$sub_rel_dir = '';
+				}
+
+				$base_url = trailingslashit( $upload_dir['baseurl'] ?? '' ) . ( $sub_rel_dir ? trailingslashit( $sub_rel_dir ) : '' );
+				$base_dir = trailingslashit( $upload_dir['basedir'] ?? '' ) . ( $sub_rel_dir ? trailingslashit( $sub_rel_dir ) : '' );
+
+				if ( ! empty( $meta['sizes'] ) && is_array( $meta['sizes'] ) ) {
+					foreach ( $meta['sizes'] as $size_name => $s_info ) {
+						if ( empty( $s_info['file'] ) ) {
+							continue;
+						}
+
+						$s_url  = $base_url . $s_info['file'];
+						$s_path = $base_dir . $s_info['file'];
+						$s_ext  = strtolower( pathinfo( $s_info['file'], PATHINFO_EXTENSION ) );
+
+						$s_size = 0;
+						if ( file_exists( $s_path ) ) {
+							$s_size = filesize( $s_path );
+						} elseif ( ! empty( $s_info['filesize'] ) ) {
+							$s_size = intval( $s_info['filesize'] );
+						}
+
+						if ( empty( $seen_urls[ $s_url ] ) ) {
+							$candidates[] = array(
+								'url'           => $s_url,
+								'file_path'     => $s_path,
+								'format'        => $s_ext,
+								'filesize'      => $s_size,
+								'width'         => intval( $s_info['width'] ?? 0 ),
+								'height'        => intval( $s_info['height'] ?? 0 ),
+								'attachment_id' => $attachment_id,
+							);
+							$seen_urls[ $s_url ] = true;
+						}
+					}
+				}
+
+				// Check for sibling modern format files (.webp, .avif) on disk next to main file
+				if ( ! empty( $main_file ) && file_exists( $main_file ) ) {
+					$dir       = dirname( $main_file );
+					$fn_no_ext = pathinfo( $main_file, PATHINFO_FILENAME );
+					foreach ( array( 'avif', 'webp' ) as $modern_ext ) {
+						$modern_file = $dir . '/' . $fn_no_ext . '.' . $modern_ext;
+						if ( file_exists( $modern_file ) && filesize( $modern_file ) > 50 ) {
+							$modern_url = dirname( $main_url ) . '/' . $fn_no_ext . '.' . $modern_ext;
+							if ( empty( $seen_urls[ $modern_url ] ) ) {
+								$candidates[] = array(
+									'url'           => $modern_url,
+									'file_path'     => $modern_file,
+									'format'        => $modern_ext,
+									'filesize'      => filesize( $modern_file ),
+									'width'         => 0,
+									'height'        => 0,
+									'attachment_id' => $attachment_id,
+								);
+								$seen_urls[ $modern_url ] = true;
+							}
+						}
+					}
+				}
+			}
+		}
+
+		return $candidates;
+	}
+
+	/**
+	 * Rank image candidates strictly prioritizing smaller-sized WebP or AVIF files.
+	 *
+	 * Prioritization Rules:
+	 * 1. WebP and AVIF files always rank higher than other formats (Tier 0 vs Tier 1).
+	 * 2. Within WebP/AVIF (or within fallback format), sort strictly by smallest file size (filesize ascending).
+	 * 3. Fallback to smallest JPG/PNG file only if no WebP or AVIF file is available in the library/uploads.
+	 *
+	 * @param array $candidates Array of candidate descriptors.
+	 * @return array|null Winning candidate descriptor or null.
+	 */
+	public static function rank_and_select_best_image( array $candidates ) {
+		if ( empty( $candidates ) ) {
+			return null;
+		}
+
+		$valid = array();
+		foreach ( $candidates as $cand ) {
+			if ( empty( $cand['url'] ) || ! is_string( $cand['url'] ) ) {
+				continue;
+			}
+			$valid[] = $cand;
+		}
+
+		if ( empty( $valid ) ) {
+			return null;
+		}
+
+		usort( $valid, function( $a, $b ) {
+			$fmt_a = strtolower( (string)( $a['format'] ?? pathinfo( $a['url'], PATHINFO_EXTENSION ) ) );
+			$fmt_b = strtolower( (string)( $b['format'] ?? pathinfo( $b['url'], PATHINFO_EXTENSION ) ) );
+
+			$is_modern_a = in_array( $fmt_a, array( 'avif', 'webp' ), true );
+			$is_modern_b = in_array( $fmt_b, array( 'avif', 'webp' ), true );
+
+			$tier_a = $is_modern_a ? 0 : 1;
+			$tier_b = $is_modern_b ? 0 : 1;
+
+			if ( $tier_a !== $tier_b ) {
+				return $tier_a - $tier_b; // Modern format (avif/webp) always wins
+			}
+
+			// Within the same tier, sort by smallest filesize in bytes
+			$size_a = intval( $a['filesize'] ?? 0 );
+			$size_b = intval( $b['filesize'] ?? 0 );
+
+			if ( $size_a <= 0 ) {
+				$size_a = 999999999;
+			}
+			if ( $size_b <= 0 ) {
+				$size_b = 999999999;
+			}
+
+			// Discourage tiny unusable thumbnail dimensions (< 120px) if larger available
+			$w_a = intval( $a['width'] ?? 0 );
+			$w_b = intval( $b['width'] ?? 0 );
+			$pen_a = ( $w_a > 0 && $w_a < 120 ) ? 1 : 0;
+			$pen_b = ( $w_b > 0 && $w_b < 120 ) ? 1 : 0;
+
+			if ( $pen_a !== $pen_b ) {
+				return $pen_a - $pen_b;
+			}
+
+			if ( $size_a !== $size_b ) {
+				return $size_a - $size_b;
+			}
+
+			return 0;
+		} );
+
+		return $valid[0];
+	}
+
+	/**
 	 * Check local sources first to associate an existing saved image to the component
 	 * without performing any remote network requests.
 	 *
+	 * Prioritization Rules:
+	 * 1. Always prioritize WebP or AVIF format images present in the media library / uploads.
+	 * 2. Among WebP/AVIF candidates, select the one with the smallest file size (in bytes).
+	 * 3. Fallback to smallest JPG/PNG file only if no WebP or AVIF format is available in the library/uploads.
+	 *
 	 * Checks:
-	 * 1. Current component image_url if already local.
-	 * 2. Associated WordPress post featured image thumbnail.
-	 * 3. Local disk files in wp-content/uploads/hwsync/ or wp-content/uploads/.
-	 * 4. WordPress Media Library attachments matching component name / slug / MPN.
-	 * 5. Other canonical components in DB matching same model / MPN with a local image.
+	 * 1. Associated WordPress post featured image thumbnail (and all its WebP/AVIF sub-sizes).
+	 * 2. Current component image_url if already local (and any WebP/AVIF files on disk).
+	 * 3. WordPress Media Library attachments matching component name / slug / MPN (and all sub-sizes).
+	 * 4. Local disk files in wp-content/uploads/hwsync/ or wp-content/uploads/ across all formats.
+	 * 5. Sibling canonical components in DB matching same model / MPN.
 	 *
 	 * @param Component $component Hardware component.
 	 * @param callable|null $logger Progress logger.
@@ -239,29 +427,49 @@ class Image_Sync_Manager {
 	public function try_associate_existing_local_image( Component $component, $logger = null ) {
 		global $wpdb;
 
-		$comp_name = trim( (string) $component->brand . ' ' . (string) $component->model_name );
+		$comp_name  = trim( (string) $component->brand . ' ' . (string) $component->model_name );
+		$candidates = array();
 
-		// 1. Current component image_url is already local
-		if ( ! empty( $component->image_url ) && self::is_local_image_url( $component->image_url ) ) {
-			self::sync_component_image( $component, $component->image_url );
-			$this->emit( $logger, 'debug', "[LOCAL MATCH] Component #{$component->id} [{$comp_name}] already has local image associated." );
-			return true;
-		}
-
-		// 2. Check if associated WordPress post already has a featured image attachment
-		if ( ! empty( $component->wp_post_id ) && function_exists( 'get_post_thumbnail_id' ) && function_exists( 'wp_get_attachment_url' ) ) {
+		// 1. Check if associated WordPress post has a featured image thumbnail
+		if ( ! empty( $component->wp_post_id ) && function_exists( 'get_post_thumbnail_id' ) ) {
 			$thumb_id = get_post_thumbnail_id( $component->wp_post_id );
 			if ( $thumb_id ) {
-				$thumb_url = wp_get_attachment_url( $thumb_id );
-				if ( ! empty( $thumb_url ) ) {
-					self::sync_component_image( $component, $thumb_url, $thumb_id );
-					$this->emit( $logger, 'success', "[LOCAL ATTACHED] Associated existing WordPress featured image to [{$comp_name}]." );
-					return true;
-				}
+				$thumb_cands = self::extract_attachment_candidates( $thumb_id );
+				$candidates  = array_merge( $candidates, $thumb_cands );
 			}
 		}
 
-		// Generate candidate slugs and filenames based on canonical component name and MPN
+		// 2. Check current component image_url if already local
+		if ( ! empty( $component->image_url ) && self::is_local_image_url( $component->image_url ) ) {
+			$current_ext  = strtolower( pathinfo( $component->image_url, PATHINFO_EXTENSION ) );
+			$current_file = '';
+			$current_size = 0;
+
+			if ( function_exists( 'wp_upload_dir' ) ) {
+				$upload_dir = wp_upload_dir();
+				$baseurl    = $upload_dir['baseurl'] ?? '';
+				$basedir    = $upload_dir['basedir'] ?? '';
+				if ( ! empty( $baseurl ) && strpos( $component->image_url, $baseurl ) === 0 ) {
+					$rel          = substr( $component->image_url, strlen( $baseurl ) );
+					$current_file = trailingslashit( $basedir ) . ltrim( $rel, '/\\' );
+					if ( file_exists( $current_file ) ) {
+						$current_size = filesize( $current_file );
+					}
+				}
+			}
+
+			$candidates[] = array(
+				'url'           => $component->image_url,
+				'file_path'     => $current_file,
+				'format'        => $current_ext,
+				'filesize'      => $current_size,
+				'width'         => 0,
+				'height'        => 0,
+				'attachment_id' => 0,
+			);
+		}
+
+		// Generate candidate slugs based on canonical name, model name, and MPN
 		$brand_name = trim( (string) $component->brand );
 		$model_name = trim( (string) $component->model_name );
 		$mpn        = trim( (string) $component->mpn );
@@ -277,9 +485,9 @@ class Image_Sync_Manager {
 		$slug3 = ! empty( $mpn ) ? ( function_exists( 'sanitize_title' ) ? sanitize_title( $mpn ) : preg_replace( '/[^a-z0-9]+/i', '-', strtolower( $mpn ) ) ) : '';
 
 		$candidate_slugs = array_unique( array_filter( array( $slug1, $slug2, $slug3 ) ) );
-		$extensions = array( 'webp', 'jpg', 'png', 'jpeg' );
+		$extensions      = array( 'avif', 'webp', 'png', 'jpg', 'jpeg' );
 
-		// 3. Check Local Disk Files in wp-content/uploads/hwsync/
+		// 3. Check Local Disk Files in wp-content/uploads/hwsync/ and wp-content/uploads/
 		if ( function_exists( 'wp_upload_dir' ) ) {
 			$upload_dir = wp_upload_dir();
 			$hwsync_dir = trailingslashit( $upload_dir['basedir'] ) . 'hwsync';
@@ -289,15 +497,17 @@ class Image_Sync_Manager {
 				foreach ( $candidate_slugs as $c_slug ) {
 					foreach ( $extensions as $ext ) {
 						$test_file = $hwsync_dir . '/' . $c_slug . '.' . $ext;
-						if ( file_exists( $test_file ) && filesize( $test_file ) > 100 ) {
-							$local_url = $hwsync_url . '/' . $c_slug . '.' . $ext;
-							$component->image_url = $local_url;
-							$component->save();
-
-							$this->attach_local_file_to_post( $component, $test_file, $local_url, $full_name );
-
-							$this->emit( $logger, 'success', "[LOCAL FILE MATCH] Found saved image '{$c_slug}.{$ext}' on disk -> Associated with [{$comp_name}]." );
-							return true;
+						if ( file_exists( $test_file ) && filesize( $test_file ) > 50 ) {
+							$local_url    = $hwsync_url . '/' . $c_slug . '.' . $ext;
+							$candidates[] = array(
+								'url'           => $local_url,
+								'file_path'     => $test_file,
+								'format'        => $ext,
+								'filesize'      => filesize( $test_file ),
+								'width'         => 0,
+								'height'        => 0,
+								'attachment_id' => 0,
+							);
 						}
 					}
 				}
@@ -307,70 +517,75 @@ class Image_Sync_Manager {
 		// 4. Check WordPress Media Library Attachments
 		if ( isset( $wpdb ) && is_object( $wpdb ) && isset( $wpdb->posts ) ) {
 			foreach ( $candidate_slugs as $c_slug ) {
-				$safe_slug = method_exists( $wpdb, 'esc_like' ) ? $wpdb->esc_like( $c_slug ) : addcslashes( (string) $c_slug, '_%\\' );
+				$safe_slug    = method_exists( $wpdb, 'esc_like' ) ? $wpdb->esc_like( $c_slug ) : addcslashes( (string) $c_slug, '_%\\' );
 				$like_pattern = '%' . $safe_slug . '%';
-				$attach_id = $wpdb->get_var( $wpdb->prepare(
-					"SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment' AND ( post_name = %s OR guid LIKE %s OR post_title LIKE %s ) LIMIT 1",
+				$attach_ids   = $wpdb->get_col( $wpdb->prepare(
+					"SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment' AND ( post_name = %s OR post_name LIKE %s OR post_title LIKE %s OR guid LIKE %s ) LIMIT 10",
 					$c_slug,
+					$like_pattern,
 					$like_pattern,
 					$like_pattern
 				) );
 
-				if ( $attach_id && function_exists( 'wp_get_attachment_url' ) ) {
-					$attach_url = wp_get_attachment_url( $attach_id );
-					if ( ! empty( $attach_url ) ) {
-						$component->image_url = $attach_url;
-						$component->save();
-
-						if ( ! empty( $component->wp_post_id ) ) {
-							if ( function_exists( 'set_post_thumbnail' ) ) {
-								set_post_thumbnail( $component->wp_post_id, $attach_id );
-							}
-							if ( function_exists( 'update_post_meta' ) ) {
-								update_post_meta( $component->wp_post_id, '_pcspecs_image_url', $attach_url );
-								update_post_meta( $component->wp_post_id, '_hwsync_image_url', $attach_url );
-							}
-						}
-
-						$this->emit( $logger, 'success', "[MEDIA LIBRARY MATCH] Found media attachment #{$attach_id} -> Associated with [{$comp_name}]." );
-						return true;
+				if ( ! empty( $attach_ids ) ) {
+					foreach ( $attach_ids as $aid ) {
+						$att_cands  = self::extract_attachment_candidates( intval( $aid ) );
+						$candidates = array_merge( $candidates, $att_cands );
 					}
 				}
 			}
 
 			// 5. Check Other Canonical Components with same Model or MPN with existing local image
-			$comp_table = Database::get_table_name( 'components' );
+			$comp_table  = Database::get_table_name( 'components' );
 			$where_parts = array();
-			$params = array();
+			$params      = array();
 
 			if ( ! empty( $component->mpn ) ) {
 				$where_parts[] = "mpn = %s";
-				$params[] = $component->mpn;
+				$params[]      = $component->mpn;
 			}
 			if ( ! empty( $component->model_name ) ) {
 				$where_parts[] = "( brand = %s AND model_name = %s )";
-				$params[] = $component->brand;
-				$params[] = $component->model_name;
+				$params[]      = $component->brand;
+				$params[]      = $component->model_name;
 			}
 
 			if ( ! empty( $where_parts ) ) {
-				$params[] = $component->id;
-				$sql = "SELECT image_url FROM {$comp_table} WHERE (" . implode( ' OR ', $where_parts ) . ") AND image_url LIKE '%/uploads/%' AND id != %d LIMIT 1";
-				$sibling_img = $wpdb->get_var( $wpdb->prepare( $sql, $params ) );
+				$params[]     = $component->id;
+				$sql          = "SELECT image_url FROM {$comp_table} WHERE (" . implode( ' OR ', $where_parts ) . ") AND image_url LIKE '%/uploads/%' AND id != %d LIMIT 5";
+				$sibling_imgs = $wpdb->get_col( $wpdb->prepare( $sql, $params ) );
 
-				if ( ! empty( $sibling_img ) && self::is_local_image_url( $sibling_img ) ) {
-					$component->image_url = $sibling_img;
-					$component->save();
-
-					if ( ! empty( $component->wp_post_id ) && function_exists( 'update_post_meta' ) ) {
-						update_post_meta( $component->wp_post_id, '_pcspecs_image_url', $sibling_img );
-						update_post_meta( $component->wp_post_id, '_hwsync_image_url', $sibling_img );
+				if ( ! empty( $sibling_imgs ) ) {
+					foreach ( $sibling_imgs as $s_img ) {
+						if ( self::is_local_image_url( $s_img ) ) {
+							$s_ext        = strtolower( pathinfo( $s_img, PATHINFO_EXTENSION ) );
+							$candidates[] = array(
+								'url'           => $s_img,
+								'file_path'     => '',
+								'format'        => $s_ext,
+								'filesize'      => 0,
+								'width'         => 0,
+								'height'        => 0,
+								'attachment_id' => 0,
+							);
+						}
 					}
-
-					$this->emit( $logger, 'success', "[SIBLING MATCH] Found local image from matching component -> Associated with [{$comp_name}]." );
-					return true;
 				}
 			}
+		}
+
+		// Rank and select the optimal image (WebP/AVIF first, smallest filesize)
+		$best = self::rank_and_select_best_image( $candidates );
+		if ( ! empty( $best ) && ! empty( $best['url'] ) ) {
+			self::sync_component_image( $component, $best['url'], $best['attachment_id'] ?? 0 );
+
+			if ( ! empty( $best['file_path'] ) && empty( $best['attachment_id'] ) ) {
+				$this->attach_local_file_to_post( $component, $best['file_path'], $best['url'], $full_name );
+			}
+
+			$size_str = ! empty( $best['filesize'] ) ? ' (' . round( $best['filesize'] / 1024, 1 ) . ' KB)' : '';
+			$this->emit( $logger, 'success', "[LOCAL MATCH] Associated optimal " . strtoupper( $best['format'] ) . " image{$size_str} to [{$comp_name}]." );
+			return true;
 		}
 
 		return false;
@@ -863,6 +1078,17 @@ class Image_Sync_Manager {
 					// If component is linked to WordPress post, set featured thumbnail
 					if ( ! empty( $component->wp_post_id ) && function_exists( 'set_post_thumbnail' ) ) {
 						set_post_thumbnail( $component->wp_post_id, $attachment_id );
+					}
+
+					// Select the most optimal modern format / smallest sub-size (WebP/AVIF first)
+					$cands = self::extract_attachment_candidates( $attachment_id );
+					$best  = self::rank_and_select_best_image( $cands );
+					if ( ! empty( $best ) && ! empty( $best['url'] ) ) {
+						$local_url = $best['url'];
+						if ( ! empty( $best['file_path'] ) ) {
+							$local_file_path = $best['file_path'];
+							$file_name       = basename( $best['file_path'] );
+						}
 					}
 				}
 			}

@@ -1798,6 +1798,34 @@ assert_test( 'Dedicated Case Fan Category isolates chassis fans from coolers, va
 	strpos( $fan_svg, '<svg' ) !== false
 ) );
 
+// Test 54: Media Library Image Sync Prioritizes Smaller Sized WebP and AVIF Formats
+$sample_cands_1 = array(
+	array( 'url' => 'https://example.com/uploads/2026/08/rtx4070.png', 'format' => 'png', 'filesize' => 1200000, 'width' => 1920 ),
+	array( 'url' => 'https://example.com/uploads/2026/08/rtx4070-600x600.jpg', 'format' => 'jpg', 'filesize' => 120000, 'width' => 600 ),
+	array( 'url' => 'https://example.com/uploads/2026/08/rtx4070-600x600.webp', 'format' => 'webp', 'filesize' => 35000, 'width' => 600 ),
+	array( 'url' => 'https://example.com/uploads/2026/08/rtx4070-300x300.avif', 'format' => 'avif', 'filesize' => 18000, 'width' => 300 ),
+);
+$winner_1 = \HWsync\Image_Sync_Manager::rank_and_select_best_image( $sample_cands_1 );
+
+$sample_cands_2 = array(
+	array( 'url' => 'https://example.com/uploads/2026/08/i9-14900k.png', 'format' => 'png', 'filesize' => 850000, 'width' => 1200 ),
+	array( 'url' => 'https://example.com/uploads/2026/08/i9-14900k.jpg', 'format' => 'jpg', 'filesize' => 95000, 'width' => 600 ),
+	array( 'url' => 'https://example.com/uploads/2026/08/i9-14900k.webp', 'format' => 'webp', 'filesize' => 24000, 'width' => 600 ),
+);
+$winner_2 = \HWsync\Image_Sync_Manager::rank_and_select_best_image( $sample_cands_2 );
+
+$sample_cands_fallback = array(
+	array( 'url' => 'https://example.com/uploads/2026/08/b650.png', 'format' => 'png', 'filesize' => 650000, 'width' => 1200 ),
+	array( 'url' => 'https://example.com/uploads/2026/08/b650-medium.jpg', 'format' => 'jpg', 'filesize' => 45000, 'width' => 500 ),
+);
+$winner_fallback = \HWsync\Image_Sync_Manager::rank_and_select_best_image( $sample_cands_fallback );
+
+assert_test( 'Media Library Image Sync prioritizes smaller sized WebP and AVIF formats with fallback to smallest available image', (
+	$winner_1 !== null && $winner_1['format'] === 'avif' && $winner_1['filesize'] === 18000 &&
+	$winner_2 !== null && $winner_2['format'] === 'webp' && $winner_2['filesize'] === 24000 &&
+	$winner_fallback !== null && $winner_fallback['format'] === 'jpg' && $winner_fallback['filesize'] === 45000
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";
