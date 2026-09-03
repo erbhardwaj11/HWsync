@@ -244,4 +244,33 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 			'sku'          => $asin,
 		);
 	}
+
+	/**
+	 * Search Amazon India directly for a specific canonical component title/model.
+	 *
+	 * @param string $query Product title or model to search on Amazon.
+	 * @param string $category Hardware category.
+	 * @return array List of parsed product cards.
+	 */
+	public function search_component_on_amazon( $query, $category = '' ) {
+		$query = trim( (string) $query );
+		if ( empty( $query ) ) {
+			return array();
+		}
+
+		$url = $this->base_url . '/s?k=' . urlencode( $query ) . '&i=computers';
+		$headers = array(
+			'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+			'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+			'Accept-Language' => 'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
+			'Referer'         => 'https://www.amazon.in/',
+		);
+
+		$res = $this->make_request( $url, $headers );
+		if ( ! $res['success'] || empty( $res['body'] ) ) {
+			return array();
+		}
+
+		return $this->parse_html( $res['body'], $category );
+	}
 }

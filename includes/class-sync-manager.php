@@ -116,6 +116,8 @@ class Sync_Manager {
 								} else {
 									$this->emit( $logger, 'debug', "[{$vendor->vendor_name}] Unchanged: \"{$item['title']}\"", $report );
 								}
+							} elseif ( $vendor->vendor_slug === 'amazon-in' || $vendor->vendor_slug === 'amazon' ) {
+								$this->emit( $logger, 'debug', "[{$vendor->vendor_name}] Skipped uncataloged product: \"{$item['title']}\" (Not present in existing database)", $report );
 							}
 						}
 
@@ -167,8 +169,15 @@ class Sync_Manager {
 			return null;
 		}
 
-		// 1. Match or Create Canonical Component
-		$component = Matching_Engine::match_or_create_component( $item );
+		// 1. Match or Create Canonical Component (Amazon sync only matches to existing DB components)
+		$is_amazon = (
+			$vendor->vendor_slug === 'amazon-in' ||
+			$vendor->vendor_slug === 'amazon' ||
+			( isset( $item['raw_data']['vendor'] ) && strpos( $item['raw_data']['vendor'], 'amazon' ) !== false )
+		);
+		$create_if_missing = ! $is_amazon;
+
+		$component = Matching_Engine::match_or_create_component( $item, $create_if_missing );
 		if ( ! $component || empty( $component->id ) ) {
 			return null;
 		}

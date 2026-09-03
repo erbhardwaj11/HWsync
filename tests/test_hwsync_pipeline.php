@@ -2002,6 +2002,65 @@ assert_test( 'Multi-Component Manual Merge Tool merges any number of source comp
 	count( $updated_target_prices ) === 3
 ) );
 
+// Test 58: Amazon Sync Strictly Whitelists Existing Database Components (Skips & Ignores Uncataloged Products)
+$vendor_amz = \HWsync\Models\Vendor::find_by_slug( 'amazon-in' );
+if ( ! $vendor_amz ) {
+	$vendor_amz = new \HWsync\Models\Vendor( array(
+		'vendor_name' => 'Amazon India',
+		'vendor_slug' => 'amazon-in',
+		'base_url'    => 'https://www.amazon.in',
+		'is_active'   => 1,
+	) );
+	$vendor_amz->save();
+}
+
+$existing_7800x3d = new \HWsync\Models\Component( array(
+	'brand'      => 'AMD',
+	'model_name' => 'Ryzen 7 7800X3D',
+	'category'   => 'cpu',
+) );
+$existing_7800x3d->save();
+
+$total_comps_before = count( \HWsync\Models\Component::get_all() );
+
+$raw_amz_existing = array(
+	'title'        => 'AMD Ryzen 7 7800X3D Desktop Processor 8 Core 16 Thread LGA AM5 (100-100000910WOF)',
+	'url'          => 'https://www.amazon.in/dp/B0BTZB7F88?tag=mycustomtag-21',
+	'price'        => 38500.0,
+	'in_stock'     => 1,
+	'stock_status' => 'in_stock',
+	'sku'          => 'B0BTZB7F88',
+	'category'     => 'cpu',
+	'raw_data'     => array( 'vendor' => 'amazon-in', 'asin' => 'B0BTZB7F88' ),
+);
+
+$raw_amz_uncataloged = array(
+	'title'        => 'HP Pavilion Gaming Desktop Prebuilt PC 16GB RAM 1TB SSD RTX 3050',
+	'url'          => 'https://www.amazon.in/dp/B0ABC12345?tag=mycustomtag-21',
+	'price'        => 65000.0,
+	'in_stock'     => 1,
+	'stock_status' => 'in_stock',
+	'sku'          => 'B0ABC12345',
+	'category'     => 'other',
+	'raw_data'     => array( 'vendor' => 'amazon-in', 'asin' => 'B0ABC12345' ),
+);
+
+$sync_mgr = new \HWsync\Sync_Manager();
+$res_amz_existing    = $sync_mgr->sync_single_item( $raw_amz_existing, $vendor_amz );
+$res_amz_uncataloged = $sync_mgr->sync_single_item( $raw_amz_uncataloged, $vendor_amz );
+
+$total_comps_after = count( \HWsync\Models\Component::get_all() );
+$linked_amz_price  = \HWsync\Models\Vendor_Price::find_by_component_and_vendor( $existing_7800x3d->id, $vendor_amz->id );
+
+assert_test( 'Amazon Sync strictly links to components already in DB, skipping and ignoring all uncataloged products', (
+	$res_amz_existing !== null &&
+	$res_amz_existing['component_id'] === $existing_7800x3d->id &&
+	$linked_amz_price !== null &&
+	$linked_amz_price->price == 38500.0 &&
+	$res_amz_uncataloged === null &&
+	$total_comps_after === $total_comps_before
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

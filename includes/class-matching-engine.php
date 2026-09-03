@@ -20,12 +20,13 @@ class Matching_Engine {
 	);
 
 	/**
-	 * Matches a raw vendor product item to a canonical Component or creates a new one.
+	 * Matches a raw vendor product item to an existing canonical Component or creates a new one.
 	 *
 	 * @param array $raw_item Normalized raw item from vendor adapter
-	 * @return Component
+	 * @param bool  $create_if_missing If false (e.g. Amazon sync), returns null if component does not already exist in DB.
+	 * @return Component|null
 	 */
-	public static function match_or_create_component( $raw_item ) {
+	public static function match_or_create_component( $raw_item, $create_if_missing = true ) {
 		$raw_title = isset( $raw_item['title'] ) ? trim( $raw_item['title'] ) : '';
 		$category  = isset( $raw_item['category'] ) ? trim( $raw_item['category'] ) : '';
 		$vendor_sku = isset( $raw_item['sku'] ) ? trim( $raw_item['sku'] ) : '';
@@ -136,6 +137,11 @@ class Matching_Engine {
 
 		if ( $best_match ) {
 			return $best_match;
+		}
+
+		// If component does not exist in DB and creation is disabled (e.g. Amazon sync), skip/ignore
+		if ( ! $create_if_missing ) {
+			return null;
 		}
 
 		// 4. Create new Canonical Component
