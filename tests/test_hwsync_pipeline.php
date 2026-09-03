@@ -2014,24 +2014,24 @@ if ( ! $vendor_amz ) {
 	$vendor_amz->save();
 }
 
-$existing_7800x3d = new \HWsync\Models\Component( array(
+$existing_9800x3d = new \HWsync\Models\Component( array(
 	'brand'      => 'AMD',
-	'model_name' => 'Ryzen 7 7800X3D',
+	'model_name' => 'Ryzen 7 9800X3D',
 	'category'   => 'cpu',
 ) );
-$existing_7800x3d->save();
+$existing_9800x3d->save();
 
 $total_comps_before = count( \HWsync\Models\Component::get_all() );
 
 $raw_amz_existing = array(
-	'title'        => 'AMD Ryzen 7 7800X3D Desktop Processor 8 Core 16 Thread LGA AM5 (100-100000910WOF)',
-	'url'          => 'https://www.amazon.in/dp/B0BTZB7F88?tag=mycustomtag-21',
-	'price'        => 38500.0,
+	'title'        => 'AMD Ryzen 7 9800X3D Desktop Processor 8 Core 16 Thread LGA AM5 (100-100001084WOF)',
+	'url'          => 'https://www.amazon.in/dp/B0D1234567?tag=mycustomtag-21',
+	'price'        => 42500.0,
 	'in_stock'     => 1,
 	'stock_status' => 'in_stock',
-	'sku'          => 'B0BTZB7F88',
+	'sku'          => 'B0D1234567',
 	'category'     => 'cpu',
-	'raw_data'     => array( 'vendor' => 'amazon-in', 'asin' => 'B0BTZB7F88' ),
+	'raw_data'     => array( 'vendor' => 'amazon-in', 'asin' => 'B0D1234567' ),
 );
 
 $raw_amz_uncataloged = array(
@@ -2050,13 +2050,13 @@ $res_amz_existing    = $sync_mgr->sync_single_item( $raw_amz_existing, $vendor_a
 $res_amz_uncataloged = $sync_mgr->sync_single_item( $raw_amz_uncataloged, $vendor_amz );
 
 $total_comps_after = count( \HWsync\Models\Component::get_all() );
-$linked_amz_price  = \HWsync\Models\Vendor_Price::find_by_component_and_vendor( $existing_7800x3d->id, $vendor_amz->id );
+$linked_amz_price  = \HWsync\Models\Vendor_Price::find_by_component_and_vendor( $existing_9800x3d->id, $vendor_amz->id );
 
 assert_test( 'Amazon Sync strictly links to components already in DB, skipping and ignoring all uncataloged products', (
 	$res_amz_existing !== null &&
-	$res_amz_existing['component_id'] === $existing_7800x3d->id &&
+	$res_amz_existing['component_id'] === $existing_9800x3d->id &&
 	$linked_amz_price !== null &&
-	$linked_amz_price->price == 38500.0 &&
+	$linked_amz_price->price == 42500.0 &&
 	$res_amz_uncataloged === null &&
 	$total_comps_after === $total_comps_before
 ) );
