@@ -66,6 +66,36 @@ class Sync_Manager {
 
 			$this->emit( $logger, 'info', "=== Connecting to {$vendor->vendor_name} (" . ( $delta_only ? "Delta / Incremental Mode" : "Full Catalog Mode" ) . ") ===", $report );
 
+			// Targeted search for Amazon India across existing DB components
+			if ( $vendor->vendor_slug === 'amazon-in' || $vendor->vendor_slug === 'amazon' ) {
+				foreach ( $categories_to_sync as $cat ) {
+					try {
+						$amz_page = 1;
+						$amz_has_more = true;
+						while ( $amz_has_more && $amz_page <= 500 ) {
+							$res = $this->sync_amazon_page( $vendor, $cat, $amz_page, $delta_only );
+							if ( ! empty( $res['logs'] ) ) {
+								foreach ( $res['logs'] as $l ) {
+									$this->emit( $logger, $l['level'], $l['message'], $report );
+								}
+							}
+							$report['total_items_fetched']  += ( $res['items_count'] ?? 0 );
+							$report['prices_updated']       += ( $res['prices_saved'] ?? 0 );
+							$report['components_processed'] += ( $res['components'] ?? 0 );
+							$amz_has_more = ! empty( $res['has_more'] );
+							$amz_page++;
+						}
+					} catch ( \Exception $e ) {
+						$err = "Error syncing Amazon India / {$cat}: " . $e->getMessage();
+						$report['errors'][] = $err;
+						$this->emit( $logger, 'error', $err, $report );
+					}
+				}
+				$vendor->update_last_sync();
+				$this->emit( $logger, 'success', "Completed Amazon India targeted search across existing database components.", $report );
+				continue;
+			}
+
 			foreach ( $categories_to_sync as $cat ) {
 				try {
 					$page = 1;
@@ -116,8 +146,6 @@ class Sync_Manager {
 								} else {
 									$this->emit( $logger, 'debug', "[{$vendor->vendor_name}] Unchanged: \"{$item['title']}\"", $report );
 								}
-							} elseif ( $vendor->vendor_slug === 'amazon-in' || $vendor->vendor_slug === 'amazon' ) {
-								$this->emit( $logger, 'debug', "[{$vendor->vendor_name}] Skipped uncataloged product: \"{$item['title']}\" (Not present in existing database)", $report );
 							}
 						}
 
@@ -252,6 +280,11 @@ class Sync_Manager {
 			);
 		}
 
+		// Dedicated Component-Driven Targeted Search for Amazon India
+		if ( $vendor_slug === 'amazon-in' || $vendor_slug === 'amazon' ) {
+			return $this->sync_amazon_page( $vendor, $category, $page, $delta_only );
+		}
+
 		$adapter = $this->get_adapter_instance( $vendor );
 		if ( ! $adapter ) {
 			return array(
@@ -332,6 +365,114 @@ class Sync_Manager {
 			'success'      => true,
 			'has_more'     => $has_more,
 			'items_count'  => count( $raw_items ),
+			'prices_saved' => $prices_saved,
+			'components'   => count( $touched_ids ),
+			'posts_synced' => 0,
+			'logs'         => $logs,
+		);
+	}
+
+	/**
+	 * Targeted component-driven Amazon India sync across existing database records.
+	 *
+	 * @param Vendor $vendor
+	 * @param string $category
+	 * @param int $page
+	 * @param bool $delta_only
+	 * @return array
+	 */
+	public function sync_amazon_page( Vendor $vendor, $category, $page = 1, $delta_only = false ) {
+		$adapter = $this->get_adapter_instance( $vendor );
+		$per_page = 5;
+		$offset = ( $page - 1 ) * $per_page;
+
+		$args = array(
+			'limit'  => $per_page,
+			'offset' => $offset,
+		);
+		if ( ! empty( $category ) && $category !== 'all' ) {
+			$args['category'] = $category;
+		}
+
+		$components = Component::get_all( $args );
+		$total_count = Component::count( ! empty( $category ) && $category !== 'all' ? array( 'category' => $category ) : array() );
+
+		$logs = array();
+		if ( empty( $components ) ) {
+			$logs[] = array( 'level' => 'info', 'message' => "Completed Amazon India search across all existing components in category [" . strtoupper( $category ) . "]." );
+			return array(
+				'success'      => true,
+				'has_more'     => false,
+				'items_count'  => 0,
+				'prices_saved' => 0,
+				'components'   => 0,
+				'posts_synced' => 0,
+				'logs'         => $logs,
+			);
+		}
+
+		$logs[] = array( 'level' => 'debug', 'message' => "Targeted Amazon Search » " . strtoupper( $category ) . " (Components " . ( $offset + 1 ) . " to " . ( $offset + count( $components ) ) . " of {$total_count})..." );
+
+		$prices_saved = 0;
+		$touched_ids = array();
+
+		foreach ( $components as $component ) {
+			$search_term = trim( $component->brand . ' ' . $component->model_name );
+			$search_query = ( ! empty( $component->mpn ) && strlen( $component->mpn ) >= 5 ) ? $component->mpn : $search_term;
+
+			$cards = array();
+			if ( method_exists( $adapter, 'search_component_on_amazon' ) ) {
+				$cards = $adapter->search_component_on_amazon( $search_query, $component->category );
+				// If no cards found with MPN, fallback to Brand + Model
+				if ( empty( $cards ) && $search_query !== $search_term ) {
+					$cards = $adapter->search_component_on_amazon( $search_term, $component->category );
+				}
+			}
+
+			$matched_item = null;
+			if ( ! empty( $cards ) && is_array( $cards ) ) {
+				foreach ( $cards as $card ) {
+					if ( empty( $card['in_stock'] ) || empty( $card['price'] ) || floatval( $card['price'] ) <= 0 ) {
+						continue;
+					}
+					// Verify card matches this specific component
+					$cand_comp = Matching_Engine::match_or_create_component( $card, false );
+					if ( $cand_comp && $cand_comp->id === $component->id ) {
+						$matched_item = $card;
+						break;
+					}
+				}
+			}
+
+			if ( $matched_item ) {
+				$sync_res = $this->sync_single_item( $matched_item, $vendor, $delta_only );
+				if ( $sync_res && ! empty( $sync_res['component_id'] ) ) {
+					if ( empty( $sync_res['unchanged'] ) ) {
+						$touched_ids[ $sync_res['component_id'] ] = true;
+						$prices_saved++;
+
+						$price_val     = floatval( $matched_item['price'] );
+						$price_display = '₹' . number_format( $price_val, 2 );
+						$asin_display  = ! empty( $matched_item['sku'] ) ? " [ASIN: {$matched_item['sku']}]" : '';
+
+						$logs[] = array( 'level' => 'match', 'message' => "[Amazon India] Matched & Saved: #{$component->id} \"{$component->brand} {$component->model_name}\"{$asin_display} @ {$price_display}" );
+					} else {
+						$logs[] = array( 'level' => 'debug', 'message' => "[Amazon India] Unchanged: #{$component->id} \"{$component->brand} {$component->model_name}\"" );
+					}
+				}
+			} else {
+				$logs[] = array( 'level' => 'debug', 'message' => "[Amazon India] No matching listing found on Amazon for #{$component->id} \"{$component->brand} {$component->model_name}\"" );
+			}
+		}
+
+		$vendor->update_last_sync();
+
+		$has_more = ( $offset + count( $components ) ) < $total_count;
+
+		return array(
+			'success'      => true,
+			'has_more'     => $has_more,
+			'items_count'  => count( $components ),
 			'prices_saved' => $prices_saved,
 			'components'   => count( $touched_ids ),
 			'posts_synced' => 0,

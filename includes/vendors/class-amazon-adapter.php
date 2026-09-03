@@ -86,9 +86,11 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 
 		// Split by search result components or data-asin cards
 		$blocks = array();
-		if ( preg_match_all( '/<div[^>]*data-component-type=["\']s-search-result["\'][^>]*>[\s\S]*?(?=<div[^>]*data-component-type=["\']s-search-result["\']|\Z)/i', $html, $matches ) ) {
+		if ( preg_match_all( '/<div[^>]*data-component-type=["\']s-search-result["\'][^>]*>[\s\S]*?(?=<div[^>]*data-component-type=["\']s-search-result["\']|\Z)/i', $html, $matches ) && ! empty( $matches[0] ) ) {
 			$blocks = $matches[0];
-		} elseif ( preg_match_all( '/<div[^>]*data-asin=["\']([A-Z0-9]{10})["\'][^>]*>[\s\S]*?(?=<div[^>]*data-asin=|\Z)/i', $html, $matches ) ) {
+		} elseif ( preg_match_all( '/<div[^>]*data-asin=["\']([A-Z0-9]{10})["\'][^>]*>[\s\S]*?(?=<div[^>]*data-asin=|\Z)/i', $html, $matches ) && ! empty( $matches[0] ) ) {
+			$blocks = $matches[0];
+		} elseif ( preg_match_all( '/<div[^>]*class=["\'][^"\']*\bs-result-item\b[^"\']*["\'][^>]*>[\s\S]*?(?=<div[^>]*class=["\'][^"\']*\bs-result-item\b|\Z)/i', $html, $matches ) ) {
 			$blocks = $matches[0];
 		}
 
@@ -109,6 +111,10 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 				$title = trim( strip_tags( html_entity_decode( $m_title[1], ENT_QUOTES, 'UTF-8' ) ) );
 			} elseif ( preg_match( '/<span[^>]*class=["\'][^"\']*\ba-text-normal\b[^"\']*["\'][^>]*>(.*?)<\/span>/i', $block, $m_title ) ) {
 				$title = trim( strip_tags( html_entity_decode( $m_title[1], ENT_QUOTES, 'UTF-8' ) ) );
+			} elseif ( preg_match( '/<span[^>]*class=["\'][^"\']*\ba-size-medium\b[^"\']*["\'][^>]*>(.*?)<\/span>/i', $block, $m_title ) ) {
+				$title = trim( strip_tags( html_entity_decode( $m_title[1], ENT_QUOTES, 'UTF-8' ) ) );
+			} elseif ( preg_match( '/<span[^>]*class=["\'][^"\']*\ba-size-base-plus\b[^"\']*["\'][^>]*>(.*?)<\/span>/i', $block, $m_title ) ) {
+				$title = trim( strip_tags( html_entity_decode( $m_title[1], ENT_QUOTES, 'UTF-8' ) ) );
 			}
 
 			if ( empty( $title ) ) {
@@ -128,10 +134,13 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 			// Extract Price
 			$price = 0.0;
 			if ( preg_match( '/class=["\']a-price-whole["\'][^>]*>([^<]+)</i', $block, $m_price ) ) {
-				$price_str = preg_replace( '/[^\d.]/', '', $m_price[1] );
+				$price_str = preg_replace( '/[^\d.]/', '', str_replace( ',', '', $m_price[1] ) );
 				$price = floatval( $price_str );
 			} elseif ( preg_match( '/<span[^>]*class=["\']a-offscreen["\'][^>]*>₹?\s*([\d,]+(?:\.\d+)?)<\/span>/i', $block, $m_price ) ) {
-				$price_str = preg_replace( '/[^\d.]/', '', $m_price[1] );
+				$price_str = preg_replace( '/[^\d.]/', '', str_replace( ',', '', $m_price[1] ) );
+				$price = floatval( $price_str );
+			} elseif ( preg_match( '/class=["\']a-price["\'][^>]*>[\s\S]*?<span[^>]*aria-hidden=["\']true["\'][^>]*>₹?\s*([\d,]+(?:\.\d+)?)<\/span>/i', $block, $m_price ) ) {
+				$price_str = preg_replace( '/[^\d.]/', '', str_replace( ',', '', $m_price[1] ) );
 				$price = floatval( $price_str );
 			}
 
@@ -142,7 +151,7 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 			// Extract Original Price / MRP
 			$original_price = 0.0;
 			if ( preg_match( '/<span[^>]*class=["\'][^"\']*a-text-price[^"\']*["\'][^>]*>[\s\S]*?<span[^>]*class=["\']a-offscreen["\'][^>]*>₹?\s*([\d,]+(?:\.\d+)?)<\/span>/i', $block, $m_orig ) ) {
-				$orig_str = preg_replace( '/[^\d.]/', '', $m_orig[1] );
+				$orig_str = preg_replace( '/[^\d.]/', '', str_replace( ',', '', $m_orig[1] ) );
 				$original_price = floatval( $orig_str );
 			}
 

@@ -463,8 +463,12 @@ class MockWPDB {
 			if ( ! empty( $this->tables[ $tbl ] ) ) {
 				preg_match( '/component_id\s*=\s*(\d+)/i', $cond, $cm );
 				$cid = $cm ? $cm[1] : null;
+				preg_match( '/category\s*=\s*\'([^\']+)\'/i', $cond, $catm );
+				$cat = $catm ? $catm[1] : null;
 				foreach ( $this->tables[ $tbl ] as $r ) {
-					if ( $cid && (string)$r['component_id'] === (string)$cid ) $count++;
+					if ( $cid && (string)($r['component_id'] ?? '') !== (string)$cid ) continue;
+					if ( $cat && isset( $r['category'] ) && strcasecmp( $r['category'], $cat ) !== 0 ) continue;
+					$count++;
 				}
 			}
 			return $count;
@@ -2059,6 +2063,15 @@ assert_test( 'Amazon Sync strictly links to components already in DB, skipping a
 	$linked_amz_price->price == 42500.0 &&
 	$res_amz_uncataloged === null &&
 	$total_comps_after === $total_comps_before
+) );
+
+// Test 59: Amazon Component-Driven Targeted Search across Database Canonical Records
+$sync_amz_page_res = $sync_mgr->sync_page( 'amazon-in', 'cpu', 1 );
+
+assert_test( 'Amazon Sync Page executes component-driven targeted search across database components', (
+	$sync_amz_page_res['success'] === true &&
+	$sync_amz_page_res['items_count'] > 0 &&
+	isset( $sync_amz_page_res['has_more'] )
 ) );
 
 echo "\n---------------------------------------------\n";
