@@ -417,15 +417,19 @@ class Sync_Manager {
 		$touched_ids = array();
 
 		foreach ( $components as $component ) {
-			$search_term = trim( $component->brand . ' ' . $component->model_name );
+			$search_term = trim( ( ! empty( $component->brand ) && stripos( $component->model_name, $component->brand ) === false ? $component->brand . ' ' : '' ) . $component->model_name );
 			$search_query = ( ! empty( $component->mpn ) && strlen( $component->mpn ) >= 5 ) ? $component->mpn : $search_term;
 
 			$cards = array();
 			if ( method_exists( $adapter, 'search_component_on_amazon' ) ) {
 				$cards = $adapter->search_component_on_amazon( $search_query, $component->category );
-				// If no cards found with MPN, fallback to Brand + Model
+				// If no cards found with MPN, fallback to Search Term
 				if ( empty( $cards ) && $search_query !== $search_term ) {
 					$cards = $adapter->search_component_on_amazon( $search_term, $component->category );
+				}
+				// If still empty, search model name alone
+				if ( empty( $cards ) && $component->model_name !== $search_term ) {
+					$cards = $adapter->search_component_on_amazon( $component->model_name, $component->category );
 				}
 			}
 
@@ -435,9 +439,34 @@ class Sync_Manager {
 					if ( empty( $card['in_stock'] ) || empty( $card['price'] ) || floatval( $card['price'] ) <= 0 ) {
 						continue;
 					}
-					// Verify card matches this specific component
+					// 1. Direct hardware comparison via Matching Engine
 					$cand_comp = Matching_Engine::match_or_create_component( $card, false );
 					if ( $cand_comp && $cand_comp->id === $component->id ) {
+						$matched_item = $card;
+						break;
+					}
+
+					// 2. Direct MPN matching
+					$card_title = $card['title'];
+					if ( ! empty( $component->mpn ) && strlen( $component->mpn ) >= 5 && stripos( $card_title, $component->mpn ) !== false ) {
+						$matched_item = $card;
+						break;
+					}
+
+					// 3. Core hardware identity matching (e.g. RYZEN 5 5500GT, CORE I3-12100F, RTX 4070 SUPER)
+					$comp_core = Matching_Engine::extract_core_hardware_id( $component->model_name, $component->category );
+					$card_core = Matching_Engine::extract_core_hardware_id( $card_title, $component->category );
+					if ( ! empty( $comp_core ) && ! empty( $card_core ) && strcasecmp( $comp_core, $card_core ) === 0 ) {
+						if ( empty( $component->brand ) || stripos( $card_title, $component->brand ) !== false || ( ! empty( $card['brand'] ) && strcasecmp( $component->brand, $card['brand'] ) === 0 ) ) {
+							$matched_item = $card;
+							break;
+						}
+					}
+
+					// 4. Clean model name direct match
+					$norm_model = preg_replace( '/[^\w\d]/', '', strtolower( $component->model_name ) );
+					$norm_card  = preg_replace( '/[^\w\d]/', '', strtolower( $card_title ) );
+					if ( strlen( $norm_model ) >= 6 && strpos( $norm_card, $norm_model ) !== false ) {
 						$matched_item = $card;
 						break;
 					}

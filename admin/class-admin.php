@@ -535,7 +535,8 @@ class Admin {
 											mMatched.textContent = curMatched + (d.components || 0);
 											mPrices.textContent = curPrices + (d.prices_saved || 0);
 
-											if (d.has_more && curPage < 50) {
+											var maxPagesForVendor = (curVendorSlug === 'amazon-in' || curVendorSlug === 'amazon') ? 1500 : 50;
+											if (d.has_more && curPage < maxPagesForVendor) {
 												curPage++;
 												fetchPageStep();
 											} else {

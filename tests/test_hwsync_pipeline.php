@@ -2074,6 +2074,43 @@ assert_test( 'Amazon Sync Page executes component-driven targeted search across 
 	isset( $sync_amz_page_res['has_more'] )
 ) );
 
+// Test 60: Amazon Price Extraction from "See options / No featured offers / (1 new offer)" Layout & 5500GT Matching
+$amz_adapter = new \HWsync\Vendors\Amazon_Adapter();
+$sample_see_options_html = '
+<div data-component-type="s-search-result" data-asin="B0CR4V4K4Z">
+  <h2><span class="a-text-normal">AMD Ryzen 5 5600GT Desktop Processor 6 cores 12 Threads (100-100001488BOX)</span></h2>
+  <span class="a-price-whole">18,699</span>
+</div>
+<div data-component-type="s-search-result" data-asin="B0CR4K7K8M">
+  <h2><span class="a-text-normal">AMD Ryzen 5 5500GT Desktop Processor with Integrated Radeon Graphics 7, 6 cores 12 Threads 16MB Cache Base Clock 3.6 GHz Up to 4.4 GHz AM4 Socket System Memory DDR4 Up to 3200 MT/s - 100-100001489BOX</span></h2>
+  <div class="a-section a-spacing-none a-spacing-top-mini">
+    <span class="a-size-small a-color-secondary">No featured offers available</span>
+    <div class="a-row a-size-base a-color-base">
+      <a class="a-size-base a-link-normal s-underline-text" href="/gp/offer-listing/B0CR4K7K8M">
+        <span class="a-color-base">₹17,499</span>
+        <span class="a-size-base a-color-secondary">(1 new offer)</span>
+      </a>
+    </div>
+  </div>
+</div>';
+
+$parsed_amz_cards = $amz_adapter->parse_html( $sample_see_options_html, 'cpu' );
+$matched_5500gt = null;
+foreach ( $parsed_amz_cards as $c ) {
+	if ( strpos( $c['title'], '5500GT' ) !== false ) {
+		$matched_5500gt = $c;
+		break;
+	}
+}
+
+assert_test( 'Amazon Adapter parses "See options / No featured offers / (1 new offer)" pricing accurately (INR 17499.00)', (
+	count( $parsed_amz_cards ) === 2 &&
+	$matched_5500gt !== null &&
+	$matched_5500gt['price'] == 17499.0 &&
+	$matched_5500gt['in_stock'] === true &&
+	$matched_5500gt['sku'] === 'B0CR4K7K8M'
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

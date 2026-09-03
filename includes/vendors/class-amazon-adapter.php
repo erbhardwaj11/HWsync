@@ -131,15 +131,24 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 				$url .= '?tag=' . urlencode( $affiliate_tag );
 			}
 
-			// Extract Price
+			// Extract Price (covering standard buybox, offscreen, and "See options / No featured offers / X new offers" layouts)
 			$price = 0.0;
 			if ( preg_match( '/class=["\']a-price-whole["\'][^>]*>([^<]+)</i', $block, $m_price ) ) {
 				$price_str = preg_replace( '/[^\d.]/', '', str_replace( ',', '', $m_price[1] ) );
 				$price = floatval( $price_str );
-			} elseif ( preg_match( '/<span[^>]*class=["\']a-offscreen["\'][^>]*>₹?\s*([\d,]+(?:\.\d+)?)<\/span>/i', $block, $m_price ) ) {
+			} elseif ( preg_match( '/<span[^>]*class=["\'][^"\']*a-offscreen[^"\']*["\'][^>]*>₹?\s*([\d,]+(?:\.\d+)?)<\/span>/i', $block, $m_price ) ) {
 				$price_str = preg_replace( '/[^\d.]/', '', str_replace( ',', '', $m_price[1] ) );
 				$price = floatval( $price_str );
 			} elseif ( preg_match( '/class=["\']a-price["\'][^>]*>[\s\S]*?<span[^>]*aria-hidden=["\']true["\'][^>]*>₹?\s*([\d,]+(?:\.\d+)?)<\/span>/i', $block, $m_price ) ) {
+				$price_str = preg_replace( '/[^\d.]/', '', str_replace( ',', '', $m_price[1] ) );
+				$price = floatval( $price_str );
+			} elseif ( preg_match( '/₹\s*([\d,]+(?:\.\d+)?)\s*(?:<[^>]*>)?\s*(?:\([0-9]+\s*new\s*offers?\)|new\s*offers?|other\s*offers?)/i', $block, $m_price ) ) {
+				$price_str = preg_replace( '/[^\d.]/', '', str_replace( ',', '', $m_price[1] ) );
+				$price = floatval( $price_str );
+			} elseif ( preg_match( '/<span[^>]*class=["\'][^"\']*(?:a-color-base|a-size-base)[^"\']*["\'][^>]*>₹?\s*([\d,]+(?:\.\d+)?)<\/span>/i', $block, $m_price ) ) {
+				$price_str = preg_replace( '/[^\d.]/', '', str_replace( ',', '', $m_price[1] ) );
+				$price = floatval( $price_str );
+			} elseif ( preg_match( '/₹\s*([\d,]+(?:\.\d+)?)/i', $block, $m_price ) ) {
 				$price_str = preg_replace( '/[^\d.]/', '', str_replace( ',', '', $m_price[1] ) );
 				$price = floatval( $price_str );
 			}
@@ -164,7 +173,7 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 			}
 
 			// Check Availability
-			$is_unavailable = ( stripos( $block, 'Currently unavailable' ) !== false || stripos( $block, 'Out of Stock' ) !== false );
+			$is_unavailable = ( ( stripos( $block, 'Currently unavailable' ) !== false || stripos( $block, 'Out of Stock' ) !== false ) && $price <= 0 );
 			$in_stock = ( ! $is_unavailable && $price > 0 );
 
 			$items[] = array(
@@ -267,7 +276,8 @@ class Amazon_Adapter extends Abstract_Vendor_Adapter {
 			return array();
 		}
 
-		$url = $this->base_url . '/s?k=' . urlencode( $query ) . '&i=computers';
+		// Broad search matching standard Amazon.in search bar
+		$url = $this->base_url . '/s?k=' . urlencode( $query );
 		$headers = array(
 			'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
 			'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
