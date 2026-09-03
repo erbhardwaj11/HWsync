@@ -526,7 +526,21 @@ class Matching_Engine {
 			return false;
 		}
 
-		// 5. Core Hardware ID Check (e.g. Epoch XL vs Meshify 3 XL, RTX 5050 vs RTX 4070, H410 vs A520, Ryzen 5 7500F)
+		// 5. Category-Specific Hardware Identity Checks
+		if ( $a->category === 'motherboard' ) {
+			$ident_a = self::extract_motherboard_identity( $a->brand . ' ' . $a->model_name );
+			$ident_b = self::extract_motherboard_identity( $b->brand . ' ' . $b->model_name );
+			if ( ! empty( $ident_a ) && ! empty( $ident_b ) ) {
+				if ( strcasecmp( $ident_a, $ident_b ) !== 0 ) {
+					return false; // Different motherboard identity!
+				}
+				return true; // Exact matching motherboard identity under the same brand
+			} elseif ( ! empty( $ident_a ) || ! empty( $ident_b ) ) {
+				return false;
+			}
+		}
+
+		// Core Hardware ID Check (e.g. Epoch XL vs Meshify 3 XL, RTX 5050 vs RTX 4070, Ryzen 7500F)
 		$core_a = self::extract_core_hardware_id( $a->model_name, $a->category );
 		$core_b = self::extract_core_hardware_id( $b->model_name, $b->category );
 
@@ -543,17 +557,6 @@ class Matching_Engine {
 					return false;
 				}
 				return true;
-			}
-		} elseif ( $a->category === 'motherboard' ) {
-			$ident_a = self::extract_motherboard_identity( $a->brand . ' ' . $a->model_name );
-			$ident_b = self::extract_motherboard_identity( $b->brand . ' ' . $b->model_name );
-			if ( ! empty( $ident_a ) && ! empty( $ident_b ) ) {
-				if ( strcasecmp( $ident_a, $ident_b ) !== 0 ) {
-					return false; // Different motherboard identity!
-				}
-				return true; // Exact matching motherboard identity under the same brand
-			} elseif ( ! empty( $ident_a ) || ! empty( $ident_b ) ) {
-				return false;
 			}
 		}
 
@@ -615,6 +618,10 @@ class Matching_Engine {
 			}
 			return array_unique( $filtered );
 		};
+
+		if ( $a->category === 'motherboard' ) {
+			return false;
+		}
 
 		$tok_a = $get_tokens( $a->model_name, $a->brand );
 		$tok_b = $get_tokens( $b->model_name, $b->brand );
