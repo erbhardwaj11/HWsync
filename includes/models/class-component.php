@@ -60,11 +60,23 @@ class Component {
 	public static function find_by_brand_and_model( $brand, $model_name ) {
 		global $wpdb;
 		$table = Database::get_table_name( 'components' );
+		$brand = trim( (string) $brand );
+		$model_name = trim( (string) $model_name );
+		if ( empty( $model_name ) ) {
+			return null;
+		}
+
+		$brand_prefixed = $brand . ' ' . $model_name;
+		$brand_stripped = preg_replace( '/^' . preg_quote( $brand, '/' ) . '\s+/i', '', $model_name );
+
 		$row = $wpdb->get_row(
 			$wpdb->prepare(
-				"SELECT * FROM {$table} WHERE LOWER(brand) = LOWER(%s) AND LOWER(model_name) = LOWER(%s)",
+				"SELECT * FROM {$table} WHERE ( LOWER(brand) = LOWER(%s) OR %s = '' ) AND ( LOWER(model_name) = LOWER(%s) OR LOWER(model_name) = LOWER(%s) OR LOWER(model_name) = LOWER(%s) ) LIMIT 1",
 				$brand,
-				$model_name
+				$brand,
+				$model_name,
+				$brand_prefixed,
+				$brand_stripped
 			),
 			\ARRAY_A
 		);

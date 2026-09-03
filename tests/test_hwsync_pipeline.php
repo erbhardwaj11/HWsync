@@ -264,9 +264,22 @@ class MockWPDB {
 						if ( isset( $r['vendor_slug'] ) && strcasecmp( $r['vendor_slug'], $qm[1] ) === 0 ) return $r;
 					}
 				}
-				if ( preg_match( '/WHERE\s+LOWER\(brand\)\s*=\s*LOWER\(\'([^\']+)\'\)\s+AND\s+LOWER\(model_name\)\s*=\s*LOWER\(\'([^\']+)\'\)/i', $query, $qm ) ) {
+				if ( preg_match( '/brand/i', $query ) && preg_match( '/model_name/i', $query ) ) {
+					preg_match( '/LOWER\(brand\)\s*=\s*LOWER\(\'([^\']*)\'\)/i', $query, $bm );
+					$b_val = $bm ? $bm[1] : '';
+					preg_match_all( '/LOWER\(model_name\)\s*=\s*LOWER\(\'([^\']*)\'\)/i', $query, $mm );
+					$m_vals = $mm ? $mm[1] : array();
 					foreach ( $this->tables[ $tbl ] as $r ) {
-						if ( isset( $r['brand'], $r['model_name'] ) && strcasecmp( $r['brand'], $qm[1] ) === 0 && strcasecmp( $r['model_name'], $qm[2] ) === 0 ) return $r;
+						if ( ! empty( $b_val ) && isset( $r['brand'] ) && strcasecmp( $r['brand'], $b_val ) !== 0 ) {
+							continue;
+						}
+						if ( ! empty( $m_vals ) && isset( $r['model_name'] ) ) {
+							foreach ( $m_vals as $mv ) {
+								if ( strcasecmp( $r['model_name'], $mv ) === 0 ) {
+									return $r;
+								}
+							}
+						}
 					}
 				}
 				if ( preg_match( '/component_id\s*=\s*(\d+)\s+AND\s+vendor_id\s*=\s*(\d+)/i', $query, $qm ) ) {
@@ -1857,6 +1870,136 @@ assert_test( 'Media Library Image Sync prioritizes smaller sized WebP and AVIF f
 	$winner_1 !== null && $winner_1['format'] === 'avif' && $winner_1['filesize'] === 18000 &&
 	$winner_2 !== null && $winner_2['format'] === 'webp' && $winner_2['filesize'] === 24000 &&
 	$winner_fallback !== null && $winner_fallback['format'] === 'jpg' && $winner_fallback['filesize'] === 45000
+) );
+
+// Test 55: Motherboard False Merge Prevention & Distinct Model Identity Isolation
+$mb_tomahawk_atx = new \HWsync\Models\Component( array(
+	'brand'      => 'MSI',
+	'model_name' => 'MAG B650 TOMAHAWK WIFI',
+	'category'   => 'motherboard',
+) );
+$mb_mortar_matx = new \HWsync\Models\Component( array(
+	'brand'      => 'MSI',
+	'model_name' => 'MAG B650M MORTAR WIFI',
+	'category'   => 'motherboard',
+) );
+$mb_pro_p_d4 = new \HWsync\Models\Component( array(
+	'brand'      => 'MSI',
+	'model_name' => 'PRO B760M-P DDR4',
+	'category'   => 'motherboard',
+) );
+$mb_pro_p_d5 = new \HWsync\Models\Component( array(
+	'brand'      => 'MSI',
+	'model_name' => 'PRO B760M-P DDR5',
+	'category'   => 'motherboard',
+) );
+$mb_ds3h_wifi = new \HWsync\Models\Component( array(
+	'brand'      => 'Gigabyte',
+	'model_name' => 'B760M DS3H AX DDR4',
+	'category'   => 'motherboard',
+) );
+$mb_ds3h_nowifi = new \HWsync\Models\Component( array(
+	'brand'      => 'Gigabyte',
+	'model_name' => 'B760M DS3H DDR4',
+	'category'   => 'motherboard',
+) );
+
+$is_same_toma_mortar = \HWsync\Matching_Engine::is_same_hardware_component( $mb_tomahawk_atx, $mb_mortar_matx );
+$is_same_d4_d5       = \HWsync\Matching_Engine::is_same_hardware_component( $mb_pro_p_d4, $mb_pro_p_d5 );
+$is_same_wifi_nowifi = \HWsync\Matching_Engine::is_same_hardware_component( $mb_ds3h_wifi, $mb_ds3h_nowifi );
+
+assert_test( 'Motherboard Identity Isolation strictly prevents false merging across chipsets, form-factors, DDR4/DDR5, and WiFi variants', (
+	$is_same_toma_mortar === false &&
+	$is_same_d4_d5 === false &&
+	$is_same_wifi_nowifi === false
+) );
+
+// Test 56: Canonical CPU & Hardware Model Normalization and Daily Sync Deduplication
+$clean_amd_3400g_raw = 'AMD Ryzen 5 3400G with Radeon RX Vega 11 Graphics 4 Core 8 Thread 3.7GHz AM4 Socket Processor';
+$clean_ultra_270k_raw = 'Intel Core Ultra 7 270K Plus 24 Cores up to 5.50 GHz FCLGA1851 Desktop Processor';
+
+$comp_cpu_3400g = \HWsync\Matching_Engine::match_or_create_component( array(
+	'title'    => $clean_amd_3400g_raw,
+	'category' => 'cpu',
+	'sku'      => 'YD3400C5FHBOX',
+) );
+
+$comp_cpu_270k = \HWsync\Matching_Engine::match_or_create_component( array(
+	'title'    => $clean_ultra_270k_raw,
+	'category' => 'cpu',
+	'sku'      => 'BX80768270KP',
+) );
+
+// Simulate Daily Cron Sync with differing vendor titles for same CPUs
+$comp_cpu_3400g_daily = \HWsync\Matching_Engine::match_or_create_component( array(
+	'title'    => 'AMD Ryzen 5 3400G Desktop Processor (Tray Pack)',
+	'category' => 'cpu',
+) );
+
+$comp_cpu_270k_daily = \HWsync\Matching_Engine::match_or_create_component( array(
+	'title'    => 'Intel Core Ultra 7 270K Plus LGA1851 Unlocked Processor',
+	'category' => 'cpu',
+) );
+
+assert_test( 'Hardware Sync Logic saves clean canonical model names and matches existing records during daily sync', (
+	$comp_cpu_3400g !== null &&
+	$comp_cpu_3400g->model_name === 'Ryzen 5 3400G' &&
+	$comp_cpu_270k !== null &&
+	$comp_cpu_270k->model_name === 'Core Ultra 7 270K Plus' &&
+	$comp_cpu_3400g_daily !== null &&
+	$comp_cpu_3400g_daily->id === $comp_cpu_3400g->id &&
+	$comp_cpu_270k_daily !== null &&
+	$comp_cpu_270k_daily->id === $comp_cpu_270k->id
+) );
+
+// Test 57: Multi-Component Manual Merge Tool Consolidates Multiple Sources Simultaneously
+$target_cpu = new \HWsync\Models\Component( array(
+	'brand'      => 'AMD',
+	'model_name' => 'Ryzen 5 7500F',
+	'category'   => 'cpu',
+) );
+$target_cpu->save();
+
+$source_cpu_1 = new \HWsync\Models\Component( array(
+	'brand'      => 'AMD',
+	'model_name' => 'AMD Ryzen 5 7500F Processor',
+	'category'   => 'cpu',
+) );
+$source_cpu_1->save();
+
+$source_cpu_2 = new \HWsync\Models\Component( array(
+	'brand'      => 'AMD',
+	'model_name' => 'AMD Ryzen 5 7500F Box Pack',
+	'category'   => 'cpu',
+) );
+$source_cpu_2->save();
+
+$source_cpu_3 = new \HWsync\Models\Component( array(
+	'brand'      => 'AMD',
+	'model_name' => 'AMD Ryzen 5 7500F Tray MPK',
+	'category'   => 'cpu',
+) );
+$source_cpu_3->save();
+
+$vp_t = new \HWsync\Models\Vendor_Price( array( 'component_id' => $target_cpu->id, 'vendor_id' => 1, 'price' => 15000.0, 'is_in_stock' => 1 ) );
+$vp_t->save();
+$vp_s1 = new \HWsync\Models\Vendor_Price( array( 'component_id' => $source_cpu_1->id, 'vendor_id' => 2, 'price' => 14800.0, 'is_in_stock' => 1 ) );
+$vp_s1->save();
+$vp_s2 = new \HWsync\Models\Vendor_Price( array( 'component_id' => $source_cpu_2->id, 'vendor_id' => 3, 'price' => 15200.0, 'is_in_stock' => 1 ) );
+$vp_s2->save();
+$vp_s3 = new \HWsync\Models\Vendor_Price( array( 'component_id' => $source_cpu_3->id, 'vendor_id' => 1, 'price' => 14500.0, 'is_in_stock' => 1 ) );
+$vp_s3->save();
+
+$multi_merge_res = \HWsync\Matching_Engine::manual_merge_components( $target_cpu->id, array( $source_cpu_1->id, $source_cpu_2->id, $source_cpu_3->id ) );
+$updated_target_prices = $target_cpu->get_prices();
+
+assert_test( 'Multi-Component Manual Merge Tool merges any number of source components into target and reassigns prices', (
+	$multi_merge_res['success'] === true &&
+	$multi_merge_res['sources_merged'] === 3 &&
+	\HWsync\Models\Component::find_by_id( $source_cpu_1->id ) === null &&
+	\HWsync\Models\Component::find_by_id( $source_cpu_2->id ) === null &&
+	\HWsync\Models\Component::find_by_id( $source_cpu_3->id ) === null &&
+	count( $updated_target_prices ) === 3
 ) );
 
 echo "\n---------------------------------------------\n";

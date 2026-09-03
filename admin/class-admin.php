@@ -1986,16 +1986,18 @@ class Admin {
 						<div style="margin-bottom: 20px;">
 							<label style="display: block; font-weight: 600; font-size: 12px; color: #334155; margin-bottom: 6px;">
 								<span class="dashicons dashicons-no" style="color: #dc2626; font-size: 16px;"></span>
-								<?php esc_html_e( 'Secondary Component (Source to Merge & Remove):', 'hwsync' ); ?>
+								<?php esc_html_e( 'Secondary Component(s) to Merge & Remove (Select Any Number):', 'hwsync' ); ?>
 							</label>
-							<select id="merge-source-select" style="width: 100%; height: 38px; border-radius: 6px;" required>
-								<option value=""><?php esc_html_e( '-- Select Component to Merge --', 'hwsync' ); ?></option>
+							<select id="merge-source-select" style="width: 100%; min-height: 140px; border-radius: 6px; padding: 6px;" multiple required>
 								<?php foreach ( $components as $comp ) : ?>
 									<option value="<?php echo esc_attr( $comp->id ); ?>">
 										#<?php echo intval( $comp->id ); ?> - [<?php echo esc_html( strtoupper( $comp->category ) ); ?>] <?php echo esc_html( $comp->brand . ' ' . $comp->model_name ); ?>
 									</option>
 								<?php endforeach; ?>
 							</select>
+							<p style="font-size: 11px; color: #64748b; margin: 4px 0 0;">
+								<?php esc_html_e( 'Tip: Hold Ctrl (or Cmd on Mac) to select multiple components to merge in one click.', 'hwsync' ); ?>
+							</p>
 						</div>
 
 						<div id="merge-alert-box" style="display: none; padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 12px; font-weight: 600;"></div>
@@ -2293,53 +2295,39 @@ class Admin {
 					modalMerge.style.display = 'none';
 				});
 
-				// Bulk Merge Selected
+				// Bulk Merge Selected (Opens Merge Modal Pre-Populated with Selected Components)
 				bulkMergeBtn.addEventListener('click', function() {
 					if (selectedComps.length < 2) return;
 
 					var target = selectedComps[0];
 					var sources = selectedComps.slice(1);
 
-					var sourceNames = sources.map(function(s) { return '"' + s.name + '"'; }).join(', ');
-					if (confirm('Merge ' + sources.length + ' component(s) (' + sourceNames + ') into primary component "' + target.name + '"?')) {
-						var mergeIdx = 0;
-						bulkMergeBtn.disabled = true;
-						bulkMergeBtn.textContent = 'Merging...';
+					// Open merge modal
+					modalMerge.style.display = 'flex';
 
-						function mergeNextStep() {
-							if (mergeIdx >= sources.length) {
-								alert('Successfully merged selected components!');
-								window.location.reload();
-								return;
-							}
+					// Set Target select
+					var targetSelect = document.getElementById('merge-target-select');
+					if (targetSelect) {
+						targetSelect.value = target.id;
+					}
 
-							var curSource = sources[mergeIdx++];
-							var postData = new URLSearchParams();
-							postData.append('action', 'hwsync_manual_merge_components');
-							postData.append('target_id', target.id);
-							postData.append('source_id', curSource.id);
-							postData.append('hwsync_nonce', nonce);
-
-							fetch(ajaxurl, {
-								method: 'POST',
-								headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-								body: postData.toString()
-							}).then(function(res) {
-								return res.json();
-							}).then(function(json) {
-								if (json.success) {
-									mergeNextStep();
-								} else {
-									alert('Error merging: ' + (json.data && json.data.message ? json.data.message : 'Unknown error'));
-									window.location.reload();
-								}
-							}).catch(function(err) {
-								alert('Network error: ' + err.message);
-								window.location.reload();
-							});
+					// Select Sources in multi-select
+					var sourceSelect = document.getElementById('merge-source-select');
+					if (sourceSelect) {
+						var sourceIdMap = {};
+						sources.forEach(function(s) { sourceIdMap[String(s.id)] = true; });
+						for (var i = 0; i < sourceSelect.options.length; i++) {
+							var opt = sourceSelect.options[i];
+							opt.selected = !!sourceIdMap[String(opt.value)];
 						}
+					}
 
-						mergeNextStep();
+					var alertBox = document.getElementById('merge-alert-box');
+					if (alertBox) {
+						alertBox.style.display = 'block';
+						alertBox.style.background = '#eff6ff';
+						alertBox.style.color = '#1d4ed8';
+						alertBox.textContent = 'Selected ' + selectedComps.length + ' components for consolidation. Primary target: #' + target.id + ' (' + target.name + ').';
 					}
 				});
 
@@ -2347,25 +2335,38 @@ class Admin {
 				document.getElementById('form-manual-merge').addEventListener('submit', function(e) {
 					e.preventDefault();
 					var targetId = document.getElementById('merge-target-select').value;
-					var sourceId = document.getElementById('merge-source-select').value;
+					var sourceSelect = document.getElementById('merge-source-select');
 					var submitBtn = document.getElementById('btn-submit-manual-merge');
 					var alertBox = document.getElementById('merge-alert-box');
 
-					if (targetId === sourceId) {
+					var sourceIds = [];
+					if (sourceSelect) {
+						for (var i = 0; i < sourceSelect.options.length; i++) {
+							if (sourceSelect.options[i].selected && sourceSelect.options[i].value) {
+								if (sourceSelect.options[i].value !== targetId) {
+									sourceIds.push(sourceSelect.options[i].value);
+								}
+							}
+						}
+					}
+
+					if (sourceIds.length === 0) {
 						alertBox.style.display = 'block';
 						alertBox.style.background = '#fee2e2';
 						alertBox.style.color = '#dc2626';
-						alertBox.textContent = 'Primary and secondary components cannot be the same.';
+						alertBox.textContent = 'Please select at least one secondary component to merge that is different from the primary component.';
 						return;
 					}
 
 					submitBtn.disabled = true;
-					submitBtn.textContent = 'Merging...';
+					submitBtn.textContent = 'Merging ' + sourceIds.length + ' component(s)...';
 
 					var postData = new URLSearchParams();
 					postData.append('action', 'hwsync_manual_merge_components');
 					postData.append('target_id', targetId);
-					postData.append('source_id', sourceId);
+					sourceIds.forEach(function(sid) {
+						postData.append('source_ids[]', sid);
+					});
 					postData.append('hwsync_nonce', nonce);
 
 					fetch(ajaxurl, {
@@ -3437,10 +3438,22 @@ class Admin {
 			wp_send_json_error( array( 'message' => __( 'Unauthorized', 'hwsync' ) ) );
 		}
 
-		$target_id = isset( $_POST['target_id'] ) ? intval( $_POST['target_id'] ) : 0;
-		$source_id = isset( $_POST['source_id'] ) ? intval( $_POST['source_id'] ) : 0;
+		$target_id  = isset( $_POST['target_id'] ) ? intval( $_POST['target_id'] ) : 0;
+		$source_ids = array();
 
-		$result = Matching_Engine::manual_merge_components( $target_id, $source_id );
+		if ( isset( $_POST['source_ids'] ) ) {
+			if ( is_array( $_POST['source_ids'] ) ) {
+				$source_ids = array_map( 'intval', $_POST['source_ids'] );
+			} elseif ( is_string( $_POST['source_ids'] ) ) {
+				$source_ids = array_map( 'intval', explode( ',', $_POST['source_ids'] ) );
+			}
+		}
+
+		if ( empty( $source_ids ) && isset( $_POST['source_id'] ) ) {
+			$source_ids = array( intval( $_POST['source_id'] ) );
+		}
+
+		$result = Matching_Engine::manual_merge_components( $target_id, $source_ids );
 
 		if ( ! empty( $result['success'] ) ) {
 			wp_send_json_success( $result );

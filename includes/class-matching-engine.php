@@ -40,6 +40,7 @@ class Matching_Engine {
 		$normalized_model = self::normalize_model_name( $raw_title, $brand, $category );
 		$specs = self::extract_specs( $raw_title, $category );
 		$core_hw_id = self::extract_core_hardware_id( $raw_title, $category );
+		$mb_ident = ( $category === 'motherboard' ) ? self::extract_motherboard_identity( $raw_title ) : '';
 
 		// 1. Try matching by MPN if available
 		if ( ! empty( $mpn ) ) {
@@ -61,8 +62,8 @@ class Matching_Engine {
 			}
 		}
 
-		// 3. Strict Fuzzy search: MUST match category, brand, and Core Hardware ID exactly
-		$candidates = Component::get_all( array( 'category' => $category, 'limit' => 300 ) );
+		// 3. Strict Search across Existing Components in Category
+		$candidates = Component::get_all( array( 'category' => $category, 'limit' => 500 ) );
 		$best_match = null;
 		$highest_sim = 0.0;
 
@@ -76,16 +77,32 @@ class Matching_Engine {
 				continue;
 			}
 
+			// Motherboard Identity Check (Chipset, Form Factor, Series Line, Memory Type, WiFi)
+			if ( $category === 'motherboard' ) {
+				$cand_mb_ident = self::extract_motherboard_identity( $candidate->brand . ' ' . $candidate->model_name );
+				if ( ! empty( $mb_ident ) && ! empty( $cand_mb_ident ) ) {
+					if ( strcasecmp( $mb_ident, $cand_mb_ident ) !== 0 ) {
+						// Different motherboard (e.g. B650 vs B650M, Tomahawk vs Mortar, DDR4 vs DDR5, WiFi vs Non-WiFi) -> NEVER MATCH
+						continue;
+					}
+					// Exact same motherboard identity under the same brand
+					return $candidate;
+				} elseif ( ! empty( $mb_ident ) || ! empty( $cand_mb_ident ) ) {
+					// One has a resolved motherboard identity and the other does not -> Do not match
+					continue;
+				}
+			}
+
 			// Validate that Core Hardware IDs match strictly
 			if ( ! empty( $core_hw_id ) ) {
 				$candidate_core_id = self::extract_core_hardware_id( $candidate->model_name, $category );
 				if ( ! empty( $candidate_core_id ) ) {
 					if ( strcasecmp( $core_hw_id, $candidate_core_id ) !== 0 ) {
-						// Different hardware model (e.g. Epoch XL vs Meshify 3 XL or RTX 5050 vs RTX 4070) -> DO NOT MATCH!
+						// Different hardware model (e.g. Epoch XL vs Meshify 3 XL, RTX 5050 vs RTX 4070, Ryzen 7500F vs 7600X) -> DO NOT MATCH!
 						continue;
 					}
-					// For CPU, Cooler, Cabinet: Matching Core Hardware ID is an EXACT match under the same brand
-					if ( $category === 'cpu' || $category === 'cooler' || $category === 'cabinet' ) {
+					// For CPU, Cooler, Cabinet, Case Fan: Matching Core Hardware ID is an EXACT match under the same brand
+					if ( $category === 'cpu' || $category === 'cooler' || $category === 'cabinet' || $category === 'case_fan' ) {
 						return $candidate;
 					}
 				}
@@ -103,6 +120,11 @@ class Matching_Engine {
 				if ( ! empty( $specs['wattage'] ) && ! empty( $cand_specs['wattage'] ) && $specs['wattage'] !== $cand_specs['wattage'] ) {
 					continue;
 				}
+			}
+
+			$cand_norm = self::normalize_model_name( $candidate->model_name, $candidate->brand, $category );
+			if ( strcasecmp( $cand_norm, $normalized_model ) === 0 ) {
+				return $candidate;
 			}
 
 			similar_text( strtolower( $candidate->model_name ), strtolower( $normalized_model ), $percent );
@@ -151,7 +173,7 @@ class Matching_Engine {
 				return preg_replace( '/\s+/', ' ', $m[1] );
 			}
 		} elseif ( $cat === 'motherboard' ) {
-			if ( preg_match( '/\b(X870E|X870|X670E|X670|B850|B840|B650E|B650|A620|X570S|X570|B550|A520|X470|B450|X370|B350|A320|WRX90|TRX50|WRX80|TRX40|X399|Z890|B860|H810|Z790|B760|H770|Z690|B660|H670|H610|Z590|B560|H570|H510|Z490|B460|H470|H410|Z390|Z370|B365|B360|H370|H310|Z270|H270|B250|Z170|H170|B150|H110|X299|X99|Z97|H97|Z87|H87|B85|H81)(?:\b|[MIAE\-])/i', $t, $m ) ) {
+			if ( preg_match( '/\b(X870E|X870|X670E|X670|B850|B840|B650E|B650M|B650I|B650|A620M|A620|X570S|X570|B550M|B550I|B550|A520M|A520|B450M|B450|X370|B350|A320|WRX90|TRX50|WRX80|TRX40|X399|Z890|B860|H810|Z790I|Z790M|Z790|B760I|B760M|B760|H770|Z690|B660M|B660|H670|H610M|H610|Z590|B560M|B560|H570|H510M|H510|Z490|B460M|B460|H470|H410M|H410|Z390|Z370|B365M|B365|B360M|B360|H370|H310M|H310|Z270|H270|B250M|B250|Z170|H170|B150M|B150|H110M|H110|X299|X99|Z97|H97|Z87|H87|B85M|B85|H81M|H81)(?:\b|[MIAE\-])/i', $t, $m ) ) {
 				return strtoupper( $m[1] );
 			}
 		} elseif ( $cat === 'ram' ) {
@@ -185,6 +207,57 @@ class Matching_Engine {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Extract critical motherboard model identity (Chipset & Form Factor, Model Line, Memory Generation, WiFi)
+	 * to prevent cross-model collision and false merging between distinct boards.
+	 *
+	 * @param string $title
+	 * @return string
+	 */
+	public static function extract_motherboard_identity( $title ) {
+		$t = strtoupper( (string) $title );
+
+		// 1. Chipset + Form Factor code (e.g. X870E, X870, B650E, B650M, B650I, B650, A620M, A620, Z790, B760M, B760, H610M)
+		$chipset = '';
+		if ( preg_match( '/\b(X870E|X870|X670E|X670|B850|B840|B650E|B650M|B650I|B650|A620M|A620|X570S|X570|B550M|B550I|B550|A520M|A520|B450M|B450|Z890|B860|H810|Z790I|Z790M|Z790|B760I|B760M|B760|H770|Z690|B660M|B660|H610M|H610|H410M|H410)\b/i', $t, $m ) ) {
+			$chipset = strtoupper( $m[1] );
+		}
+
+		// 2. Model Line / Sub-series
+		$model_lines = array(
+			'TOMAHAWK', 'MORTAR', 'TORPEDO', 'CARBON', 'EDGE', 'GODLIKE', 'ACE', 'UNIFY', 'FORCE',
+			'GAMING PLUS', 'GAMING X', 'GAMING PRO', 'AORUS MASTER', 'AORUS PRO', 'AORUS ELITE', 'AORUS TACHYON', 'AORUS ULTRA', 'AORUS',
+			'STRIX', 'MAXIMUS', 'CROSSHAIR', 'HERO', 'APEX', 'FORMULA', 'EXTREME', 'GENE', 'TUF GAMING', 'TUF',
+			'PRIME', 'PROART', 'PRO RS', 'PRO4', 'PRO-A', 'PRO-P', 'PRO-VDH', 'PRO',
+			'STEEL LEGEND', 'TAICHI', 'RIPTIDE', 'LIGHTNING', 'SONIC', 'LIVE MIXER', 'NOVA',
+			'DS3H', 'EAGLE', 'AERO', 'UD', 'HDV', 'PHANTOM GAMING', 'CHALLENGER'
+		);
+		$matched_line = '';
+		foreach ( $model_lines as $ml ) {
+			if ( preg_match( '/\b' . preg_quote( $ml, '/' ) . '\b/i', $t ) ) {
+				$matched_line = $ml;
+				break;
+			}
+		}
+
+		// 3. Memory Generation
+		$ddr = '';
+		if ( preg_match( '/\b(DDR4|D4)\b/i', $t ) ) {
+			$ddr = 'DDR4';
+		} elseif ( preg_match( '/\b(DDR5|D5)\b/i', $t ) ) {
+			$ddr = 'DDR5';
+		}
+
+		// 4. WiFi / Wireless
+		$wifi = preg_match( '/\b(WIFI\s*7|WIFI\s*6E|WIFI\s*6|WIFI|AX|AC)\b/i', $t ) ? 'WIFI' : 'NON-WIFI';
+
+		if ( empty( $chipset ) && empty( $matched_line ) ) {
+			return '';
+		}
+
+		return "{$chipset}_{$matched_line}_{$ddr}_{$wifi}";
 	}
 
 	public static function extract_brand( $title ) {
@@ -326,6 +399,19 @@ class Matching_Engine {
 			$clean = preg_replace( '/\b(i[3579])[\s\-]+(\d{4,5}[A-Z0-9]*)\b/i', 'Core $1-$2', $clean );
 			$clean = preg_replace( '/\b(Ryzen\s+[3579])[\s\-]+(\d{4}[A-Z0-9]*)\b/i', '$1 $2', $clean );
 			$clean = preg_replace( '/\bCore\s+Core\b/i', 'Core', $clean );
+		} elseif ( $cat_lower === 'motherboard' ) {
+			$mb_noise = array(
+				'/\b(?:AMD\s+Socket\s+AM5|AMD\s+AM5|Socket\s+AM5|AM5|AMD\s+Socket\s+AM4|AMD\s+AM4|Socket\s+AM4|AM4)\b/i',
+				'/\b(?:Intel\s+LGA\s*1700|Intel\s+LGA\s*1851|Intel\s+LGA\s*1200|LGA\s*1700|LGA\s*1851|LGA\s*1200|LGA\s*1151)\b/i',
+				'/\b(?:Extended\s+ATX|Micro\s*ATX|Micro-ATX|Mini\s*ITX|Mini-ITX|mATX|E-ATX|ATX)\b/i',
+				'/\b(?:Desktop\s+Motherboard|Gaming\s+Motherboard|Motherboard|Mainboard)\b/i',
+				'/\b(?:with\s+DDR5|with\s+DDR4|PCIe\s*\d+\.\d+|PCIe\s*\d+|M\.2\s*Slots?|2\.5G(?:bE)?\s*LAN|Type-C|USB\s*3\.\d+)\b/i',
+				'/\b(?:Supports\s+AMD\s+Ryzen\s+\d+\s+Series\s+Processors|Supports\s+\d+th\s+Gen\s+Intel\s+Core\s+Processors)\b/i',
+				'/\b(?:Aura\s*Sync|RGB\s*Fusion|Mystic\s*Light|Polychrome\s*RGB)\b/i',
+			);
+			foreach ( $mb_noise as $p ) {
+				$clean = preg_replace( $p, ' ', $clean );
+			}
 		} elseif ( $cat_lower === 'gpu' ) {
 			$gpu_noise = array(
 				'/\b(?:Gaming Graphics Card|Graphics Card|Video Card|DisplayCard)\b/i',
@@ -458,9 +544,17 @@ class Matching_Engine {
 				}
 				return true;
 			}
-		} elseif ( $a->category === 'motherboard' && ( ! empty( $core_a ) || ! empty( $core_b ) ) ) {
-			// One has an identified motherboard chipset and the other doesn't or differs -> CANNOT MERGE!
-			return false;
+		} elseif ( $a->category === 'motherboard' ) {
+			$ident_a = self::extract_motherboard_identity( $a->brand . ' ' . $a->model_name );
+			$ident_b = self::extract_motherboard_identity( $b->brand . ' ' . $b->model_name );
+			if ( ! empty( $ident_a ) && ! empty( $ident_b ) ) {
+				if ( strcasecmp( $ident_a, $ident_b ) !== 0 ) {
+					return false; // Different motherboard identity!
+				}
+				return true; // Exact matching motherboard identity under the same brand
+			} elseif ( ! empty( $ident_a ) || ! empty( $ident_b ) ) {
+				return false;
+			}
 		}
 
 		// 6. Check critical hardware specs: Socket / RAM Capacity / SSD Capacity / PSU Wattage
@@ -714,93 +808,133 @@ class Matching_Engine {
 	}
 
 	/**
-	 * Manually merge one source component into a target canonical component.
+	 * Manually merge one or multiple source components into a target canonical component.
 	 *
 	 * @param int $target_id Primary component ID to retain.
-	 * @param int $source_id Secondary component ID to merge and remove.
+	 * @param int|array|string $source_ids Secondary component ID(s) to merge and remove.
 	 * @return array Result status and message.
 	 */
-	public static function manual_merge_components( $target_id, $source_id ) {
+	public static function manual_merge_components( $target_id, $source_ids ) {
 		global $wpdb;
 
 		$target_id = intval( $target_id );
-		$source_id = intval( $source_id );
+		if ( is_string( $source_ids ) ) {
+			$source_ids = explode( ',', $source_ids );
+		}
+		if ( ! is_array( $source_ids ) ) {
+			$source_ids = array( $source_ids );
+		}
 
-		if ( $target_id <= 0 || $source_id <= 0 || $target_id === $source_id ) {
+		$clean_source_ids = array();
+		foreach ( $source_ids as $sid ) {
+			$s_int = intval( $sid );
+			if ( $s_int > 0 && $s_int !== $target_id && ! in_array( $s_int, $clean_source_ids, true ) ) {
+				$clean_source_ids[] = $s_int;
+			}
+		}
+
+		if ( $target_id <= 0 || empty( $clean_source_ids ) ) {
 			return array(
 				'success' => false,
-				'message' => __( 'Invalid target or source component ID.', 'hwsync' ),
+				'message' => __( 'Invalid target or source component ID(s).', 'hwsync' ),
 			);
 		}
 
 		$target = Component::find_by_id( $target_id );
-		$source = Component::find_by_id( $source_id );
-
-		if ( ! $target || ! $source ) {
+		if ( ! $target ) {
 			return array(
 				'success' => false,
-				'message' => __( 'One or both components could not be found.', 'hwsync' ),
+				'message' => __( 'Target primary component could not be found.', 'hwsync' ),
 			);
 		}
 
 		$prices_table = Database::get_table_name( 'vendor_prices' );
 		$comp_table   = Database::get_table_name( 'components' );
 
-		// Move / merge vendor prices
+		// Load initial target prices
 		$target_prices = $target->get_prices();
 		$existing_vendors = array();
 		foreach ( $target_prices as $tp ) {
 			$existing_vendors[ $tp->vendor_id ] = $tp;
 		}
 
-		$source_prices = $source->get_prices();
-		$moved_count = 0;
+		$total_moved_count = 0;
+		$merged_names = array();
 
-		foreach ( $source_prices as $sp ) {
-			if ( isset( $existing_vendors[ $sp->vendor_id ] ) ) {
-				$existing_vp = $existing_vendors[ $sp->vendor_id ];
-				// If source price is active and lower, update the target's price record
-				if ( floatval( $sp->price ) > 0 && ( floatval( $existing_vp->price ) <= 0 || floatval( $sp->price ) < floatval( $existing_vp->price ) ) ) {
-					$existing_vp->price          = $sp->price;
-					$existing_vp->original_price = $sp->original_price ?: $existing_vp->original_price;
-					$existing_vp->product_url    = $sp->product_url ?: $existing_vp->product_url;
-					$existing_vp->is_in_stock    = $sp->is_in_stock;
-					$existing_vp->save();
-				}
-				// Delete duplicate price listing
-				$wpdb->query( $wpdb->prepare( "DELETE FROM {$prices_table} WHERE id = %d", $sp->id ) );
-			} else {
-				// Reassign vendor price to target
-				$sp->component_id = $target->id;
-				$sp->save();
-				$existing_vendors[ $sp->vendor_id ] = $sp;
+		foreach ( $clean_source_ids as $source_id ) {
+			$source = Component::find_by_id( $source_id );
+			if ( ! $source ) {
+				continue;
 			}
-			$moved_count++;
+
+			$merged_names[] = $source->model_name;
+			$source_prices  = $source->get_prices();
+
+			foreach ( $source_prices as $sp ) {
+				if ( isset( $existing_vendors[ $sp->vendor_id ] ) ) {
+					$existing_vp = $existing_vendors[ $sp->vendor_id ];
+					// If source price is active and lower, update the target's price record
+					if ( floatval( $sp->price ) > 0 && ( floatval( $existing_vp->price ) <= 0 || floatval( $sp->price ) < floatval( $existing_vp->price ) ) ) {
+						$existing_vp->price          = $sp->price;
+						$existing_vp->original_price = $sp->original_price ?: $existing_vp->original_price;
+						$existing_vp->product_url    = $sp->product_url ?: $existing_vp->product_url;
+						$existing_vp->is_in_stock    = $sp->is_in_stock;
+						$existing_vp->save();
+					}
+					// Delete duplicate price listing
+					$wpdb->query( $wpdb->prepare( "DELETE FROM {$prices_table} WHERE id = %d", $sp->id ) );
+				} else {
+					// Reassign vendor price to target
+					$sp->component_id = $target->id;
+					$sp->save();
+					$existing_vendors[ $sp->vendor_id ] = $sp;
+				}
+				$total_moved_count++;
+			}
+
+			// Merge specs
+			$target_specs = $target->get_specs() ?: array();
+			$source_specs = $source->get_specs() ?: array();
+			if ( ! empty( $source_specs ) ) {
+				$target->specs_json = array_merge( $source_specs, $target_specs );
+			}
+
+			if ( empty( $target->mpn ) && ! empty( $source->mpn ) ) {
+				$target->mpn = $source->mpn;
+			}
+			if ( empty( $target->sku ) && ! empty( $source->sku ) ) {
+				$target->sku = $source->sku;
+			}
+
+			// Copy image if target is missing it
+			if ( ( empty( $target->image_url ) || strpos( $target->image_url, 'defaults/' ) !== false ) && ! empty( $source->image_url ) && strpos( $source->image_url, '/uploads/' ) !== false ) {
+				$target->image_url = $source->image_url;
+			}
+
+			$target->save();
+
+			// Delete source component
+			$wpdb->query( $wpdb->prepare( "DELETE FROM {$comp_table} WHERE id = %d", $source->id ) );
 		}
 
-		// Merge specs
-		$target_specs = $target->get_specs() ?: array();
-		$source_specs = $source->get_specs() ?: array();
-		if ( ! empty( $source_specs ) ) {
-			$target->specs_json = array_merge( $source_specs, $target_specs );
+		$merged_count = count( $merged_names );
+		if ( $merged_count === 0 ) {
+			return array(
+				'success' => false,
+				'message' => __( 'No valid source components could be merged.', 'hwsync' ),
+			);
 		}
 
-		if ( empty( $target->mpn ) && ! empty( $source->mpn ) ) {
-			$target->mpn = $source->mpn;
-		}
-		if ( empty( $target->sku ) && ! empty( $source->sku ) ) {
-			$target->sku = $source->sku;
-		}
-		$target->save();
-
-		// Delete source component
-		$wpdb->query( $wpdb->prepare( "DELETE FROM {$comp_table} WHERE id = %d", $source->id ) );
+		$msg = ( $merged_count === 1 )
+			? sprintf( __( 'Successfully merged "%s" into "%s"!', 'hwsync' ), $merged_names[0], $target->model_name )
+			: sprintf( __( 'Successfully merged %d components into "%s"!', 'hwsync' ), $merged_count, $target->model_name );
 
 		return array(
 			'success'          => true,
 			'target_id'        => $target->id,
-			'prices_moved'     => $moved_count,
-			'message'          => sprintf( __( 'Successfully merged "%s" into "%s"!', 'hwsync' ), $source->model_name, $target->model_name ),
+			'sources_merged'   => $merged_count,
+			'prices_moved'     => $total_moved_count,
+			'message'          => $msg,
 		);
 	}
 
