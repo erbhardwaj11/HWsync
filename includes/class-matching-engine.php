@@ -168,7 +168,19 @@ class Matching_Engine {
 		$cat = strtolower( $category );
 
 		if ( $cat === 'cpu' ) {
-			if ( preg_match( '/\b(RYZEN\s*[3579]\s*PRO\s*\d{4}[A-Z0-9]*|RYZEN\s*[3579]\s*\d{4}[A-Z0-9]*|THREADRIPPER\s*PRO\s*\d{4}[A-Z0-9]*|THREADRIPPER\s*\d{4}[A-Z0-9]*|CORE\s*ULTRA\s*[3579]\s*\d{3}[A-Z0-9]*|(?:CORE\s*)?I[3579][\s\-]+\d{4,5}[A-Z0-9]*|PENTIUM\s*(?:GOLD\s*)?[A-Z0-9]+|CELERON\s*[A-Z0-9]+|XEON\s*[A-Z0-9\-]+)\b/i', $t, $m ) ) {
+			$t_cpu = $t;
+			$t_cpu = preg_replace( '/\b(\d{4,5})\s*X\s*3D\b/i', '${1}X3D', $t_cpu );
+			$t_cpu = preg_replace( '/\b(\d{4,5})\s*X3D\b/i', '${1}X3D', $t_cpu );
+			$t_cpu = preg_replace( '/\b(\d{4,5})\s*XT\b/i', '${1}XT', $t_cpu );
+			$t_cpu = preg_replace( '/\b(\d{4,5})\s*GT\b/i', '${1}GT', $t_cpu );
+			$t_cpu = preg_replace( '/\b(\d{4,5})\s*X\b/i', '${1}X', $t_cpu );
+			$t_cpu = preg_replace( '/\b(\d{4,5})\s*G\b/i', '${1}G', $t_cpu );
+			$t_cpu = preg_replace( '/\b(\d{4,5})\s*KF\b/i', '${1}KF', $t_cpu );
+			$t_cpu = preg_replace( '/\b(\d{4,5})\s*KS\b/i', '${1}KS', $t_cpu );
+			$t_cpu = preg_replace( '/\b(\d{4,5})\s*K\b/i', '${1}K', $t_cpu );
+			$t_cpu = preg_replace( '/\b(\d{4,5})\s*F\b/i', '${1}F', $t_cpu );
+
+			if ( preg_match( '/\b(RYZEN\s*[3579]\s*PRO\s*\d{4}[A-Z0-9]*|RYZEN\s*[3579]\s*\d{4}[A-Z0-9]*|THREADRIPPER\s*PRO\s*\d{4}[A-Z0-9]*|THREADRIPPER\s*\d{4}[A-Z0-9]*|CORE\s*ULTRA\s*[3579]\s*\d{3}[A-Z0-9]*|(?:CORE\s*)?I[3579][\s\-]+\d{4,5}[A-Z0-9]*|PENTIUM\s*(?:GOLD\s*)?[A-Z0-9]+|CELERON\s*[A-Z0-9]+|XEON\s*[A-Z0-9\-]+)\b/i', $t_cpu, $m ) ) {
 				$val = $m[1];
 				$val = preg_replace( '/^CORE\s+/i', '', $val );
 				$val = preg_replace( '/^(I[3579])[\s\-]+(\d{4,5}[A-Z0-9]*)$/i', '$1-$2', $val );

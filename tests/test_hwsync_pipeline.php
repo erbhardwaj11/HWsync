@@ -2111,6 +2111,42 @@ assert_test( 'Amazon Adapter parses "See options / No featured offers / (1 new o
 	$matched_5500gt['sku'] === 'B0CR4K7K8M'
 ) );
 
+// Test 61: Spaced CPU Suffix Normalization (7800X 3D / 7800 X3D -> RYZEN 7 7800X3D) & Targeted Direct Linking
+$comp_7800x_spaced = new \HWsync\Models\Component( array(
+	'brand'      => 'AMD',
+	'model_name' => 'AMD RYZEN 7 7800X 3D',
+	'category'   => 'cpu',
+) );
+$comp_7800x_spaced->save();
+
+$core_spaced_1 = \HWsync\Matching_Engine::extract_core_hardware_id( 'AMD RYZEN 7 7800X 3D', 'cpu' );
+$core_spaced_2 = \HWsync\Matching_Engine::extract_core_hardware_id( 'AMD 7000 Series Ryzen 7 7800X 3D Desktop Processor (100-100000910WOF)', 'cpu' );
+$core_spaced_3 = \HWsync\Matching_Engine::extract_core_hardware_id( 'AMD Ryzen 7 7800X3D Gaming', 'cpu' );
+
+$raw_amz_7800x = array(
+	'title'        => 'AMD 7000 Series Ryzen 7 7800X 3D Desktop Processor (100-100000910WOF)',
+	'url'          => 'https://www.amazon.in/dp/B0BTZB7F88?tag=mycustomtag-21',
+	'price'        => 45539.0,
+	'in_stock'     => 1,
+	'stock_status' => 'in_stock',
+	'sku'          => 'B0BTZB7F88',
+	'category'     => 'cpu',
+	'raw_data'     => array( 'vendor' => 'amazon-in', 'asin' => 'B0BTZB7F88' ),
+);
+
+$res_sync_7800x = $sync_mgr->sync_single_item( $raw_amz_7800x, $vendor_amz, false, $comp_7800x_spaced->id );
+$linked_7800x_price = \HWsync\Models\Vendor_Price::find_by_component_and_vendor( $comp_7800x_spaced->id, $vendor_amz->id );
+
+assert_test( 'CPU Model Normalization resolves spaced 7800X 3D / 7800 X3D to RYZEN 7 7800X3D and links Amazon price directly', (
+	$core_spaced_1 === 'RYZEN 7 7800X3D' &&
+	$core_spaced_2 === 'RYZEN 7 7800X3D' &&
+	$core_spaced_3 === 'RYZEN 7 7800X3D' &&
+	$res_sync_7800x !== null &&
+	$res_sync_7800x['component_id'] === $comp_7800x_spaced->id &&
+	$linked_7800x_price !== null &&
+	$linked_7800x_price->price == 45539.0
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

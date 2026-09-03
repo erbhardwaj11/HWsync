@@ -191,21 +191,26 @@ class Sync_Manager {
 	 * @param bool $delta_only
 	 * @return array
 	 */
-	public function sync_single_item( $item, Vendor $vendor, $delta_only = false ) {
+	public function sync_single_item( $item, Vendor $vendor, $delta_only = false, $explicit_component_id = null ) {
 		// Skip Out of Stock items
 		if ( empty( $item['in_stock'] ) || ( isset( $item['stock_status'] ) && $item['stock_status'] === 'out_of_stock' ) ) {
 			return null;
 		}
 
 		// 1. Match or Create Canonical Component (Amazon sync only matches to existing DB components)
-		$is_amazon = (
-			$vendor->vendor_slug === 'amazon-in' ||
-			$vendor->vendor_slug === 'amazon' ||
-			( isset( $item['raw_data']['vendor'] ) && strpos( $item['raw_data']['vendor'], 'amazon' ) !== false )
-		);
-		$create_if_missing = ! $is_amazon;
+		if ( ! empty( $explicit_component_id ) ) {
+			$component = Component::find_by_id( $explicit_component_id );
+		} else {
+			$is_amazon = (
+				$vendor->vendor_slug === 'amazon-in' ||
+				$vendor->vendor_slug === 'amazon' ||
+				( isset( $item['raw_data']['vendor'] ) && strpos( $item['raw_data']['vendor'], 'amazon' ) !== false )
+			);
+			$create_if_missing = ! $is_amazon;
 
-		$component = Matching_Engine::match_or_create_component( $item, $create_if_missing );
+			$component = Matching_Engine::match_or_create_component( $item, $create_if_missing );
+		}
+
 		if ( ! $component || empty( $component->id ) ) {
 			return null;
 		}
@@ -474,7 +479,7 @@ class Sync_Manager {
 			}
 
 			if ( $matched_item ) {
-				$sync_res = $this->sync_single_item( $matched_item, $vendor, $delta_only );
+				$sync_res = $this->sync_single_item( $matched_item, $vendor, $delta_only, $component->id );
 				if ( $sync_res && ! empty( $sync_res['component_id'] ) ) {
 					if ( empty( $sync_res['unchanged'] ) ) {
 						$touched_ids[ $sync_res['component_id'] ] = true;
