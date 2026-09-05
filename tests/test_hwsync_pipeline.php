@@ -2147,6 +2147,33 @@ assert_test( 'CPU Model Normalization resolves spaced 7800X 3D / 7800 X3D to RYZ
 	$linked_7800x_price->price == 45539.0
 ) );
 
+// Test 62: Brand Extraction for Prefix Numbers (e.g. EVM8973247892347 -> EVM) & First-Word Fallback
+$b_evm1 = \HWsync\Matching_Engine::extract_brand( 'EVM8973247892347' );
+$b_evm2 = \HWsync\Matching_Engine::extract_brand( 'EVM8973247892347 16GB DDR4 Desktop RAM' );
+$b_evm3 = \HWsync\Matching_Engine::extract_brand( 'EVM 16GB DDR4 3200MHz RAM' );
+$b_foxin = \HWsync\Matching_Engine::extract_brand( 'Foxin 500W SMPS Power Supply' );
+$b_zeb   = \HWsync\Matching_Engine::extract_brand( 'zebronics Zeb-Warrior 2.0' );
+$b_custom = \HWsync\Matching_Engine::extract_brand( 'CustomBrand AlphaX 1TB NVMe' );
+
+$comp_evm = \HWsync\Matching_Engine::match_or_create_component( array(
+	'title'    => 'EVM8973247892347 16GB DDR4 RAM',
+	'category' => 'ram',
+	'price'    => 2800.0,
+	'in_stock' => 1,
+) );
+
+assert_test( 'Brand Extraction handles EVM8973247892347 as EVM and falls back to first word instead of Generic', (
+	$b_evm1 === 'EVM' &&
+	$b_evm2 === 'EVM' &&
+	$b_evm3 === 'EVM' &&
+	$b_foxin === 'Foxin' &&
+	$b_zeb === 'Zebronics' &&
+	$b_custom === 'CustomBrand' &&
+	$comp_evm !== null &&
+	$comp_evm->brand === 'EVM' &&
+	$comp_evm->brand !== 'Generic'
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

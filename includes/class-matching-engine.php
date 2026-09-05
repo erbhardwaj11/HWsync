@@ -16,7 +16,10 @@ class Matching_Engine {
 		'Fractal Design', 'Fractal', 'NZXT', 'Lian Li', 'Phanteks', 'Montech', 'Ant Esports', 'Thermaltake',
 		'Antec', 'Cooler Master', 'Deepcool', 'SilverStone', 'InWin', 'Be Quiet', 'Cougar', 'Gamdias',
 		'Thermalright', 'Arctic', 'Noctua', 'EKWB', 'Seasonic', 'Super Flower', 'FSP', 'EVGA', 'Gainward',
-		'Palit', 'MSI MAG', 'ROG', 'TUF Gaming'
+		'Palit', 'MSI MAG', 'ROG', 'TUF Gaming',
+		'EVM', 'Lexar', 'PNY', 'Biostar', 'Patriot', 'Silicon Power', 'Consistent', 'Frontech',
+		'Zebronics', 'Circle', 'Chiptronex', 'AeroCool', 'Klevv', 'Oloy', 'Sabrent', 'Thermal Grizzly',
+		'Gelid', 'ID-Cooling', 'Scythe', 'DarkFlash', 'Segotep', 'Huntkey', 'Foxin'
 	);
 
 	/**
@@ -279,16 +282,29 @@ class Matching_Engine {
 	}
 
 	public static function extract_brand( $title ) {
+		$t = trim( (string) $title );
+		if ( empty( $t ) ) {
+			return 'Generic';
+		}
+
 		// 1. Processor line brand inference
-		if ( preg_match( '/\b(Core\s+i[3579]|i[3579][\s\-]+\d{4,5}|Core\s+Ultra\s+[3579]|Pentium|Celeron|Xeon)\b/i', $title ) ) {
+		if ( preg_match( '/\b(Core\s+i[3579]|i[3579][\s\-]+\d{4,5}|Core\s+Ultra\s+[3579]|Pentium|Celeron|Xeon)\b/i', $t ) ) {
 			return 'Intel';
 		}
-		if ( preg_match( '/\b(Ryzen\s+[3579]|Ryzen\s+Threadripper|Threadripper|EPYC)\b/i', $title ) ) {
+		if ( preg_match( '/\b(Ryzen\s+[3579]|Ryzen\s+Threadripper|Threadripper|EPYC)\b/i', $t ) ) {
 			return 'AMD';
 		}
 
-		foreach ( self::$known_brands as $brand ) {
-			if ( preg_match( '/\b' . preg_quote( $brand, '/' ) . '\b/i', $title ) ) {
+		// 2. Check known brands (sorted by length descending so longer brand names match first)
+		$brands = self::$known_brands;
+		usort( $brands, function( $a, $b ) {
+			return strlen( $b ) - strlen( $a );
+		} );
+
+		foreach ( $brands as $brand ) {
+			// Match full word boundary or start of string/token followed by digits/delimiters (e.g. EVM8973247892347 or WD500)
+			$pattern = '/(?:\b|(?<=^))' . preg_quote( $brand, '/' ) . '(?:\b|(?=[0-9\-_]))/i';
+			if ( preg_match( $pattern, $t ) ) {
 				if ( strcasecmp( $brand, 'WD' ) === 0 ) {
 					return 'Western Digital';
 				}
@@ -301,6 +317,26 @@ class Matching_Engine {
 				return $brand;
 			}
 		}
+
+		// 3. Fallback: Use first word of the product/model name if brand cannot be figured out
+		$clean_t = trim( preg_replace( '/^[^\w\d]+/u', '', $t ) );
+		$words = preg_split( '/\s+/u', $clean_t );
+		if ( ! empty( $words ) && is_array( $words ) ) {
+			$first_word = trim( preg_replace( '/^[^\w\d]+|[^\w\d]+$/u', '', $words[0] ) );
+			if ( ! empty( $first_word ) ) {
+				// If the first word starts with an alphabetic brand prefix followed by digits (e.g. EVM8973247892347 -> EVM)
+				if ( preg_match( '/^([a-zA-Z]{2,10})\d+/i', $first_word, $am ) ) {
+					return strtoupper( $am[1] );
+				}
+
+				// Clean and return first word
+				$clean_word = trim( preg_replace( '/[^\w\d\.\-]/u', '', $first_word ) );
+				if ( ! empty( $clean_word ) ) {
+					return ctype_lower( $clean_word ) ? ucfirst( $clean_word ) : $clean_word;
+				}
+			}
+		}
+
 		return 'Generic';
 	}
 
@@ -992,14 +1028,7 @@ class Matching_Engine {
 		$raw_title = ! empty( $vendor_price->vendor_product_title ) ? $vendor_price->vendor_product_title : 'Separated Hardware Component';
 
 		// Parse brand and model name
-		$brand = 'Generic';
-		$brands = array( 'AMD', 'Intel', 'NVIDIA', 'Asus', 'Gigabyte', 'MSI', 'Zotac', 'Galax', 'Inno3D', 'Sapphire', 'PowerColor', 'Corsair', 'G.Skill', 'Kingston', 'Crucial', 'Adata', 'Samsung', 'Western Digital', 'WD', 'Seagate', 'Cooler Master', 'DeepCool', 'NZXT', 'Lian Li', 'Thermaltake', 'Antec', 'SilverStone', 'Ant Esports' );
-		foreach ( $brands as $b ) {
-			if ( stripos( $raw_title, $b ) !== false ) {
-				$brand = $b;
-				break;
-			}
-		}
+		$brand = self::extract_brand( $raw_title );
 
 		$model_name = ! empty( $custom_model_name ) ? sanitize_text_field( $custom_model_name ) : $raw_title;
 
