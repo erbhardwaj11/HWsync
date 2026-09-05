@@ -344,7 +344,8 @@ class Matching_Engine {
 		$t = strtolower( (string) $title );
 
 		// 1. Detect prebuilt PCs, laptops, and bundles first so they are not misclassified as individual components
-		if ( preg_match( '/\b(gaming\s*pc|desktop\s*pc|prebuilt\s*pc|prebuilt|complete\s*pc|tower\s*pc|mini\s*pc|barebone|workstation\s*pc|all-in-one(?:\s*pc|\s*desktop)?|aio\s*pc|laptop|notebook|gaming\s*desktop|computer\s*desktop)\b/i', $t ) ) {
+		$is_cooler_mention = (bool) preg_match( '/\b(cooler|liquid|aio|heatsink|air\s*cooler)\b/i', $t );
+		if ( ! $is_cooler_mention && preg_match( '/\b(gaming\s*pc|desktop\s*pc|prebuilt\s*pc|prebuilt|complete\s*pc|tower\s*pc|mini\s*pc|barebone|workstation\s*pc|all-in-one\s+(?:pc|desktop|computer)|aio\s+(?:pc|desktop|computer)|laptop|notebook|gaming\s*desktop|computer\s*desktop)\b/i', $t ) ) {
 			return 'desktop_pc';
 		}
 		if ( preg_match( '/\b(motherboard\s*combo|cpu\s*combo|processor\s*combo|combo\s*with\s*motherboard|bundle\s*with\s*motherboard|\+\s*motherboard|\+\s*mb|cpu\s*\+\s*mb|processor\s*\+\s*motherboard|combo\s*kit|upgrade\s*kit)\b/i', $t ) ) {
@@ -404,9 +405,12 @@ class Matching_Engine {
 		$t = strtolower( (string) $title );
 
 		// 1. Prebuilt desktop computer systems, laptops, and barebones
-		$prebuilt_pattern = '/\b(gaming\s*pc|desktop\s*pc|prebuilt\s*pc|prebuilt|complete\s*pc|tower\s*pc|mini\s*pc|barebone|workstation\s*pc|all-in-one(?:\s*pc|\s*desktop)?|aio\s*pc|laptop|notebook|gaming\s*desktop|computer\s*desktop)\b/i';
-		if ( preg_match( $prebuilt_pattern, $t ) ) {
-			return true;
+		$is_cooler_mention = (bool) preg_match( '/\b(cooler|liquid|aio|heatsink|air\s*cooler)\b/i', $t );
+		if ( ! $is_cooler_mention ) {
+			$prebuilt_pattern = '/\b(gaming\s*pc|desktop\s*pc|prebuilt\s*pc|prebuilt|complete\s*pc|tower\s*pc|mini\s*pc|barebone|workstation\s*pc|all-in-one\s+(?:pc|desktop|computer)|aio\s+(?:pc|desktop|computer)|laptop|notebook|gaming\s*desktop|computer\s*desktop)\b/i';
+			if ( preg_match( $prebuilt_pattern, $t ) ) {
+				return true;
+			}
 		}
 
 		// 2. Multi-spec system signatures (e.g. CPU + RAM + SSD/GPU/OS in title)
