@@ -2174,6 +2174,75 @@ assert_test( 'Brand Extraction handles EVM8973247892347 as EVM and falls back to
 	$comp_evm->brand !== 'Generic'
 ) );
 
+// Test 63: Amazon Prebuilt PC & Combo Exclusion (e.g. Ryzen 5 5500 Standalone vs Prebuilt PC / Motherboard Combo)
+$prebuilt_title1 = 'CHIPTRONEX Gaming PC Desktop (AMD Ryzen 5 5500 / 16GB DDR4 / 512GB SSD / GTX 1650 4GB / Windows 11)';
+$prebuilt_title2 = 'ELECTROBOT Gaming PC AMD Ryzen 5 5500 / 16GB RAM / 512GB NVMe / RX 580';
+$combo_title     = 'AMD Ryzen 5 5500 Desktop Processor + ASUS Prime B450M-K II Motherboard Combo';
+$standalone_cpu  = 'AMD 5000 Series Ryzen 5 5500 Desktop Processor 6 cores 12 Threads (100-100000457BOX)';
+
+$is_prebuilt1 = \HWsync\Matching_Engine::is_prebuilt_or_combo( $prebuilt_title1, 'cpu' );
+$is_prebuilt2 = \HWsync\Matching_Engine::is_prebuilt_or_combo( $prebuilt_title2, 'cpu' );
+$is_combo     = \HWsync\Matching_Engine::is_prebuilt_or_combo( $combo_title, 'cpu' );
+$is_cpu_flag  = \HWsync\Matching_Engine::is_prebuilt_or_combo( $standalone_cpu, 'cpu' );
+
+$cat_prebuilt = \HWsync\Matching_Engine::detect_category( $prebuilt_title1 );
+$cat_combo    = \HWsync\Matching_Engine::detect_category( $combo_title );
+$cat_cpu      = \HWsync\Matching_Engine::detect_category( $standalone_cpu );
+
+// Test Amazon card selection
+$sample_amz_cards = array(
+	array(
+		'title'        => $prebuilt_title1,
+		'price'        => 42999.0,
+		'in_stock'     => 1,
+		'stock_status' => 'in_stock',
+		'sku'          => 'B0PREBUILT1',
+		'category'     => 'cpu',
+	),
+	array(
+		'title'        => $combo_title,
+		'price'        => 16999.0,
+		'in_stock'     => 1,
+		'stock_status' => 'in_stock',
+		'sku'          => 'B0COMBO1',
+		'category'     => 'cpu',
+	),
+	array(
+		'title'        => $standalone_cpu,
+		'price'        => 9499.0,
+		'in_stock'     => 1,
+		'stock_status' => 'in_stock',
+		'sku'          => 'B09VCGQ8FC',
+		'category'     => 'cpu',
+	),
+);
+
+$selected_card = null;
+foreach ( $sample_amz_cards as $card ) {
+	if ( \HWsync\Matching_Engine::is_prebuilt_or_combo( $card['title'], 'cpu' ) ) {
+		continue;
+	}
+	$card_cat = \HWsync\Matching_Engine::detect_category( $card['title'] );
+	if ( ! empty( $card_cat ) && $card_cat !== 'other' && $card_cat !== 'cpu' ) {
+		continue;
+	}
+	$selected_card = $card;
+	break;
+}
+
+assert_test( 'Amazon Sync strictly rejects prebuilt PCs & combos, linking only genuine standalone components', (
+	$is_prebuilt1 === true &&
+	$is_prebuilt2 === true &&
+	$is_combo === true &&
+	$is_cpu_flag === false &&
+	$cat_prebuilt === 'desktop_pc' &&
+	$cat_combo === 'combo' &&
+	$cat_cpu === 'cpu' &&
+	$selected_card !== null &&
+	$selected_card['sku'] === 'B09VCGQ8FC' &&
+	$selected_card['price'] == 9499.0
+) );
+
 echo "\n---------------------------------------------\n";
 echo "Tests Passed: {$passed} | Failed: {$failed}\n";
 echo "---------------------------------------------\n";

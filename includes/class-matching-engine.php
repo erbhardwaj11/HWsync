@@ -343,6 +343,14 @@ class Matching_Engine {
 	public static function detect_category( $title ) {
 		$t = strtolower( (string) $title );
 
+		// 1. Detect prebuilt PCs, laptops, and bundles first so they are not misclassified as individual components
+		if ( preg_match( '/\b(gaming\s*pc|desktop\s*pc|prebuilt\s*pc|prebuilt|complete\s*pc|tower\s*pc|mini\s*pc|barebone|workstation\s*pc|all-in-one(?:\s*pc|\s*desktop)?|aio\s*pc|laptop|notebook|gaming\s*desktop|computer\s*desktop)\b/i', $t ) ) {
+			return 'desktop_pc';
+		}
+		if ( preg_match( '/\b(motherboard\s*combo|cpu\s*combo|processor\s*combo|combo\s*with\s*motherboard|bundle\s*with\s*motherboard|\+\s*motherboard|\+\s*mb|cpu\s*\+\s*mb|processor\s*\+\s*motherboard|combo\s*kit|upgrade\s*kit)\b/i', $t ) ) {
+			return 'combo';
+		}
+
 		if ( preg_match( '/\b(ryzen|intel core|processor|cpu|i3|i5|i7|i9|threadripper)\b/i', $t ) ) {
 			if ( ! preg_match( '/\b(cooler|aio|liquid|heatsink|case\s*fan|cabinet\s*fan)\b/i', $t ) ) {
 				return 'cpu';
@@ -382,6 +390,57 @@ class Matching_Engine {
 		}
 
 		return 'other';
+	}
+
+	/**
+	 * Determines if a product listing represents a prebuilt PC, full system, or multi-component bundle/combo
+	 * rather than an individual standalone component.
+	 *
+	 * @param string $title Product title
+	 * @param string $expected_category Target component category (e.g. 'cpu', 'gpu')
+	 * @return bool
+	 */
+	public static function is_prebuilt_or_combo( $title, $expected_category = '' ) {
+		$t = strtolower( (string) $title );
+
+		// 1. Prebuilt desktop computer systems, laptops, and barebones
+		$prebuilt_pattern = '/\b(gaming\s*pc|desktop\s*pc|prebuilt\s*pc|prebuilt|complete\s*pc|tower\s*pc|mini\s*pc|barebone|workstation\s*pc|all-in-one(?:\s*pc|\s*desktop)?|aio\s*pc|laptop|notebook|gaming\s*desktop|computer\s*desktop)\b/i';
+		if ( preg_match( $prebuilt_pattern, $t ) ) {
+			return true;
+		}
+
+		// 2. Multi-spec system signatures (e.g. CPU + RAM + SSD/GPU/OS in title)
+		$has_ram_spec     = (bool) preg_match( '/\b(?:\d+gb\s*ram|\d+gb\s*ddr\d)\b/i', $t );
+		$has_storage_spec = (bool) preg_match( '/\b(?:\d+(?:gb|tb)\s*ssd|\d+(?:gb|tb)\s*hdd|\d+(?:gb|tb)\s*nvme)\b/i', $t );
+		$has_os           = (bool) preg_match( '/\b(?:windows\s*1[01]|win\s*1[01])\b/i', $t );
+
+		if ( in_array( $expected_category, array( 'cpu', 'gpu', 'motherboard', 'cabinet', 'psu', 'cooler', 'case_fan' ), true ) ) {
+			if ( ( $has_ram_spec && $has_storage_spec ) || ( $has_ram_spec && $has_os ) || ( $has_storage_spec && $has_os ) ) {
+				return true;
+			}
+		}
+
+		// 3. Multi-component combos / bundles (e.g. CPU + Motherboard combos)
+		$combo_pattern = '/\b(motherboard\s*combo|cpu\s*combo|processor\s*combo|combo\s*with\s*motherboard|bundle\s*with\s*motherboard|\+\s*motherboard|\+\s*mb|cpu\s*\+\s*mb|processor\s*\+\s*motherboard|combo\s*kit|upgrade\s*kit)\b/i';
+		if ( preg_match( $combo_pattern, $t ) ) {
+			return true;
+		}
+
+		// 4. Category-specific bundle checks
+		if ( $expected_category === 'cpu' ) {
+			if ( preg_match( '/\bwith\s+(?:asus|msi|gigabyte|asrock)\b/i', $t ) || preg_match( '/\+\s*(?:asus|msi|gigabyte|asrock)\b/i', $t ) ) {
+				return true;
+			}
+			if ( preg_match( '/\b(combo|bundle)\b/i', $t ) ) {
+				return true;
+			}
+		} elseif ( in_array( $expected_category, array( 'gpu', 'motherboard', 'cabinet', 'psu', 'cooler', 'storage' ), true ) ) {
+			if ( preg_match( '/\b(combo|bundle)\b/i', $t ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	public static function extract_mpn( $title, $sku = '' ) {

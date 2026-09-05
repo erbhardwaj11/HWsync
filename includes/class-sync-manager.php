@@ -432,6 +432,14 @@ class Sync_Manager {
 				if ( empty( $cards ) && $search_query !== $search_term ) {
 					$cards = $adapter->search_component_on_amazon( $search_term, $component->category );
 				}
+				// For CPUs, try with 'Processor' if initial search didn't return cards
+				if ( empty( $cards ) && $component->category === 'cpu' && stripos( $search_term, 'processor' ) === false ) {
+					$cards = $adapter->search_component_on_amazon( $search_term . ' Processor', $component->category );
+				}
+				// For GPUs, try with 'Graphics Card' if initial search didn't return cards
+				if ( empty( $cards ) && $component->category === 'gpu' && stripos( $search_term, 'graphics card' ) === false ) {
+					$cards = $adapter->search_component_on_amazon( $search_term . ' Graphics Card', $component->category );
+				}
 				// If still empty, search model name alone
 				if ( empty( $cards ) && $component->model_name !== $search_term ) {
 					$cards = $adapter->search_component_on_amazon( $component->model_name, $component->category );
@@ -444,6 +452,20 @@ class Sync_Manager {
 					if ( empty( $card['in_stock'] ) || empty( $card['price'] ) || floatval( $card['price'] ) <= 0 ) {
 						continue;
 					}
+
+					$card_title = $card['title'];
+
+					// Exclude prebuilt PCs, complete desktop systems, laptops, and bundles/combos
+					if ( Matching_Engine::is_prebuilt_or_combo( $card_title, $component->category ) ) {
+						continue;
+					}
+
+					// Verify category alignment (reject cards detected as desktop_pc, combo, or conflicting categories)
+					$card_cat = Matching_Engine::detect_category( $card_title );
+					if ( ! empty( $card_cat ) && $card_cat !== 'other' && $card_cat !== $component->category ) {
+						continue;
+					}
+
 					// 1. Direct hardware comparison via Matching Engine
 					$cand_comp = Matching_Engine::match_or_create_component( $card, false );
 					if ( $cand_comp && $cand_comp->id === $component->id ) {
@@ -452,7 +474,6 @@ class Sync_Manager {
 					}
 
 					// 2. Direct MPN matching
-					$card_title = $card['title'];
 					if ( ! empty( $component->mpn ) && strlen( $component->mpn ) >= 5 && stripos( $card_title, $component->mpn ) !== false ) {
 						$matched_item = $card;
 						break;
